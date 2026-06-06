@@ -1,0 +1,274 @@
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { AlertCircleIcon } from "lucide-react";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+  FieldLegend,
+  FieldSet,
+} from "@/components/ui/field";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import PasswordField from "@/components/PasswordField";
+import { apiFetch } from "@/lib/api";
+
+type SignupResponse = {
+  id: number;
+  username: string;
+  first_name: string;
+  last_name: string | null;
+};
+
+type SignupProps = {
+  onSuccess: (user: SignupResponse) => void;
+  onGoToLogin: () => void;
+};
+
+export default function Signup({ onSuccess, onGoToLogin }: SignupProps) {
+  const [username, setUsername] = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [bio, setBio] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const passwordsMatch = password === confirmPassword && password.length > 0;
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleSignup = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+
+    try {
+      if (!username.trim()) {
+        throw new Error("Username is required.");
+      }
+      if (username.trim().length < 5) {
+        throw new Error("Username must be at least 5 characters.");
+      }
+      if (!firstName.trim()) {
+        throw new Error("First name is required.");
+      }
+      if (!password) {
+        throw new Error("Password is required.");
+      }
+      if (password.length < 8) {
+        throw new Error("Password must be at least 8 characters long.");
+      }
+      if (!passwordsMatch) {
+        throw new Error("Passwords must match.");
+      }
+
+      const response = await apiFetch<SignupResponse>("/signup", {
+        method: "POST",
+        body: JSON.stringify({
+          username: username.trim(),
+          first_name: firstName.trim(),
+          last_name: lastName || null,
+          bio: bio || null,
+          avatar_url: avatarUrl || "/favicon.svg",
+          status: "online",
+          password,
+        }),
+      });
+      onSuccess(response);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Something went wrong");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="bg-muted flex min-h-svh flex-col items-center justify-center gap-6 p-6 md:p-10">
+      <div className="flex w-full max-w-sm flex-col gap-6">
+        <div className="flex items-center gap-3 self-center font-medium">
+          <Avatar className="size-10 rounded-lg">
+            <AvatarImage src="/favicon.svg" alt="Messenger logo" />
+            <AvatarFallback>M</AvatarFallback>
+          </Avatar>
+          Messenger
+        </div>
+        <main>
+          <Card className="w-full max-w-sm">
+            <CardHeader>
+              <CardTitle>Create an account</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <form id="signup-form" onSubmit={handleSignup} className="text-left">
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel htmlFor="username">
+                      Username <span className="text-destructive">*</span>
+                    </FieldLabel>
+                    <Input
+                      id="username"
+                      type="text"
+                      value={username}
+                      placeholder="janedoe@gmail.com"
+                      autoComplete="username"
+                      onChange={(event) => setUsername(event.target.value)}
+                      required
+                    />
+                    <FieldDescription>
+                      Required. Must be 5-32 characters.
+                    </FieldDescription>
+                  </Field>
+                  <FieldSet className="gap-2">
+                    <FieldLegend variant="label" className="text-left">
+                      Display name
+                    </FieldLegend>
+                    <div className="border-l border-border pl-4">
+                      <FieldGroup>
+                      <Field>
+                        <FieldLabel htmlFor="first-name">
+                          First name <span className="text-destructive">*</span>
+                        </FieldLabel>
+                        <Input
+                          id="first-name"
+                          type="text"
+                          value={firstName}
+                          autoComplete="given-name"
+                          onChange={(event) => setFirstName(event.target.value)}
+                          required
+                        />
+                      </Field>
+                      <Field>
+                        <FieldLabel htmlFor="last-name">
+                          Last name{" "}
+                          <span className="text-muted-foreground">
+                            (optional)
+                          </span>
+                        </FieldLabel>
+                        <Input
+                          id="last-name"
+                          type="text"
+                          value={lastName}
+                          autoComplete="family-name"
+                          onChange={(event) => setLastName(event.target.value)}
+                        />
+                      </Field>
+                      </FieldGroup>
+                    </div>
+                  </FieldSet>
+                  <Field>
+                    <FieldLabel htmlFor="bio">
+                      Bio{" "}
+                      <span className="text-muted-foreground">(optional)</span>
+                    </FieldLabel>
+                    <Input
+                      id="bio"
+                      type="text"
+                      value={bio}
+                      maxLength={70}
+                      onChange={(event) => setBio(event.target.value)}
+                    />
+                    <FieldDescription>Up to 70 characters.</FieldDescription>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="avatar-url">
+                      Avatar URL{" "}
+                      <span className="text-muted-foreground">(optional)</span>
+                    </FieldLabel>
+                    <Input
+                      id="avatar-url"
+                      type="url"
+                      value={avatarUrl}
+                      placeholder="/favicon.svg"
+                      onChange={(event) => setAvatarUrl(event.target.value)}
+                    />
+                    <FieldDescription>
+                      Optional. Defaults to the Messenger icon.
+                    </FieldDescription>
+                  </Field>
+                  <Field>
+                    <PasswordField
+                      id="signup-password"
+                      label="Password"
+                      value={password}
+                      onChange={setPassword}
+                      autoComplete="new-password"
+                      required
+                    />
+                    <FieldDescription>
+                      Required. Must be at least 8 characters long.
+                    </FieldDescription>
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="confirm-password">
+                      Confirm password{" "}
+                      <span className="text-destructive">*</span>
+                    </FieldLabel>
+                    <Input
+                      id="confirm-password"
+                      type="password"
+                      value={confirmPassword}
+                      autoComplete="new-password"
+                      onChange={(event) =>
+                        setConfirmPassword(event.target.value)
+                      }
+                      required
+                    />
+                    <FieldDescription>
+                      Please confirm your password.
+                    </FieldDescription>
+                    {!passwordsMatch &&
+                      confirmPassword.length > 0 &&
+                      password.length > 0 && (
+                        <FieldDescription className="text-red-600">
+                          Passwords must match.
+                        </FieldDescription>
+                      )}
+                  </Field>
+                  {error && (
+                    <Alert variant="destructive">
+                      <AlertCircleIcon />
+                      <AlertTitle>Unable to process your signup.</AlertTitle>
+                      <AlertDescription>
+                        <p>Please verify your information and try again.</p>
+                        <ul className="list-inside list-disc text-sm">
+                          <li>{error}</li>
+                        </ul>
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  <FieldGroup>
+                    <Field>
+                      <Button
+                        type="submit"
+                        disabled={loading || !passwordsMatch}
+                      >
+                        {loading ? "Creating account…" : "Create account"}
+                      </Button>
+                      <FieldDescription className="px-6 text-center text-sm text-muted-foreground">
+                        Already have an account?{" "}
+                        <button
+                          type="button"
+                          onClick={onGoToLogin}
+                          className="font-medium text-primary underline-offset-4 underline hover:text-primary/70"
+                        >
+                          Sign in
+                        </button>
+                      </FieldDescription>
+                    </Field>
+                  </FieldGroup>
+                </FieldGroup>
+              </form>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    </div>
+  );
+}
