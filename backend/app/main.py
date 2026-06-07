@@ -187,7 +187,7 @@ def login(payload: LoginRequest, response: Response, session: SessionDep):
         httponly=True,
         secure=False,  # True in production with HTTPS
         samesite="lax",  # "none" only if cross-site + HTTPS
-        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES,
     )
     return user
 
@@ -245,7 +245,7 @@ def signup(user_create: UserCreate, response: Response, session: SessionDep):
         httponly=True,
         secure=False,  # True in production with HTTPS
         samesite="lax",  # "none" only if cross-site + HTTPS
-        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES,
     )
 
     return user
@@ -268,6 +268,7 @@ async def connect(sid, environ, auth):
     try:
         payload = jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = int(payload["sub"])
+        token_expires_at = payload["exp"]
     except Exception:
         raise ConnectionRefusedError("Invalid token")
 
@@ -282,6 +283,7 @@ async def connect(sid, environ, auth):
             {
                 "user_id": user.id,
                 "username": user.username,
+                "token_expires_at": token_expires_at,
             },
         )
 
@@ -298,6 +300,11 @@ async def disconnect(sid, reason):
 
 @sio.event
 async def join_room(sid, room):
+    session = await sio.get_session(sid)
+
+    if datetime.now(timezone.utc).timestamp() >= session["token_expires_at"]:
+        await sio.disconnect(sid)
+        return
     if not room:
         return
     await sio.enter_room(sid, room)
@@ -305,6 +312,11 @@ async def join_room(sid, room):
 
 @sio.event
 async def leave_room(sid, room):
+    session = await sio.get_session(sid)
+
+    if datetime.now(timezone.utc).timestamp() >= session["token_expires_at"]:
+        await sio.disconnect(sid)
+        return
     if not room:
         return
     await sio.leave_room(sid, room)
@@ -315,6 +327,10 @@ async def message(sid, data):
     session = await sio.get_session(sid)
     sender_id = session["user_id"]
     sender_username = session["username"]
+
+    if datetime.now(timezone.utc).timestamp() >= session["token_expires_at"]:
+        await sio.disconnect(sid)
+        return
 
     content = data.get("content", "").strip()
     conversation_id = data.get("conversation_id")

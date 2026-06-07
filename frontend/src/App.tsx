@@ -52,9 +52,11 @@ function toAuthUser(authUser: AuthResponse): AuthUser {
 function ChatScreen({
   user,
   onSignOut,
+  onSessionExpired,
 }: {
   user: AuthUser;
   onSignOut: () => void;
+  onSessionExpired: () => void;
 }) {
   const [activeConversationId, setActiveConversationId] = useState<number>(
     conversations[0].id,
@@ -86,10 +88,24 @@ function ChatScreen({
     });
 
     socket.on("disconnect", (reason) => {
+      if (reason === "io server disconnect") {
+        onSessionExpired();
+        return;
+      }
+
       setStatus(reason);
     });
 
     socket.on("connect_error", (error) => {
+      if (
+        ["Not authenticated", "Invalid token", "User not found"].some(
+          (message) => error.message.includes(message),
+        )
+      ) {
+        onSessionExpired();
+        return;
+      }
+
       setStatus("Connection failed");
       setConnectionError(error.message);
     });
@@ -98,7 +114,7 @@ function ChatScreen({
       socket.disconnect();
       socketRef.current = null;
     };
-  }, [user.userId]);
+  }, [onSessionExpired, user.userId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -328,6 +344,11 @@ export default function App() {
     setAuthView("login");
   };
 
+  const handleSessionExpired = () => {
+    setUser(null);
+    setAuthView("login");
+  };
+
   if (checkingAuth) {
     return (
       <main className="chat-shell">
@@ -352,5 +373,11 @@ export default function App() {
     );
   }
 
-  return <ChatScreen user={user} onSignOut={handleSignOut} />;
+  return (
+    <ChatScreen
+      user={user}
+      onSignOut={handleSignOut}
+      onSessionExpired={handleSessionExpired}
+    />
+  );
 }
