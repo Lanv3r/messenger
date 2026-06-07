@@ -5,11 +5,12 @@ export async function apiFetch<T>(path: string, options?: RequestInit) {
 
   try {
     response = await fetch(`${API_URL}${path}`, {
+      ...options,
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
         ...options?.headers,
       },
-      ...options,
     });
   } catch (error) {
     if (error instanceof TypeError) {

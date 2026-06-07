@@ -31,8 +31,23 @@ type AuthUser = {
   lastName: string | null;
 };
 
+type AuthResponse = {
+  id: number;
+  username: string;
+  first_name: string;
+  last_name: string | null;
+};
+
 const conversations = [{ id: 1, title: "General" }] as const;
-const storageKey = "messenger-user";
+
+function toAuthUser(authUser: AuthResponse): AuthUser {
+  return {
+    userId: authUser.id,
+    username: authUser.username,
+    firstName: authUser.first_name,
+    lastName: authUser.last_name,
+  };
+}
 
 function ChatScreen({
   user,
@@ -52,7 +67,9 @@ function ChatScreen({
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
-    const socket: Socket = io(API_URL);
+    const socket: Socket = io(API_URL, {
+      withCredentials: true,
+    });
     socketRef.current = socket;
 
     socket.on("connect", () => {
@@ -136,13 +153,9 @@ function ChatScreen({
       isOwn: true,
     };
 
-    setMessages((current) => [
-      ...current,
-      optimisticMessage,
-    ]);
+    setMessages((current) => [...current, optimisticMessage]);
     socket.emit("message", {
       conversation_id: activeConversationId,
-      sender_id: user.userId,
       content: outgoingMessage,
       message_type: "text",
     });
@@ -267,45 +280,63 @@ function ChatScreen({
 
 export default function App() {
   const [authView, setAuthView] = useState<"login" | "signup">("login");
-  const [user, setUser] = useState<AuthUser | null>(() => {
-    if (typeof window === "undefined") {
-      return null;
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    let ignore = false;
+
+    async function loadCurrentUser() {
+      try {
+        const currentUser = await apiFetch<AuthResponse>("/users/me/");
+
+        if (!ignore) {
+          setUser(toAuthUser(currentUser));
+        }
+      } catch {
+        if (!ignore) {
+          setUser(null);
+        }
+      } finally {
+        if (!ignore) {
+          setCheckingAuth(false);
+        }
+      }
     }
 
-    const saved = window.localStorage.getItem(storageKey);
-    if (!saved) {
-      return null;
-    }
+    loadCurrentUser();
 
-    try {
-      return JSON.parse(saved) as AuthUser;
-    } catch {
-      window.localStorage.removeItem(storageKey);
-      return null;
-    }
-  });
-
-  const handleAuthSuccess = (authUser: {
-    id: number;
-    username: string;
-    first_name: string;
-    last_name: string | null;
-  }) => {
-    const nextUser = {
-      userId: authUser.id,
-      username: authUser.username,
-      firstName: authUser.first_name,
-      lastName: authUser.last_name,
+    return () => {
+      ignore = true;
     };
-    setUser(nextUser);
-    window.localStorage.setItem(storageKey, JSON.stringify(nextUser));
+  }, []);
+
+  const handleAuthSuccess = (authUser: AuthResponse) => {
+    setUser(toAuthUser(authUser));
   };
 
-  const handleSignOut = () => {
+  const handleSignOut = async () => {
+    try {
+      await apiFetch<{ ok: boolean }>("/logout", {
+        method: "POST",
+      });
+    } catch (error) {
+      console.error(error);
+    }
+
     setUser(null);
-    window.localStorage.removeItem(storageKey);
     setAuthView("login");
   };
+
+  if (checkingAuth) {
+    return (
+      <main className="chat-shell">
+        <section className="chat-card">
+          <p className="status-copy">Checking your session...</p>
+        </section>
+      </main>
+    );
+  }
 
   if (!user) {
     return authView === "login" ? (

@@ -1,7 +1,12 @@
+import os
 import re
+from datetime import datetime, timedelta, timezone
+from http.cookies import SimpleCookie
+from typing import Annotated
 
+import jwt
 import socketio
-from fastapi import FastAPI, HTTPException
+from fastapi import Cookie, Depends, FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from pwdlib import PasswordHash
 from sqlmodel import Session, col, select
@@ -26,6 +31,44 @@ fastapi_app.add_middleware(
     allow_headers=["*"],
 )
 
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise ValueError("SECRET_KEY is not set")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+
+
+def create_access_token(data: dict, expires_delta: timedelta | None = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.now(timezone.utc) + expires_delta
+    else:
+        expire = datetime.now(timezone.utc) + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+
+async def get_current_user(
+    session: SessionDep, access_token: str | None = Cookie(default=None)
+):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+    )
+    if access_token is None:
+        raise credentials_exception
+    try:
+        payload = jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = int(payload["sub"])
+    except Exception:
+        raise credentials_exception
+    user = session.get(User, user_id)
+    if user is None:
+        raise credentials_exception
+    return user
+
+
 password_hash = PasswordHash.recommended()
 
 
@@ -40,6 +83,29 @@ def get_password_hash(password):
 def is_valid_username(s: str) -> bool:
     pattern = r"^[a-z0-9_]+$"
     return re.fullmatch(pattern, s) is not None
+
+
+def get_cookie_from_environ(environ: dict, key: str) -> str | None:
+    cookie_header = environ.get("HTTP_COOKIE")
+
+    if not cookie_header:
+        scope = environ.get("asgi.scope", {})
+        headers = scope.get("headers", [])
+        for name, value in headers:
+            if name == b"cookie":
+                cookie_header = value.decode()
+                break
+
+    if not cookie_header:
+        return None
+
+    cookie = SimpleCookie()
+    cookie.load(cookie_header)
+
+    if key not in cookie:
+        return None
+
+    return cookie[key].value
 
 
 def serialize_message(message: Message, sender_username: str | None = None):
@@ -60,12 +126,34 @@ def serialize_message(message: Message, sender_username: str | None = None):
     }
 
 
-@fastapi_app.get("/rooms/{conversation_id}/messages", response_model=list[MessagePublic])
-def get_room_messages(conversation_id: int, session: SessionDep):
+@fastapi_app.get("/users/me/", response_model=UserPublic)
+async def read_users_me(
+    current_user: Annotated[User, Depends(get_current_user)],
+) -> User:
+    return current_user
+
+
+@fastapi_app.post("/logout")
+def logout(response: Response):
+    response.delete_cookie("access_token")
+    return {"ok": True}
+
+
+@fastapi_app.get(
+    "/rooms/{conversation_id}/messages",
+    response_model=list[MessagePublic],
+)
+def get_room_messages(
+    conversation_id: int,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
     messages = session.exec(
         select(Message).where(Message.conversation_id == conversation_id)
     ).all()
-    sender_ids = {message.sender_id for message in messages if message.sender_id is not None}
+    sender_ids = {
+        message.sender_id for message in messages if message.sender_id is not None
+    }
     users = (
         session.exec(select(User).where(col(User.id).in_(sender_ids))).all()
         if sender_ids
@@ -80,61 +168,87 @@ def get_room_messages(conversation_id: int, session: SessionDep):
 
 
 @fastapi_app.post("/login", response_model=UserPublic)
-def login(payload: LoginRequest, session: SessionDep):
+def login(payload: LoginRequest, response: Response, session: SessionDep):
     # look up user in users.db
-    stmt = select(User).where(User.username == payload.username)
-    existing_user = session.exec(stmt).first()
-    if existing_user is None:
-        raise HTTPException(status_code=409, detail="Username not registered")
-
-    # validate password
-    if not verify_password(payload.password, existing_user.password_hash):
-        raise HTTPException(status_code=401, detail="Incorrect password")
-    return existing_user
+    stmt = select(User).where(User.username == payload.username.lower())
+    user = session.exec(stmt).first()
+    # validate login
+    if user is None or not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Incorrect username or password")
+    # create token
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": str(user.id)}, expires_delta=access_token_expires
+    )
+    # set HttpOnly cookie
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=False,  # True in production with HTTPS
+        samesite="lax",  # "none" only if cross-site + HTTPS
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+    return user
 
 
 @fastapi_app.post("/signup", response_model=UserPublic)
-def signup(user_create: UserCreate, session: SessionDep):
+def signup(user_create: UserCreate, response: Response, session: SessionDep):
     # check if username is valid
     if not user_create.username:
-        return HTTPException(status_code=400, detail="Username is invalid")
+        raise HTTPException(status_code=400, detail="Username is invalid")
     if len(user_create.username) < 5:
-        return HTTPException(
+        raise HTTPException(
             status_code=400, detail="Username must be at least 5 characters"
         )
     if len(user_create.username) > 32:
-        return HTTPException(
+        raise HTTPException(
             status_code=400, detail="Maximum username length is 32 characters"
         )
     if not is_valid_username(user_create.username.lower()):
-        return HTTPException(
+        raise HTTPException(
             status_code=400,
             detail="Username can include only a-z, 0-9, and underscores.",
         )
 
     # check if user already exists
-    stmt = select(User).where(User.username == user_create.username)
+    stmt = select(User).where(User.username == user_create.username.lower())
     existing_user = session.exec(stmt).first()
     if existing_user is not None:
         raise HTTPException(status_code=409, detail="Username already registered")
 
     # check if password is strong enough
     if len(user_create.password) < 8:
-        return HTTPException(status_code=400, detail="Password is too short")
+        raise HTTPException(status_code=400, detail="Password is too short")
 
     # create new user
-    db_user = User.model_validate(
+    user = User.model_validate(
         user_create,
         update={
             "username": user_create.username.lower(),
             "password_hash": get_password_hash(user_create.password),
         },
     )
-    session.add(db_user)
+    session.add(user)
     session.commit()
-    session.refresh(db_user)
+    session.refresh(user)
 
-    return db_user
+    # create token
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": str(user.id)}, expires_delta=access_token_expires
+    )
+    # set HttpOnly cookie
+    response.set_cookie(
+        key="access_token",
+        value=access_token,
+        httponly=True,
+        secure=False,  # True in production with HTTPS
+        samesite="lax",  # "none" only if cross-site + HTTPS
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
+    return user
 
 
 # Socket.IO server
@@ -146,7 +260,30 @@ sio = socketio.AsyncServer(
 
 @sio.event
 async def connect(sid, environ, auth):
-    print("Client connected: %s", sid)
+    access_token = get_cookie_from_environ(environ, "access_token")
+
+    if access_token is None:
+        raise ConnectionRefusedError("Not authenticated")
+
+    try:
+        payload = jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = int(payload["sub"])
+    except Exception:
+        raise ConnectionRefusedError("Invalid token")
+
+    with Session(engine) as session:
+        user = session.get(User, user_id)
+
+        if user is None:
+            raise ConnectionRefusedError("User not found")
+
+        await sio.save_session(
+            sid,
+            {
+                "user_id": user.id,
+                "username": user.username,
+            },
+        )
 
 
 @sio.event
@@ -175,9 +312,12 @@ async def leave_room(sid, room):
 
 @sio.event
 async def message(sid, data):
+    session = await sio.get_session(sid)
+    sender_id = session["user_id"]
+    sender_username = session["username"]
+
     content = data.get("content", "").strip()
     conversation_id = data.get("conversation_id")
-    sender_id = data.get("sender_id")
 
     if not content or not conversation_id:
         return
@@ -194,11 +334,10 @@ async def message(sid, data):
         session.add(message)
         session.commit()
         session.refresh(message)
-        sender = session.get(User, sender_id) if sender_id is not None else None
 
     await sio.emit(
         "message",
-        serialize_message(message, sender.username if sender else None),
+        serialize_message(message, sender_username),
         room=str(conversation_id),
         skip_sid=sid,
     )
