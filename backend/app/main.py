@@ -126,6 +126,44 @@ def serialize_message(message: Message, sender_username: str | None = None):
     }
 
 
+@fastapi_app.get("/users/username-availability")
+def check_username_availability(username: str, session: SessionDep):
+    normalized_username = username.strip().lower()
+
+    if not normalized_username:
+        return {
+            "available": False,
+            "message": "Username is required.",
+        }
+    if len(normalized_username) < 5:
+        return {
+            "available": False,
+            "message": "Username must be at least 5 characters.",
+        }
+    if len(normalized_username) > 32:
+        return {
+            "available": False,
+            "message": "Username must be at most 32 characters.",
+        }
+    if not is_valid_username(normalized_username):
+        return {
+            "available": False,
+            "message": "Username can include only a-z, 0-9, and underscores.",
+        }
+    user = session.exec(
+        select(User).where(User.username == normalized_username)
+    ).first()
+    if user is not None:
+        return {
+            "available": False,
+            "message": "Username is already taken.",
+        }
+    return {
+        "available": True,
+        "message": "Username is available.",
+    }
+
+
 @fastapi_app.get("/users/me/", response_model=UserPublic)
 async def read_users_me(
     current_user: Annotated[User, Depends(get_current_user)],

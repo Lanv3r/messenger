@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { AlertCircleIcon } from "lucide-react";
+import { AlertCircleIcon, CheckCircle2Icon, XCircleIcon } from "lucide-react";
 import {
   Field,
   FieldDescription,
@@ -33,8 +33,18 @@ type SignupProps = {
   onGoToLogin: () => void;
 };
 
+type UsernameAvailabilityResponse = {
+  available: boolean;
+  message: string;
+};
+
+type UsernameStatus = "idle" | "checking" | "available" | "unavailable";
+
 export default function Signup({ onSuccess, onGoToLogin }: SignupProps) {
   const [username, setUsername] = useState("");
+  const [usernameStatus, setUsernameStatus] =
+    useState<UsernameStatus>("idle");
+  const [usernameMessage, setUsernameMessage] = useState<string | null>(null);
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [bio, setBio] = useState("");
@@ -44,6 +54,46 @@ export default function Signup({ onSuccess, onGoToLogin }: SignupProps) {
   const passwordsMatch = password === confirmPassword && password.length > 0;
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const value = username.trim();
+
+    if (!value) {
+      setUsernameStatus("idle");
+      setUsernameMessage(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(async () => {
+      setUsernameStatus("checking");
+      setUsernameMessage("Checking username...");
+
+      try {
+        const result = await apiFetch<UsernameAvailabilityResponse>(
+          `/users/username-availability?username=${encodeURIComponent(value)}`,
+          {
+            signal: controller.signal,
+          },
+        );
+
+        setUsernameStatus(result.available ? "available" : "unavailable");
+        setUsernameMessage(result.message);
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") {
+          return;
+        }
+
+        setUsernameStatus("unavailable");
+        setUsernameMessage("Could not check username right now.");
+      }
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [username]);
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -56,6 +106,9 @@ export default function Signup({ onSuccess, onGoToLogin }: SignupProps) {
       }
       if (username.trim().length < 5) {
         throw new Error("Username must be at least 5 characters.");
+      }
+      if (usernameStatus !== "available") {
+        throw new Error("Please choose an available username.");
       }
       if (!firstName.trim()) {
         throw new Error("First name is required.");
@@ -121,9 +174,28 @@ export default function Signup({ onSuccess, onGoToLogin }: SignupProps) {
                       onChange={(event) => setUsername(event.target.value)}
                       required
                     />
-                    <FieldDescription>
-                      Required. Must be 5-32 characters.
-                    </FieldDescription>
+                    {usernameStatus === "idle" ? (
+                      <FieldDescription>
+                        Required. Must be 5-32 characters.
+                      </FieldDescription>
+                    ) : (
+                      <FieldDescription
+                        className={`flex items-center gap-1.5 ${
+                          usernameStatus === "available"
+                            ? "text-green-600"
+                            : usernameStatus === "unavailable"
+                              ? "text-destructive"
+                              : "text-muted-foreground"
+                        }`}
+                      >
+                        {usernameStatus === "available" ? (
+                          <CheckCircle2Icon className="size-4" />
+                        ) : usernameStatus === "unavailable" ? (
+                          <XCircleIcon className="size-4" />
+                        ) : null}
+                        {usernameMessage}
+                      </FieldDescription>
+                    )}
                   </Field>
                   <FieldSet className="gap-2">
                     <FieldLegend variant="label" className="text-left">
