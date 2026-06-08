@@ -246,7 +246,9 @@
 
 #messages li {
   display: grid;
-  gap: 6px;
+  grid-template-columns: 38px minmax(0, 1fr);
+  align-items: start;
+  gap: 10px;
   max-width: 80%;
   padding: 14px 16px;
   border-radius: 18px;
@@ -266,11 +268,26 @@
 }
 
 #messages li.empty-state {
+  grid-template-columns: 1fr;
   max-width: 100%;
   place-items: center;
   text-align: center;
   color: #6b7280;
   background: rgba(133, 144, 167, 0.08);
+}
+
+.message-avatar {
+  width: 38px;
+  height: 38px;
+  border-radius: 999px;
+  object-fit: cover;
+  background: rgba(133, 144, 167, 0.16);
+}
+
+.message-copy {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
 }
 
 .sender {

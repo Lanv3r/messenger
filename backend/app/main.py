@@ -109,12 +109,17 @@ def get_cookie_from_environ(environ: dict, key: str) -> str | None:
     return cookie[key].value
 
 
-def serialize_message(message: Message, sender_username: str | None = None):
+def serialize_message(
+    message: Message,
+    sender_username: str | None = None,
+    sender_avatar_url: str | None = None,
+):
     return {
         "id": message.id,
         "conversation_id": message.conversation_id,
         "sender_id": message.sender_id,
         "sender_username": sender_username,
+        "sender_avatar_url": sender_avatar_url,
         "content": message.content,
         "message_type": message.message_type,
         "reply_to_message_id": message.reply_to_message_id,
@@ -213,12 +218,22 @@ def get_room_messages(
         if sender_ids
         else []
     )
-    usernames_by_id = {user.id: user.username for user in users}
+    users_by_id = {user.id: user for user in users}
 
-    return [
-        serialize_message(message, usernames_by_id.get(message.sender_id))
-        for message in messages
-    ]
+    serialized_messages = []
+
+    for message in messages:
+        sender = users_by_id.get(message.sender_id)
+
+        serialized_messages.append(
+            serialize_message(
+                message,
+                sender.username if sender else None,
+                sender.avatar_url if sender else None,
+            )
+        )
+
+    return serialized_messages
 
 
 @fastapi_app.post("/login", response_model=UserPublic)
@@ -403,6 +418,7 @@ async def connect(sid, environ, auth):
             {
                 "user_id": user.id,
                 "username": user.username,
+                "avatar_url": user.avatar_url,
                 "token_expires_at": token_expires_at,
             },
         )
@@ -447,6 +463,7 @@ async def message(sid, data):
     session = await sio.get_session(sid)
     sender_id = session["user_id"]
     sender_username = session["username"]
+    sender_avatar_url = session["avatar_url"]
 
     if datetime.now(timezone.utc).timestamp() >= session["token_expires_at"]:
         await sio.disconnect(sid)
@@ -473,7 +490,7 @@ async def message(sid, data):
 
     await sio.emit(
         "message",
-        serialize_message(message, sender_username),
+        serialize_message(message, sender_username, sender_avatar_url),
         room=str(conversation_id),
         skip_sid=sid,
     )

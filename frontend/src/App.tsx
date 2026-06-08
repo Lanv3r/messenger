@@ -12,6 +12,7 @@ type ChatMessage = {
   conversation_id: number;
   sender_id: number | null;
   sender_username: string | null;
+  sender_avatar_url?: string | null;
   content: string | null;
   message_type: string;
   reply_to_message_id: number | null;
@@ -195,6 +196,7 @@ function ChatScreen({
       conversation_id: activeConversationId,
       sender_id: user.userId,
       sender_username: user.username,
+      sender_avatar_url: user.avatarUrl,
       content: outgoingMessage,
       message_type: "text",
       reply_to_message_id: null,
@@ -332,6 +334,14 @@ function ChatScreen({
     }
 
     return entry.sender_username ?? `User ${entry.sender_id}`;
+  };
+
+  const getSenderAvatar = (entry: ChatMessage) => {
+    if (entry.sender_id === user.userId) {
+      return user.avatarUrl;
+    }
+
+    return entry.sender_avatar_url ?? "/favicon.svg";
   };
 
   return (
@@ -487,8 +497,18 @@ function ChatScreen({
                 key={`${entry.sender_id ?? "system"}-${entry.id ?? index}`}
                 className={entry.isOwn ? "you" : "server"}
               >
-                <span className="sender">{getSenderName(entry)}</span>
-                <span>{entry.content}</span>
+                <img
+                  src={getSenderAvatar(entry)}
+                  alt=""
+                  className="message-avatar"
+                  onError={(event) => {
+                    event.currentTarget.src = "/favicon.svg";
+                  }}
+                />
+                <div className="message-copy">
+                  <span className="sender">{getSenderName(entry)}</span>
+                  <span>{entry.content}</span>
+                </div>
               </li>
             ))
           )}

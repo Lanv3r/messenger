@@ -220,6 +220,7 @@ class Message(MessageBase, table=True):
 class MessagePublic(MessageBase):
     id: int
     sender_username: str | None = None
+    sender_avatar_url: str | None = None
     created_at: datetime
     updated_at: datetime
     edited_at: datetime | None = None
