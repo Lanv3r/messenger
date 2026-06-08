@@ -38,6 +38,12 @@ type AuthResponse = {
   last_name: string | null;
 };
 
+type UserProfile = AuthResponse & {
+  bio: string | null;
+  avatar_url: string;
+  status: string;
+};
+
 const conversations = [{ id: 1, title: "General" }] as const;
 
 function toAuthUser(authUser: AuthResponse): AuthUser {
@@ -66,6 +72,10 @@ function ChatScreen({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState("Connecting...");
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [profileQuery, setProfileQuery] = useState("");
+  const [profileResult, setProfileResult] = useState<UserProfile | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [profileLoading, setProfileLoading] = useState(false);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -201,6 +211,43 @@ function ChatScreen({
     setActiveConversationId(conversationId);
   };
 
+  const handleProfileSearch = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    const username = profileQuery.trim();
+
+    if (!username) {
+      setProfileResult(null);
+      setProfileError("Enter a username to search.");
+      return;
+    }
+
+    setProfileLoading(true);
+    setProfileError(null);
+
+    try {
+      const profile = await apiFetch<UserProfile>(
+        `/users/by-username/${encodeURIComponent(username)}`,
+      );
+
+      setProfileResult(profile);
+    } catch (error) {
+      setProfileResult(null);
+
+      const message =
+        error instanceof Error ? error.message : "Unable to find that user.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setProfileError(message);
+    } finally {
+      setProfileLoading(false);
+    }
+  };
+
   const activeConversation = conversations.find(
     (conversation) => conversation.id === activeConversationId,
   );
@@ -250,6 +297,44 @@ function ChatScreen({
             </Button>
           </div>
         </header>
+
+        <section className="profile-search" aria-label="Search user profiles">
+          <form className="profile-search-form" onSubmit={handleProfileSearch}>
+            <input
+              type="search"
+              value={profileQuery}
+              placeholder="Search username"
+              autoComplete="off"
+              onChange={(event) => setProfileQuery(event.target.value)}
+            />
+            <Button type="submit" disabled={profileLoading}>
+              {profileLoading ? "Searching..." : "Search"}
+            </Button>
+          </form>
+          {profileError ? (
+            <p className="profile-error">{profileError}</p>
+          ) : null}
+          {profileResult ? (
+            <article className="profile-card">
+              <img
+                src={profileResult.avatar_url}
+                alt=""
+                className="profile-avatar"
+              />
+              <div>
+                <h2>
+                  {profileResult.first_name}
+                  {profileResult.last_name ? ` ${profileResult.last_name}` : ""}
+                </h2>
+                <p className="profile-username">@{profileResult.username}</p>
+                {profileResult.bio ? (
+                  <p className="profile-bio">{profileResult.bio}</p>
+                ) : null}
+                <span className="profile-status">{profileResult.status}</span>
+              </div>
+            </article>
+          ) : null}
+        </section>
 
         <ul id="messages">
           {messages.length === 0 ? (

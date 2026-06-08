@@ -164,6 +164,21 @@ def check_username_availability(username: str, session: SessionDep):
     }
 
 
+@fastapi_app.get("/users/by-username/{username}", response_model=UserPublic)
+def get_user_by_username(
+    username: str,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    normalized_username = username.strip().lower()
+    user = session.exec(
+        select(User).where(User.username == normalized_username)
+    ).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return user
+
+
 @fastapi_app.get("/users/me/", response_model=UserPublic)
 async def read_users_me(
     current_user: Annotated[User, Depends(get_current_user)],
@@ -225,7 +240,7 @@ def login(payload: LoginRequest, response: Response, session: SessionDep):
         httponly=True,
         secure=False,  # True in production with HTTPS
         samesite="lax",  # "none" only if cross-site + HTTPS
-        max_age=ACCESS_TOKEN_EXPIRE_MINUTES,
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
     return user
 
@@ -283,7 +298,7 @@ def signup(user_create: UserCreate, response: Response, session: SessionDep):
         httponly=True,
         secure=False,  # True in production with HTTPS
         samesite="lax",  # "none" only if cross-site + HTTPS
-        max_age=ACCESS_TOKEN_EXPIRE_MINUTES,
+        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 
     return user
