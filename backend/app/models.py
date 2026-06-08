@@ -56,6 +56,13 @@ class UserUpdate(UserBase):
     deleted_at: datetime | None = None
 
 
+class UserProfileUpdate(SQLModel):
+    first_name: str | None = Field(default=None, max_length=64)
+    last_name: str | None = Field(default=None, max_length=64)
+    bio: str | None = Field(default=None, max_length=70)
+    avatar_url: str | None = None
+
+
 class LoginRequest(SQLModel):
     username: str
     password: str

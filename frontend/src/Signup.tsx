@@ -211,6 +211,7 @@ export default function Signup({ onSuccess, onGoToLogin }: SignupProps) {
                           id="first-name"
                           type="text"
                           value={firstName}
+                          maxLength={64}
                           autoComplete="given-name"
                           onChange={(event) => setFirstName(event.target.value)}
                           required
@@ -227,6 +228,7 @@ export default function Signup({ onSuccess, onGoToLogin }: SignupProps) {
                           id="last-name"
                           type="text"
                           value={lastName}
+                          maxLength={64}
                           autoComplete="family-name"
                           onChange={(event) => setLastName(event.target.value)}
                         />

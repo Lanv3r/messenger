@@ -264,6 +264,27 @@ def signup(user_create: UserCreate, response: Response, session: SessionDep):
             detail="Username can include only a-z, 0-9, and underscores.",
         )
 
+    # check if first name is valid
+    if user_create.first_name is not None and len(user_create.first_name.strip()) > 64:
+        raise HTTPException(
+            status_code=400,
+            detail="First name must be at most 64 characters.",
+        )
+
+    # check if last name is valid
+    if user_create.last_name is not None and len(user_create.last_name.strip()) > 64:
+        raise HTTPException(
+            status_code=400,
+            detail="Last name must be at most 64 characters.",
+        )
+
+    # chek if bio is valid
+    if user_create.bio is not None and len(user_create.bio.strip()) > 70:
+        raise HTTPException(
+            status_code=400,
+            detail="Bio must be at most 70 characters.",
+        )
+
     # check if user already exists
     stmt = select(User).where(User.username == user_create.username.lower())
     existing_user = session.exec(stmt).first()
