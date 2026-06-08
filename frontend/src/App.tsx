@@ -29,6 +29,9 @@ type AuthUser = {
   username: string;
   firstName: string;
   lastName: string | null;
+  bio: string | null;
+  avatarUrl: string;
+  status: string;
 };
 
 type AuthResponse = {
@@ -36,6 +39,9 @@ type AuthResponse = {
   username: string;
   first_name: string;
   last_name: string | null;
+  bio?: string | null;
+  avatar_url?: string;
+  status?: string;
 };
 
 type UserProfile = AuthResponse & {
@@ -52,6 +58,9 @@ function toAuthUser(authUser: AuthResponse): AuthUser {
     username: authUser.username,
     firstName: authUser.first_name,
     lastName: authUser.last_name,
+    bio: authUser.bio ?? null,
+    avatarUrl: authUser.avatar_url ?? "/favicon.svg",
+    status: authUser.status ?? "online",
   };
 }
 
@@ -59,10 +68,12 @@ function ChatScreen({
   user,
   onSignOut,
   onSessionExpired,
+  onUserUpdated,
 }: {
   user: AuthUser;
   onSignOut: () => void;
   onSessionExpired: () => void;
+  onUserUpdated: (user: AuthResponse) => void;
 }) {
   const [activeConversationId, setActiveConversationId] = useState<number>(
     conversations[0].id,
@@ -76,6 +87,16 @@ function ChatScreen({
   const [profileResult, setProfileResult] = useState<UserProfile | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
   const [profileLoading, setProfileLoading] = useState(false);
+  const [editingProfile, setEditingProfile] = useState(false);
+  const [profileFirstName, setProfileFirstName] = useState(user.firstName);
+  const [profileLastName, setProfileLastName] = useState(user.lastName ?? "");
+  const [profileBio, setProfileBio] = useState(user.bio ?? "");
+  const [profileAvatarUrl, setProfileAvatarUrl] = useState(user.avatarUrl);
+  const [profileSaveError, setProfileSaveError] = useState<string | null>(null);
+  const [profileSaveMessage, setProfileSaveMessage] = useState<string | null>(
+    null,
+  );
+  const [profileSaving, setProfileSaving] = useState(false);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -154,6 +175,13 @@ function ChatScreen({
       controller.abort();
     };
   }, [activeConversationId]);
+
+  useEffect(() => {
+    setProfileFirstName(user.firstName);
+    setProfileLastName(user.lastName ?? "");
+    setProfileBio(user.bio ?? "");
+    setProfileAvatarUrl(user.avatarUrl);
+  }, [user]);
 
   const handleSend = () => {
     const socket = socketRef.current;
@@ -248,6 +276,48 @@ function ChatScreen({
     }
   };
 
+  const handleProfileUpdate = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!profileFirstName.trim()) {
+      setProfileSaveMessage(null);
+      setProfileSaveError("First name is required.");
+      return;
+    }
+
+    setProfileSaving(true);
+    setProfileSaveError(null);
+    setProfileSaveMessage(null);
+
+    try {
+      const updatedUser = await apiFetch<AuthResponse>("/users/me/", {
+        method: "PATCH",
+        body: JSON.stringify({
+          first_name: profileFirstName.trim(),
+          last_name: profileLastName.trim() || null,
+          bio: profileBio.trim() || null,
+          avatar_url: profileAvatarUrl.trim() || "/favicon.svg",
+        }),
+      });
+
+      onUserUpdated(updatedUser);
+      setProfileSaveMessage("Profile updated.");
+      setEditingProfile(false);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to update profile.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setProfileSaveError(message);
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
   const activeConversation = conversations.find(
     (conversation) => conversation.id === activeConversationId,
   );
@@ -292,11 +362,83 @@ function ChatScreen({
             {connectionError ? (
               <p className="status-copy">{connectionError}</p>
             ) : null}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setEditingProfile((current) => !current);
+                setProfileSaveError(null);
+                setProfileSaveMessage(null);
+              }}
+            >
+              {editingProfile ? "Close profile" : "Edit profile"}
+            </Button>
             <Button variant="outline" size="sm" onClick={onSignOut}>
               Sign out
             </Button>
           </div>
         </header>
+
+        {editingProfile ? (
+          <section className="profile-editor" aria-label="Edit your profile">
+            <div className="profile-editor-header">
+              <img src={profileAvatarUrl} alt="" className="profile-avatar" />
+              <div>
+                <h2>Edit profile</h2>
+                <p>@{user.username}</p>
+              </div>
+            </div>
+            <form className="profile-editor-form" onSubmit={handleProfileUpdate}>
+              <label>
+                First name
+                <input
+                  type="text"
+                  value={profileFirstName}
+                  maxLength={64}
+                  onChange={(event) => setProfileFirstName(event.target.value)}
+                  required
+                />
+              </label>
+              <label>
+                Last name
+                <input
+                  type="text"
+                  value={profileLastName}
+                  maxLength={64}
+                  onChange={(event) => setProfileLastName(event.target.value)}
+                />
+              </label>
+              <label>
+                Bio
+                <textarea
+                  value={profileBio}
+                  maxLength={70}
+                  rows={3}
+                  onChange={(event) => setProfileBio(event.target.value)}
+                />
+                <span>{profileBio.length}/70</span>
+              </label>
+              <label>
+                Avatar URL
+                <input
+                  type="url"
+                  value={profileAvatarUrl}
+                  placeholder="/favicon.svg"
+                  onChange={(event) => setProfileAvatarUrl(event.target.value)}
+                />
+              </label>
+              {profileSaveError ? (
+                <p className="profile-error">{profileSaveError}</p>
+              ) : null}
+              {profileSaveMessage ? (
+                <p className="profile-success">{profileSaveMessage}</p>
+              ) : null}
+              <Button type="submit" disabled={profileSaving}>
+                {profileSaving ? "Saving..." : "Save profile"}
+              </Button>
+            </form>
+          </section>
+        ) : null}
 
         <section className="profile-search" aria-label="Search user profiles">
           <form className="profile-search-form" onSubmit={handleProfileSearch}>
@@ -416,6 +558,10 @@ export default function App() {
     setUser(toAuthUser(authUser));
   };
 
+  const handleUserUpdated = (authUser: AuthResponse) => {
+    setUser(toAuthUser(authUser));
+  };
+
   const handleSignOut = async () => {
     try {
       await apiFetch<{ ok: boolean }>("/logout", {
@@ -463,6 +609,7 @@ export default function App() {
       user={user}
       onSignOut={handleSignOut}
       onSessionExpired={handleSessionExpired}
+      onUserUpdated={handleUserUpdated}
     />
   );
 }

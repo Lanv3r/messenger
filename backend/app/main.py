@@ -18,6 +18,7 @@ from app.models import (
     MessagePublic,
     User,
     UserCreate,
+    UserProfileUpdate,
     UserPublic,
 )
 
@@ -323,6 +324,51 @@ def signup(user_create: UserCreate, response: Response, session: SessionDep):
     )
 
     return user
+
+
+@fastapi_app.patch("/users/me/", response_model=UserPublic)
+def update_me(
+    payload: UserProfileUpdate,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    update_data = payload.model_dump(exclude_unset=True)
+
+    first_name = update_data.get("first_name", None)
+    last_name = update_data.get("last_name", None)
+    bio = update_data.get("bio", None)
+
+    # check if first name is valid
+    if first_name is not None and len(first_name.strip()) > 64:
+        raise HTTPException(
+            status_code=400,
+            detail="First name must be at most 64 characters.",
+        )
+
+    # check if last name is valid
+    if last_name is not None and len(last_name.strip()) > 64:
+        raise HTTPException(
+            status_code=400,
+            detail="Last name must be at most 64 characters.",
+        )
+
+    # chek if bio is valid
+    if bio is not None and len(bio.strip()) > 70:
+        raise HTTPException(
+            status_code=400,
+            detail="Bio must be at most 70 characters.",
+        )
+
+    for key, value in update_data.items():
+        setattr(current_user, key, value)
+
+    current_user.updated_at = datetime.now(timezone.utc)
+
+    session.add(current_user)
+    session.commit()
+    session.refresh(current_user)
+
+    return current_user
 
 
 # Socket.IO server
