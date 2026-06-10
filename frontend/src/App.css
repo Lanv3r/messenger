@@ -447,6 +447,25 @@
   gap: 5px;
 }
 
+.message-meta {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0.64;
+}
+
+.message-status.failed {
+  color: #b42318;
+}
+
+#messages li.you .message-status.failed {
+  color: #ffe0dc;
+}
+
 .message-time {
   justify-self: end;
   font-size: 11px;

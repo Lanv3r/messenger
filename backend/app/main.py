@@ -17,6 +17,7 @@ from app.models import (
     Conversation,
     ConversationListItem,
     ConversationParticipant,
+    ConversationReadRequest,
     DirectMessageCreate,
     DirectMessageResponse,
     LoginRequest,
@@ -447,6 +448,8 @@ def get_conversations(
         if conversation.type == "self":
             display_title = "Saved Messages"
             display_avatar_url = SAVED_MESSAGES_AVATAR_URL
+            other_last_read_at = None
+            other_last_read_message_id = None
 
         elif conversation.type == "direct":
             other_participant = session.exec(
@@ -468,6 +471,8 @@ def get_conversations(
                         else other_user.first_name
                     )
                     display_avatar_url = other_user.avatar_url
+                    other_last_read_message_id = other_participant.last_read_message_id
+                    other_last_read_at = other_participant.last_read_at
 
         if conversation.id is None or conversation.created_at is None:
             raise HTTPException(
@@ -497,6 +502,8 @@ def get_conversations(
                 last_message_created_at=last_message.created_at
                 if last_message
                 else None,
+                other_last_read_message_id=other_last_read_message_id,
+                other_last_read_at=other_last_read_at,
                 created_at=conversation.created_at,
                 updated_at=conversation.updated_at,
             )
@@ -639,6 +646,46 @@ def create_direct_message(
         }
 
 
+@fastapi_app.post("/conversations/{conversation_id}/read")
+async def conversation_read(
+    payload: ConversationReadRequest,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    participant = session.exec(
+        select(ConversationParticipant).where(
+            ConversationParticipant.conversation_id == payload.conversation_id,
+            ConversationParticipant.user_id == user_id,
+        )
+    ).first()
+    if participant is None:
+        raise HTTPException(status_code=403, detail="Not a participant")
+    participant.last_read_message_id = payload.last_read_message_id
+    participant.last_read_at = datetime.now(timezone.utc)
+
+    session.add(participant)
+    session.commit()
+    session.refresh(participant)
+
+    await sio.emit(
+        "conversation_read",
+        {
+            "conversation_id": payload.conversation_id,
+            "user_id": user_id,
+            "last_read_message_id": participant.last_read_message_id,
+            "last_read_at": participant.last_read_at.isoformat()
+            if participant.last_read_at
+            else None,
+        },
+        room=str(payload.conversation_id),
+    )
+
+    return {"ok": True}
+
+
 # Socket.IO server
 sio = socketio.AsyncServer(
     async_mode="asgi",
@@ -741,12 +788,23 @@ async def message(sid, data):
         session.commit()
         session.refresh(message)
 
+    serialized_message = serialize_message(
+        message,
+        sender_username,
+        sender_avatar_url,
+    )
+
     await sio.emit(
         "message",
-        serialize_message(message, sender_username, sender_avatar_url),
+        serialized_message,
         room=str(conversation_id),
         skip_sid=sid,
     )
+
+    return {
+        "ok": True,
+        "message": serialized_message,
+    }
 
 
 # Final ASGI app: Socket.IO + FastAPI

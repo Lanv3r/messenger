@@ -257,6 +257,8 @@ class ConversationListItem(SQLModel):
     last_message_created_at: datetime | None = None
     last_message_text: str | None = None
     last_message_sender_id: int | None = None
+    other_last_read_message_id: int | None = None
+    other_last_read_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -269,3 +271,8 @@ class DirectMessageCreate(SQLModel):
 class DirectMessageResponse(SQLModel):
     conversation: ConversationListItem
     message: MessagePublic
+
+
+class ConversationReadRequest(SQLModel):
+    conversation_id: int
+    last_read_message_id: int

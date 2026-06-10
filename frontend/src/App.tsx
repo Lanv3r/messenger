@@ -23,6 +23,8 @@ type ChatMessage = {
   is_pinned: boolean;
   metadata?: Record<string, unknown>;
   isOwn?: boolean;
+  delivery_status?: "sending" | "sent" | "read" | "failed";
+  temp_id?: string;
 };
 
 type AuthUser = {
@@ -64,6 +66,8 @@ type Conversation = {
   last_message_text: string | null;
   last_message_sender_id: number | null;
   last_message_created_at: string | null;
+  other_last_read_message_id: number | null;
+  other_last_read_at: string | null;
   deleted_at: string | null;
   created_at: string;
   updated_at: string;
@@ -72,6 +76,19 @@ type Conversation = {
 type DirectMessageResponse = {
   conversation: Conversation;
   message: ChatMessage;
+};
+
+type MessageAck = {
+  ok: boolean;
+  message?: ChatMessage;
+  error?: string;
+};
+
+type ConversationReadEvent = {
+  conversation_id: number;
+  user_id: number;
+  last_read_message_id: number;
+  last_read_at: string | null;
 };
 
 function applyLastMessagePreview(
@@ -120,6 +137,16 @@ function updateConversationPreview(
   }
 
   return upsertConversationPreview(conversations, existingConversation, message);
+}
+
+function replaceTemporaryMessage(
+  messages: ChatMessage[],
+  tempId: string,
+  nextMessage: ChatMessage,
+) {
+  return messages.map((message) =>
+    message.temp_id === tempId ? nextMessage : message,
+  );
 }
 
 function toAuthUser(authUser: AuthResponse): AuthUser {
@@ -196,6 +223,24 @@ function ChatScreen({
         { ...data, isOwn: data.sender_id === user.userId },
       ]);
       setConversations((current) => updateConversationPreview(current, data));
+    });
+
+    socket.on("conversation_read", (data: ConversationReadEvent) => {
+      if (data.user_id === user.userId) {
+        return;
+      }
+
+      setConversations((current) =>
+        current.map((conversation) =>
+          conversation.id === data.conversation_id
+            ? {
+                ...conversation,
+                other_last_read_message_id: data.last_read_message_id,
+                other_last_read_at: data.last_read_at,
+              }
+            : conversation,
+        ),
+      );
     });
 
     socket.on("disconnect", (reason) => {
@@ -298,6 +343,39 @@ function ChatScreen({
   }, [activeConversationId]);
 
   useEffect(() => {
+    if (activeConversationId === null || messages.length === 0) {
+      return;
+    }
+
+    const lastPersistedMessage = [...messages]
+      .reverse()
+      .find(
+        (entry) =>
+          entry.delivery_status !== "sending" &&
+          entry.delivery_status !== "failed",
+      );
+
+    if (!lastPersistedMessage) {
+      return;
+    }
+
+    apiFetch<{ ok: boolean }>(`/conversations/${activeConversationId}/read`, {
+      method: "POST",
+      body: JSON.stringify({
+        conversation_id: activeConversationId,
+        last_read_message_id: lastPersistedMessage.id,
+      }),
+    }).catch((error) => {
+      if (
+        error instanceof Error &&
+        error.message === "Could not validate credentials"
+      ) {
+        onSessionExpired();
+      }
+    });
+  }, [activeConversationId, messages, onSessionExpired]);
+
+  useEffect(() => {
     setProfileFirstName(user.firstName);
     setProfileLastName(user.lastName ?? "");
     setProfileBio(user.bio ?? "");
@@ -311,8 +389,31 @@ function ChatScreen({
     }
 
     const outgoingMessage = message.trim();
+    const tempId = crypto.randomUUID();
+    const optimisticMessage: ChatMessage = {
+      id: Date.now(),
+      conversation_id: activeConversationId ?? 0,
+      sender_id: user.userId,
+      sender_username: user.username,
+      sender_avatar_url: user.avatarUrl,
+      content: outgoingMessage,
+      message_type: "text",
+      reply_to_message_id: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      edited_at: null,
+      deleted_at: null,
+      is_pinned: false,
+      metadata: {},
+      isOwn: true,
+      delivery_status: "sending",
+      temp_id: tempId,
+    };
 
     if (draftRecipient) {
+      setMessages([optimisticMessage]);
+      setMessage("");
+
       try {
         const result = await apiFetch<DirectMessageResponse>(
           "/messages/direct",
@@ -331,10 +432,19 @@ function ChatScreen({
         activeConversationIdRef.current = result.conversation.id;
         setActiveConversationId(result.conversation.id);
         setDraftRecipient(null);
-        setMessages([{ ...result.message, isOwn: true }]);
+        setMessages([
+          { ...result.message, isOwn: true, delivery_status: "sent" },
+        ]);
         socket?.emit("join_room", String(result.conversation.id));
-        setMessage("");
       } catch (error) {
+        setMessages((current) =>
+          current.map((entry) =>
+            entry.temp_id === tempId
+              ? { ...entry, delivery_status: "failed" }
+              : entry,
+          ),
+        );
+
         const errorMessage =
           error instanceof Error ? error.message : "Unable to send message.";
 
@@ -353,34 +463,44 @@ function ChatScreen({
       return;
     }
 
-    const optimisticMessage: ChatMessage = {
-      id: Date.now(),
-      conversation_id: activeConversationId,
-      sender_id: user.userId,
-      sender_username: user.username,
-      sender_avatar_url: user.avatarUrl,
-      content: outgoingMessage,
-      message_type: "text",
-      reply_to_message_id: null,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-      edited_at: null,
-      deleted_at: null,
-      is_pinned: false,
-      metadata: {},
-      isOwn: true,
-    };
-
     setMessages((current) => [...current, optimisticMessage]);
     setConversations((current) =>
       updateConversationPreview(current, optimisticMessage),
     );
-    socket.emit("message", {
-      conversation_id: activeConversationId,
-      content: outgoingMessage,
-      message_type: "text",
-    });
     setMessage("");
+    socket.emit(
+      "message",
+      {
+        conversation_id: activeConversationId,
+        content: outgoingMessage,
+        message_type: "text",
+      },
+      (response: MessageAck) => {
+        if (!response?.ok || !response.message) {
+          setMessages((current) =>
+            current.map((entry) =>
+              entry.temp_id === tempId
+                ? { ...entry, delivery_status: "failed" }
+                : entry,
+            ),
+          );
+          return;
+        }
+
+        const confirmedMessage = {
+          ...response.message,
+          isOwn: true,
+          delivery_status: "sent" as const,
+        };
+
+        setMessages((current) =>
+          replaceTemporaryMessage(current, tempId, confirmedMessage),
+        );
+        setConversations((current) =>
+          updateConversationPreview(current, confirmedMessage),
+        );
+      },
+    );
   };
 
   const handleRetry = () => {
@@ -582,6 +702,41 @@ function ChatScreen({
     }
 
     return entry.sender_avatar_url ?? "/favicon.svg";
+  };
+
+  const getMessageDeliveryLabel = (entry: ChatMessage) => {
+    if (entry.sender_id !== user.userId) {
+      return null;
+    }
+
+    if (entry.delivery_status === "sending") {
+      return "Sending";
+    }
+
+    if (entry.delivery_status === "failed") {
+      return "Failed";
+    }
+
+    const otherLastReadMessageId =
+      activeConversation?.other_last_read_message_id;
+
+    if (
+      otherLastReadMessageId !== null &&
+      otherLastReadMessageId !== undefined &&
+      entry.id <= otherLastReadMessageId
+    ) {
+      if (
+        entry.id === otherLastReadMessageId &&
+        activeConversation?.other_last_read_at
+      ) {
+        const readAt = formatConversationTime(activeConversation.other_last_read_at);
+        return readAt ? `Read ${readAt}` : "Read";
+      }
+
+      return "Read";
+    }
+
+    return "Sent";
   };
 
   return (
@@ -816,6 +971,7 @@ function ChatScreen({
           ) : (
             messages.map((entry, index) => {
               const sentAt = formatConversationTime(entry.created_at);
+              const deliveryLabel = getMessageDeliveryLabel(entry);
 
               return (
                 <li
@@ -833,11 +989,22 @@ function ChatScreen({
                   <div className="message-copy">
                     <span className="sender">{getSenderName(entry)}</span>
                     <span>{entry.content}</span>
-                    {sentAt && entry.created_at ? (
-                      <time className="message-time" dateTime={entry.created_at}>
-                        {sentAt}
-                      </time>
-                    ) : null}
+                    <span className="message-meta">
+                      {sentAt && entry.created_at ? (
+                        <time dateTime={entry.created_at}>{sentAt}</time>
+                      ) : null}
+                      {deliveryLabel ? (
+                        <span
+                          className={
+                            entry.delivery_status === "failed"
+                              ? "message-status failed"
+                              : "message-status"
+                          }
+                        >
+                          {deliveryLabel}
+                        </span>
+                      ) : null}
+                    </span>
                   </div>
                 </li>
               );
