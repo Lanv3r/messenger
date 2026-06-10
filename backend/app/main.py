@@ -14,10 +14,10 @@ from sqlmodel import Session, col, select
 
 from app.db import SessionDep, engine
 from app.models import (
-    Conversation,
-    ConversationListItem,
-    ConversationParticipant,
-    ConversationReadRequest,
+    Chat,
+    ChatListItem,
+    ChatParticipant,
+    ChatReadRequest,
     DirectMessageCreate,
     DirectMessageResponse,
     LoginRequest,
@@ -124,7 +124,7 @@ def serialize_message(
 ):
     return {
         "id": message.id,
-        "conversation_id": message.conversation_id,
+        "chat_id": message.chat_id,
         "sender_id": message.sender_id,
         "sender_username": sender_username,
         "sender_avatar_url": sender_avatar_url,
@@ -207,17 +207,15 @@ def logout(response: Response):
 
 
 @fastapi_app.get(
-    "/rooms/{conversation_id}/messages",
+    "/chats/{chat_id}/messages",
     response_model=list[MessagePublic],
 )
-def get_room_messages(
-    conversation_id: int,
+def get_chat_messages(
+    chat_id: int,
     session: SessionDep,
     current_user: Annotated[User, Depends(get_current_user)],
 ):
-    messages = session.exec(
-        select(Message).where(Message.conversation_id == conversation_id)
-    ).all()
+    messages = session.exec(select(Message).where(Message.chat_id == chat_id)).all()
     sender_ids = {
         message.sender_id for message in messages if message.sender_id is not None
     }
@@ -335,7 +333,7 @@ def signup(user_create: UserCreate, response: Response, session: SessionDep):
     if user.id is None:
         raise HTTPException(status_code=500, detail="User creation failed")
 
-    self_chat = Conversation(
+    self_chat = Chat(
         type="self",
         title="Saved Messages",
         description=None,
@@ -350,8 +348,8 @@ def signup(user_create: UserCreate, response: Response, session: SessionDep):
         raise HTTPException(status_code=500, detail="Self Chat creation failed")
 
     session.add(
-        ConversationParticipant(
-            conversation_id=self_chat.id,
+        ChatParticipant(
+            chat_id=self_chat.id,
             user_id=user.id,
             role="owner",
         )
@@ -423,40 +421,38 @@ def update_me(
     return current_user
 
 
-@fastapi_app.get("/conversations", response_model=list[ConversationListItem])
-def get_conversations(
+@fastapi_app.get("/chats", response_model=list[ChatListItem])
+def get_chats(
     session: SessionDep,
     current_user: Annotated[User, Depends(get_current_user)],
 ):
     current_user_id = current_user.id
     if current_user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
-    conversation_ids = select(ConversationParticipant.conversation_id).where(
-        ConversationParticipant.user_id == current_user_id,
-        col(ConversationParticipant.left_at).is_(None),
+    chat_ids = select(ChatParticipant.chat_id).where(
+        ChatParticipant.user_id == current_user_id,
+        col(ChatParticipant.left_at).is_(None),
     )
-    conversations = session.exec(
-        select(Conversation).where(col(Conversation.id).in_(conversation_ids))
-    ).all()
+    chats = session.exec(select(Chat).where(col(Chat.id).in_(chat_ids))).all()
     result = []
 
-    for conversation in conversations:
-        display_title = conversation.title
-        display_avatar_url = conversation.avatar_url
+    for chat in chats:
+        display_title = chat.title
+        display_avatar_url = chat.avatar_url
         other_user_id = None
 
-        if conversation.type == "self":
+        if chat.type == "self":
             display_title = "Saved Messages"
             display_avatar_url = SAVED_MESSAGES_AVATAR_URL
             other_last_read_at = None
             other_last_read_message_id = None
 
-        elif conversation.type == "direct":
+        elif chat.type == "direct":
             other_participant = session.exec(
-                select(ConversationParticipant).where(
-                    ConversationParticipant.conversation_id == conversation.id,
-                    ConversationParticipant.user_id != current_user_id,
-                    col(ConversationParticipant.left_at).is_(None),
+                select(ChatParticipant).where(
+                    ChatParticipant.chat_id == chat.id,
+                    ChatParticipant.user_id != current_user_id,
+                    col(ChatParticipant.left_at).is_(None),
                 )
             ).first()
 
@@ -474,26 +470,26 @@ def get_conversations(
                     other_last_read_message_id = other_participant.last_read_message_id
                     other_last_read_at = other_participant.last_read_at
 
-        if conversation.id is None or conversation.created_at is None:
+        if chat.id is None or chat.created_at is None:
             raise HTTPException(
                 status_code=500,
-                detail="Conversation was not fetched correctly",
+                detail="Chat was not fetched correctly",
             )
 
         last_message = session.exec(
             select(Message)
-            .where(Message.conversation_id == conversation.id)
+            .where(Message.chat_id == chat.id)
             .order_by(col(Message.created_at).desc())
         ).first()
 
         result.append(
-            ConversationListItem(
-                id=conversation.id,
-                type=conversation.type,
-                title=conversation.title,
-                description=conversation.description,
-                avatar_url=conversation.avatar_url,
-                display_title=display_title or "Conversation",
+            ChatListItem(
+                id=chat.id,
+                type=chat.type,
+                title=chat.title,
+                description=chat.description,
+                avatar_url=chat.avatar_url,
+                display_title=display_title or "Chat",
                 display_avatar_url=display_avatar_url,
                 other_user_id=other_user_id,
                 last_message_id=last_message.id if last_message else None,
@@ -504,8 +500,8 @@ def get_conversations(
                 else None,
                 other_last_read_message_id=other_last_read_message_id,
                 other_last_read_at=other_last_read_at,
-                created_at=conversation.created_at,
-                updated_at=conversation.updated_at,
+                created_at=chat.created_at,
+                updated_at=chat.updated_at,
             )
         )
 
@@ -531,61 +527,61 @@ def create_direct_message(
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
     if payload.recipient_id == sender_id:
-        conversation = session.exec(
-            select(Conversation)
+        chat = session.exec(
+            select(Chat)
             .join(
-                ConversationParticipant,
-                col(ConversationParticipant.conversation_id) == col(Conversation.id),
+                ChatParticipant,
+                col(ChatParticipant.chat_id) == col(Chat.id),
             )
             .where(
-                Conversation.type == "self",
-                ConversationParticipant.user_id == sender_id,
+                Chat.type == "self",
+                ChatParticipant.user_id == sender_id,
             )
         ).first()
     else:
         participant_ids = [sender_id, payload.recipient_id]
-        matching_conversation_ids = (
-            select(col(ConversationParticipant.conversation_id))
-            .where(col(ConversationParticipant.user_id).in_(participant_ids))
-            .group_by(col(ConversationParticipant.conversation_id))
-            .having(func.count(col(ConversationParticipant.user_id)) == 2)
+        matching_chat_ids = (
+            select(col(ChatParticipant.chat_id))
+            .where(col(ChatParticipant.user_id).in_(participant_ids))
+            .group_by(col(ChatParticipant.chat_id))
+            .having(func.count(col(ChatParticipant.user_id)) == 2)
         )
 
-        conversation = session.exec(
-            select(Conversation).where(
-                Conversation.type == "direct",
-                col(Conversation.id).in_(matching_conversation_ids),
+        chat = session.exec(
+            select(Chat).where(
+                Chat.type == "direct",
+                col(Chat.id).in_(matching_chat_ids),
             )
         ).first()
 
-        if conversation is None:
-            conversation = Conversation(
+        if chat is None:
+            chat = Chat(
                 type="direct",
                 title=None,
                 description=None,
                 avatar_url=recipient.avatar_url,
             )
 
-            session.add(conversation)
+            session.add(chat)
             session.commit()
-            session.refresh(conversation)
+            session.refresh(chat)
 
-            if conversation.id is None:
+            if chat.id is None:
                 raise HTTPException(
                     status_code=500,
-                    detail="Conversation was not created correctly",
+                    detail="Chat was not created correctly",
                 )
 
             session.add(
-                ConversationParticipant(
-                    conversation_id=conversation.id,
+                ChatParticipant(
+                    chat_id=chat.id,
                     user_id=sender_id,
                     role="member",
                 )
             )
             session.add(
-                ConversationParticipant(
-                    conversation_id=conversation.id,
+                ChatParticipant(
+                    chat_id=chat.id,
                     user_id=payload.recipient_id,
                     role="member",
                 )
@@ -593,13 +589,13 @@ def create_direct_message(
 
             session.commit()
 
-        if conversation.id is None:
+        if chat.id is None:
             raise HTTPException(
                 status_code=500,
-                detail="Conversation was not fetched correctly",
+                detail="Chat was not fetched correctly",
             )
         message = Message(
-            conversation_id=conversation.id,
+            chat_id=chat.id,
             sender_id=sender_id,
             content=content,
             message_type="text",
@@ -607,18 +603,18 @@ def create_direct_message(
         session.add(message)
         session.commit()
         session.refresh(message)
-        session.refresh(conversation)
+        session.refresh(chat)
 
         return {
-            "conversation": ConversationListItem(
-                id=conversation.id,
-                type=conversation.type,
-                title=conversation.title,
-                description=conversation.description,
-                avatar_url=conversation.avatar_url,
+            "chat": ChatListItem(
+                id=chat.id,
+                type=chat.type,
+                title=chat.title,
+                description=chat.description,
+                avatar_url=chat.avatar_url,
                 display_title=(
                     "Saved Messages"
-                    if conversation.type == "self"
+                    if chat.type == "self"
                     else (
                         f"{recipient.first_name} {recipient.last_name}"
                         if recipient.last_name
@@ -627,16 +623,16 @@ def create_direct_message(
                 ),
                 display_avatar_url=(
                     current_user.avatar_url
-                    if conversation.type == "self"
+                    if chat.type == "self"
                     else recipient.avatar_url
                 ),
-                other_user_id=None if conversation.type == "self" else recipient.id,
+                other_user_id=None if chat.type == "self" else recipient.id,
                 last_message_id=message.id,
                 last_message_text=message.content,
                 last_message_sender_id=message.sender_id,
                 last_message_created_at=message.created_at,
-                created_at=conversation.created_at,
-                updated_at=conversation.updated_at,
+                created_at=chat.created_at,
+                updated_at=chat.updated_at,
             ),
             "message": serialize_message(
                 message,
@@ -646,9 +642,10 @@ def create_direct_message(
         }
 
 
-@fastapi_app.post("/conversations/{conversation_id}/read")
-async def conversation_read(
-    payload: ConversationReadRequest,
+@fastapi_app.post("/chats/{chat_id}/read")
+async def chat_read(
+    chat_id: int,
+    payload: ChatReadRequest,
     session: SessionDep,
     current_user: Annotated[User, Depends(get_current_user)],
 ):
@@ -656,9 +653,9 @@ async def conversation_read(
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
     participant = session.exec(
-        select(ConversationParticipant).where(
-            ConversationParticipant.conversation_id == payload.conversation_id,
-            ConversationParticipant.user_id == user_id,
+        select(ChatParticipant).where(
+            ChatParticipant.chat_id == chat_id,
+            ChatParticipant.user_id == user_id,
         )
     ).first()
     if participant is None:
@@ -671,16 +668,16 @@ async def conversation_read(
     session.refresh(participant)
 
     await sio.emit(
-        "conversation_read",
+        "chat_read",
         {
-            "conversation_id": payload.conversation_id,
+            "chat_id": chat_id,
             "user_id": user_id,
             "last_read_message_id": participant.last_read_message_id,
             "last_read_at": participant.last_read_at.isoformat()
             if participant.last_read_at
             else None,
         },
-        room=str(payload.conversation_id),
+        room=str(chat_id),
     )
 
     return {"ok": True}
@@ -770,14 +767,14 @@ async def message(sid, data):
         return
 
     content = data.get("content", "").strip()
-    conversation_id = data.get("conversation_id")
+    chat_id = data.get("chat_id")
 
-    if not content or not conversation_id:
+    if not content or not chat_id:
         return
 
     with Session(engine) as session:
         message = Message(
-            conversation_id=conversation_id,
+            chat_id=chat_id,
             sender_id=sender_id,
             content=content,
             message_type=data.get("message_type", "text"),
@@ -797,7 +794,7 @@ async def message(sid, data):
     await sio.emit(
         "message",
         serialized_message,
-        room=str(conversation_id),
+        room=str(chat_id),
         skip_sid=sid,
     )
 

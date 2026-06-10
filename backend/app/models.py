@@ -68,7 +68,7 @@ class LoginRequest(SQLModel):
     password: str
 
 
-class ConversationBase(SQLModel):
+class ChatBase(SQLModel):
     type: str = Field(max_length=32)
     title: str | None = Field(default=None, max_length=128)
     description: str | None = Field(default=None, max_length=255)
@@ -77,8 +77,8 @@ class ConversationBase(SQLModel):
     deleted_at: datetime | None = Field(default=None, sa_type=DateTime)
 
 
-class Conversation(ConversationBase, table=True):
-    __tablename__: ClassVar[str] = "conversations"
+class Chat(ChatBase, table=True):
+    __tablename__: ClassVar[str] = "chats"
 
     id: int | None = Field(default=None, primary_key=True)
     created_at: datetime | None = Field(
@@ -97,17 +97,17 @@ class Conversation(ConversationBase, table=True):
     )
 
 
-class ConversationPublic(ConversationBase):
+class ChatPublic(ChatBase):
     id: int
     created_at: datetime
     updated_at: datetime
 
 
-class ConversationCreate(ConversationBase):
+class ChatCreate(ChatBase):
     pass
 
 
-class ConversationUpdate(ConversationBase):
+class ChatUpdate(ChatBase):
     type: str | None = None
     title: str | None = None
     description: str | None = None
@@ -116,8 +116,8 @@ class ConversationUpdate(ConversationBase):
     deleted_at: datetime | None = None
 
 
-class ConversationParticipantBase(SQLModel):
-    conversation_id: int = Field(foreign_key="conversations.id", ondelete="CASCADE")
+class ChatParticipantBase(SQLModel):
+    chat_id: int = Field(foreign_key="chats.id", ondelete="CASCADE")
     user_id: int = Field(foreign_key="users.id", ondelete="CASCADE")
     role: str = Field(default="member", max_length=20)
     last_read_message_id: int | None = None
@@ -127,13 +127,13 @@ class ConversationParticipantBase(SQLModel):
     is_archived: bool = False
 
 
-class ConversationParticipant(ConversationParticipantBase, table=True):
-    __tablename__: ClassVar[str] = "conversation_participants"
+class ChatParticipant(ChatParticipantBase, table=True):
+    __tablename__: ClassVar[str] = "chat_participants"
     __table_args__ = (
         UniqueConstraint(
-            "conversation_id",
+            "chat_id",
             "user_id",
-            name="uq_conversation_participants_conversation_id_user_id",
+            name="uq_chat_participants_chat_id_user_id",
         ),
     )
 
@@ -146,18 +146,18 @@ class ConversationParticipant(ConversationParticipantBase, table=True):
     left_at: datetime | None = Field(default=None, sa_type=DateTime)
 
 
-class ConversationParticipantPublic(ConversationParticipantBase):
+class ChatParticipantPublic(ChatParticipantBase):
     id: int
     joined_at: datetime
     left_at: datetime | None = None
 
 
-class ConversationParticipantCreate(ConversationParticipantBase):
+class ChatParticipantCreate(ChatParticipantBase):
     pass
 
 
-class ConversationParticipantUpdate(ConversationParticipantBase):
-    conversation_id: int | None = None
+class ChatParticipantUpdate(ChatParticipantBase):
+    chat_id: int | None = None
     user_id: int | None = None
     role: str | None = None
     last_read_message_id: int | None = None
@@ -169,7 +169,7 @@ class ConversationParticipantUpdate(ConversationParticipantBase):
 
 
 class MessageBase(SQLModel):
-    conversation_id: int = Field(foreign_key="conversations.id", ondelete="CASCADE")
+    chat_id: int = Field(foreign_key="chats.id", ondelete="CASCADE")
     sender_id: int | None = Field(
         default=None,
         foreign_key="users.id",
@@ -233,7 +233,7 @@ class MessageCreate(MessageBase):
 
 
 class MessageUpdate(MessageBase):
-    conversation_id: int | None = None
+    chat_id: int | None = None
     sender_id: int | None = None
     content: str | None = None
     message_type: str | None = None
@@ -244,7 +244,7 @@ class MessageUpdate(MessageBase):
     is_pinned: bool | None = None
 
 
-class ConversationListItem(SQLModel):
+class ChatListItem(SQLModel):
     id: int
     type: str
     title: str | None = None
@@ -269,10 +269,9 @@ class DirectMessageCreate(SQLModel):
 
 
 class DirectMessageResponse(SQLModel):
-    conversation: ConversationListItem
+    chat: ChatListItem
     message: MessagePublic
 
 
-class ConversationReadRequest(SQLModel):
-    conversation_id: int
+class ChatReadRequest(SQLModel):
     last_read_message_id: int
