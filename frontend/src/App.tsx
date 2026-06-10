@@ -201,6 +201,7 @@ function ChatScreen({
     null,
   );
   const [profileSaving, setProfileSaving] = useState(false);
+  const messagesRef = useRef<HTMLUListElement | null>(null);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -374,6 +375,18 @@ function ChatScreen({
       }
     });
   }, [activeChatId, messages, onSessionExpired]);
+
+  useEffect(() => {
+    const messagesElement = messagesRef.current;
+
+    if (!messagesElement) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      messagesElement.scrollTop = messagesElement.scrollHeight;
+    });
+  }, [activeChatId, messages.length]);
 
   useEffect(() => {
     setProfileFirstName(user.firstName);
@@ -965,7 +978,7 @@ function ChatScreen({
           <p className="profile-error">{chatError}</p>
         ) : null}
 
-        <ul id="messages">
+        <ul id="messages" ref={messagesRef}>
           {messages.length === 0 ? (
             <li className="empty-state">No messages yet in this chat.</li>
           ) : (
