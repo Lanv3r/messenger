@@ -91,6 +91,11 @@ type ChatReadEvent = {
   last_read_at: string | null;
 };
 
+type ChatUpdatedEvent = {
+  chat_id: number;
+  last_message: ChatMessage;
+};
+
 function applyLastMessagePreview(
   chat: Chat,
   message: ChatMessage,
@@ -224,6 +229,27 @@ function ChatScreen({
         { ...data, isOwn: data.sender_id === user.userId },
       ]);
       setChats((current) => updateChatPreview(current, data));
+    });
+
+    socket.on("chat_updated", (data: ChatUpdatedEvent) => {
+      setChats((current) => updateChatPreview(current, data.last_message));
+
+      apiFetch<Chat[]>("/chats")
+        .then((loadedChats) => {
+          setChats(loadedChats);
+          setChatError(null);
+        })
+        .catch((error) => {
+          const message =
+            error instanceof Error ? error.message : "Unable to load chats.";
+
+          if (message === "Could not validate credentials") {
+            onSessionExpired();
+            return;
+          }
+
+          setChatError(message);
+        });
     });
 
     socket.on("chat_read", (data: ChatReadEvent) => {

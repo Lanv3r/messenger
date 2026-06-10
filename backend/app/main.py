@@ -440,12 +440,12 @@ def get_chats(
         display_title = chat.title
         display_avatar_url = chat.avatar_url
         other_user_id = None
+        other_last_read_at = None
+        other_last_read_message_id = None
 
         if chat.type == "self":
             display_title = "Saved Messages"
             display_avatar_url = SAVED_MESSAGES_AVATAR_URL
-            other_last_read_at = None
-            other_last_read_message_id = None
 
         elif chat.type == "direct":
             other_participant = session.exec(
@@ -478,9 +478,15 @@ def get_chats(
 
         last_message = session.exec(
             select(Message)
-            .where(Message.chat_id == chat.id)
+            .where(
+                Message.chat_id == chat.id,
+                col(Message.deleted_at).is_(None),
+            )
             .order_by(col(Message.created_at).desc())
         ).first()
+
+        if last_message is None and chat.type != "self":
+            continue
 
         result.append(
             ChatListItem(
@@ -504,12 +510,15 @@ def get_chats(
                 updated_at=chat.updated_at,
             )
         )
-
+    result.sort(
+        key=lambda chat: chat.last_message_created_at or chat.created_at,
+        reverse=True,
+    )
     return result
 
 
 @fastapi_app.post("/messages/direct", response_model=DirectMessageResponse)
-def create_direct_message(
+async def create_direct_message(
     payload: DirectMessageCreate,
     session: SessionDep,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -527,6 +536,7 @@ def create_direct_message(
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
     if payload.recipient_id == sender_id:
+        participant_ids = [sender_id]
         chat = session.exec(
             select(Chat)
             .join(
@@ -563,8 +573,7 @@ def create_direct_message(
             )
 
             session.add(chat)
-            session.commit()
-            session.refresh(chat)
+            session.flush()
 
             if chat.id is None:
                 raise HTTPException(
@@ -587,59 +596,83 @@ def create_direct_message(
                 )
             )
 
-            session.commit()
-
-        if chat.id is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Chat was not fetched correctly",
-            )
-        message = Message(
-            chat_id=chat.id,
-            sender_id=sender_id,
-            content=content,
-            message_type="text",
+    if chat is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Chat was not found",
         )
-        session.add(message)
-        session.commit()
-        session.refresh(message)
-        session.refresh(chat)
 
-        return {
-            "chat": ChatListItem(
-                id=chat.id,
-                type=chat.type,
-                title=chat.title,
-                description=chat.description,
-                avatar_url=chat.avatar_url,
-                display_title=(
-                    "Saved Messages"
-                    if chat.type == "self"
-                    else (
-                        f"{recipient.first_name} {recipient.last_name}"
-                        if recipient.last_name
-                        else recipient.first_name
-                    )
-                ),
-                display_avatar_url=(
-                    current_user.avatar_url
-                    if chat.type == "self"
-                    else recipient.avatar_url
-                ),
-                other_user_id=None if chat.type == "self" else recipient.id,
-                last_message_id=message.id,
-                last_message_text=message.content,
-                last_message_sender_id=message.sender_id,
-                last_message_created_at=message.created_at,
-                created_at=chat.created_at,
-                updated_at=chat.updated_at,
+    if chat.id is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Chat was not fetched correctly",
+        )
+
+    message = Message(
+        chat_id=chat.id,
+        sender_id=sender_id,
+        content=content,
+        message_type="text",
+    )
+    session.add(message)
+    session.flush()
+    session.refresh(message)
+
+    # update chat
+    chat.last_message_id = message.id
+    chat.updated_at = message.created_at
+
+    session.commit()
+    session.refresh(message)
+    session.refresh(chat)
+
+    serialized_message = serialize_message(
+        message,
+        current_user.username,
+        current_user.avatar_url,
+    )
+
+    chat_update = {
+        "chat_id": chat.id,
+        "last_message": serialized_message,
+    }
+
+    for participant_id in participant_ids:
+        await sio.emit(
+            "chat_updated",
+            chat_update,
+            room=f"user:{participant_id}",
+        )
+
+    return {
+        "chat": ChatListItem(
+            id=chat.id,
+            type=chat.type,
+            title=chat.title,
+            description=chat.description,
+            avatar_url=chat.avatar_url,
+            display_title=(
+                "Saved Messages"
+                if chat.type == "self"
+                else (
+                    f"{recipient.first_name} {recipient.last_name}"
+                    if recipient.last_name
+                    else recipient.first_name
+                )
             ),
-            "message": serialize_message(
-                message,
-                current_user.username,
-                current_user.avatar_url,
+            display_avatar_url=(
+                current_user.avatar_url if chat.type == "self" else recipient.avatar_url
             ),
-        }
+            other_user_id=None if chat.type == "self" else recipient.id,
+            last_message_id=message.id,
+            last_message_text=message.content,
+            last_message_sender_id=message.sender_id,
+            last_message_created_at=message.created_at,
+            created_at=chat.created_at,
+            updated_at=chat.updated_at,
+        ),
+        "message": serialized_message,
+    }
 
 
 @fastapi_app.post("/chats/{chat_id}/read")
@@ -720,6 +753,8 @@ async def connect(sid, environ, auth):
             },
         )
 
+        await sio.enter_room(sid, f"user:{user.id}")
+
 
 @sio.event
 async def disconnect(sid, reason):
@@ -773,6 +808,13 @@ async def message(sid, data):
         return
 
     with Session(engine) as session:
+        chat = session.get(Chat, chat_id)
+        if chat is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Chat was not found",
+            )
+
         message = Message(
             chat_id=chat_id,
             sender_id=sender_id,
@@ -782,14 +824,30 @@ async def message(sid, data):
         )
 
         session.add(message)
-        session.commit()
+        session.flush()
         session.refresh(message)
 
-    serialized_message = serialize_message(
-        message,
-        sender_username,
-        sender_avatar_url,
-    )
+        # update chat
+        chat.last_message_id = message.id
+        chat.updated_at = message.created_at
+
+        session.commit()
+        session.refresh(chat)
+        session.refresh(message)
+
+        # collect participants
+        participant_ids = session.exec(
+            select(ChatParticipant.user_id).where(
+                ChatParticipant.chat_id == chat_id,
+                col(ChatParticipant.left_at).is_(None),
+            )
+        ).all()
+
+        serialized_message = serialize_message(
+            message,
+            sender_username,
+            sender_avatar_url,
+        )
 
     await sio.emit(
         "message",
@@ -797,6 +855,18 @@ async def message(sid, data):
         room=str(chat_id),
         skip_sid=sid,
     )
+
+    chat_update = {
+        "chat_id": chat_id,
+        "last_message": serialized_message,
+    }
+
+    for participant_id in participant_ids:
+        await sio.emit(
+            "chat_updated",
+            chat_update,
+            room=f"user:{participant_id}",
+        )
 
     return {
         "ok": True,
