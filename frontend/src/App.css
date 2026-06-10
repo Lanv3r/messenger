@@ -444,6 +444,18 @@
   background: rgba(133, 144, 167, 0.08);
 }
 
+#messages li.message-day-separator {
+  align-self: center;
+  display: block;
+  max-width: max-content;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #8b5e34;
+  background: rgba(133, 144, 167, 0.12);
+}
+
 .message-avatar {
   width: 38px;
   height: 38px;

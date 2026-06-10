@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 
 import { API_URL, apiFetch } from "@/lib/api";
@@ -738,6 +738,76 @@ function ChatScreen({
     }).format(date);
   };
 
+  const formatMessageTime = (value: string | null) => {
+    if (!value) {
+      return null;
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return null;
+    }
+
+    return new Intl.DateTimeFormat(undefined, {
+      hour: "numeric",
+      minute: "2-digit",
+    }).format(date);
+  };
+
+  const formatMessageDay = (value: string | null) => {
+    if (!value) {
+      return null;
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return null;
+    }
+
+    const now = new Date();
+    const isToday =
+      date.getFullYear() === now.getFullYear() &&
+      date.getMonth() === now.getMonth() &&
+      date.getDate() === now.getDate();
+
+    if (isToday) {
+      return "Today";
+    }
+
+    return new Intl.DateTimeFormat(undefined, {
+      month: "long",
+      day: "numeric",
+      year: "numeric",
+    }).format(date);
+  };
+
+  const isSameMessageDay = (
+    first: string | null,
+    second: string | null,
+  ) => {
+    if (!first || !second) {
+      return false;
+    }
+
+    const firstDate = new Date(first);
+    const secondDate = new Date(second);
+
+    if (
+      Number.isNaN(firstDate.getTime()) ||
+      Number.isNaN(secondDate.getTime())
+    ) {
+      return false;
+    }
+
+    return (
+      firstDate.getFullYear() === secondDate.getFullYear() &&
+      firstDate.getMonth() === secondDate.getMonth() &&
+      firstDate.getDate() === secondDate.getDate()
+    );
+  };
+
   const activeTitle = draftRecipient
     ? `${draftRecipient.first_name}${
         draftRecipient.last_name ? ` ${draftRecipient.last_name}` : ""
@@ -1031,43 +1101,54 @@ function ChatScreen({
             <li className="empty-state">No messages yet in this chat.</li>
           ) : (
             messages.map((entry, index) => {
-              const sentAt = formatChatTime(entry.created_at);
+              const previousEntry = messages[index - 1];
+              const sentAt = formatMessageTime(entry.created_at);
+              const dayLabel = formatMessageDay(entry.created_at);
+              const showDaySeparator =
+                !previousEntry ||
+                !isSameMessageDay(previousEntry.created_at, entry.created_at);
               const deliveryLabel = getMessageDeliveryLabel(entry);
+              const messageKey = `${entry.sender_id ?? "system"}-${
+                entry.id ?? index
+              }`;
 
               return (
-                <li
-                  key={`${entry.sender_id ?? "system"}-${entry.id ?? index}`}
-                  className={entry.isOwn ? "you" : "server"}
-                >
-                  <img
-                    src={getSenderAvatar(entry)}
-                    alt=""
-                    className="message-avatar"
-                    onError={(event) => {
-                      event.currentTarget.src = "/favicon.svg";
-                    }}
-                  />
-                  <div className="message-copy">
-                    <span className="sender">{getSenderName(entry)}</span>
-                    <span>{entry.content}</span>
-                    <span className="message-meta">
-                      {sentAt && entry.created_at ? (
-                        <time dateTime={entry.created_at}>{sentAt}</time>
-                      ) : null}
-                      {deliveryLabel ? (
-                        <span
-                          className={
-                            entry.delivery_status === "failed"
-                              ? "message-status failed"
-                              : "message-status"
-                          }
-                        >
-                          {deliveryLabel}
-                        </span>
-                      ) : null}
-                    </span>
-                  </div>
-                </li>
+                <Fragment key={messageKey}>
+                  {showDaySeparator && dayLabel ? (
+                    <li className="message-day-separator">{dayLabel}</li>
+                  ) : null}
+
+                  <li className={entry.isOwn ? "you" : "server"}>
+                    <img
+                      src={getSenderAvatar(entry)}
+                      alt=""
+                      className="message-avatar"
+                      onError={(event) => {
+                        event.currentTarget.src = "/favicon.svg";
+                      }}
+                    />
+                    <div className="message-copy">
+                      <span className="sender">{getSenderName(entry)}</span>
+                      <span>{entry.content}</span>
+                      <span className="message-meta">
+                        {sentAt && entry.created_at ? (
+                          <time dateTime={entry.created_at}>{sentAt}</time>
+                        ) : null}
+                        {deliveryLabel ? (
+                          <span
+                            className={
+                              entry.delivery_status === "failed"
+                                ? "message-status failed"
+                                : "message-status"
+                            }
+                          >
+                            {deliveryLabel}
+                          </span>
+                        ) : null}
+                      </span>
+                    </div>
+                  </li>
+                </Fragment>
               );
             })
           )}
