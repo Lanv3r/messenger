@@ -700,18 +700,28 @@ async def chat_read(
     session.commit()
     session.refresh(participant)
 
-    await sio.emit(
-        "chat_read",
-        {
-            "chat_id": chat_id,
-            "user_id": user_id,
-            "last_read_message_id": participant.last_read_message_id,
-            "last_read_at": participant.last_read_at.isoformat()
-            if participant.last_read_at
-            else None,
-        },
-        room=str(chat_id),
-    )
+    read_update = {
+        "chat_id": chat_id,
+        "user_id": user_id,
+        "last_read_message_id": participant.last_read_message_id,
+        "last_read_at": participant.last_read_at.isoformat()
+        if participant.last_read_at
+        else None,
+    }
+
+    participant_ids = session.exec(
+        select(ChatParticipant.user_id).where(
+            ChatParticipant.chat_id == chat_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).all()
+
+    for participant_id in participant_ids:
+        await sio.emit(
+            "chat_read",
+            read_update,
+            room=f"user:{participant_id}",
+        )
 
     return {"ok": True}
 

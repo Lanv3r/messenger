@@ -268,6 +268,23 @@ function ChatScreen({
             : chat,
         ),
       );
+
+      apiFetch<Chat[]>("/chats")
+        .then((loadedChats) => {
+          setChats(loadedChats);
+          setChatError(null);
+        })
+        .catch((error) => {
+          const message =
+            error instanceof Error ? error.message : "Unable to load chats.";
+
+          if (message === "Could not validate credentials") {
+            onSessionExpired();
+            return;
+          }
+
+          setChatError(message);
+        });
     });
 
     socket.on("disconnect", (reason) => {
