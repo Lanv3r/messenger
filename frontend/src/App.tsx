@@ -686,18 +686,38 @@ function ChatScreen({
     }
 
     const now = new Date();
-    const isToday = date.toDateString() === now.toDateString();
+    const startOfToday = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate(),
+    );
+    const startOfMessageDay = new Date(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate(),
+    );
+    const diffInDays = Math.floor(
+      (startOfToday.getTime() - startOfMessageDay.getTime()) /
+        (1000 * 60 * 60 * 24),
+    );
 
-    if (isToday) {
+    if (diffInDays === 0) {
       return new Intl.DateTimeFormat(undefined, {
         hour: "numeric",
         minute: "2-digit",
       }).format(date);
     }
 
+    if (diffInDays > 0 && diffInDays <= 6) {
+      return new Intl.DateTimeFormat(undefined, {
+        weekday: "short",
+      }).format(date);
+    }
+
     return new Intl.DateTimeFormat(undefined, {
-      month: "short",
+      month: "numeric",
       day: "numeric",
+      year: "2-digit",
     }).format(date);
   };
 
