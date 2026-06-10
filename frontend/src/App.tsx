@@ -757,18 +757,80 @@ function ChatScreen({
       <div className="chat-layout">
         <aside className="chat-sidebar" aria-label="Chats">
           <div className="sidebar-profile">
-            <img
-              src={user.avatarUrl}
-              alt=""
-              onError={(event) => {
-                event.currentTarget.src = "/favicon.svg";
-              }}
-            />
-            <div>
-              <p>{user.firstName}</p>
-              <span>@{user.username}</span>
+            <div className="sidebar-profile-main">
+              <img
+                src={user.avatarUrl}
+                alt=""
+                onError={(event) => {
+                  event.currentTarget.src = "/favicon.svg";
+                }}
+              />
+              <div>
+                <p>{user.firstName}</p>
+                <span>@{user.username}</span>
+              </div>
+            </div>
+            <div className="sidebar-profile-actions">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setEditingProfile((current) => !current);
+                  setProfileSaveError(null);
+                  setProfileSaveMessage(null);
+                }}
+              >
+                {editingProfile ? "Close" : "Edit profile"}
+              </Button>
+              <Button variant="outline" size="sm" onClick={onSignOut}>
+                Sign out
+              </Button>
             </div>
           </div>
+          <section className="profile-search" aria-label="Search user profiles">
+            <form className="profile-search-form" onSubmit={handleProfileSearch}>
+              <input
+                type="search"
+                value={profileQuery}
+                placeholder="Search username"
+                autoComplete="off"
+                onChange={(event) => setProfileQuery(event.target.value)}
+              />
+              <Button type="submit" disabled={profileLoading}>
+                {profileLoading ? "Searching..." : "Search"}
+              </Button>
+            </form>
+            {profileError ? (
+              <p className="profile-error">{profileError}</p>
+            ) : null}
+            {profileResult ? (
+              <article className="profile-card">
+                <img
+                  src={profileResult.avatar_url}
+                  alt=""
+                  className="profile-avatar"
+                />
+                <div>
+                  <h2>
+                    {profileResult.first_name}
+                    {profileResult.last_name ? ` ${profileResult.last_name}` : ""}
+                  </h2>
+                  <p className="profile-username">@{profileResult.username}</p>
+                  {profileResult.bio ? (
+                    <p className="profile-bio">{profileResult.bio}</p>
+                  ) : null}
+                  <span className="profile-status">{profileResult.status}</span>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => openDraftChat(profileResult)}
+                >
+                  Message
+                </Button>
+              </article>
+            ) : null}
+          </section>
           <div className="sidebar-section-label">Chats</div>
           <div className="chat-list">
             {chats.map((chat) => (
@@ -836,38 +898,6 @@ function ChatScreen({
           </div>
         </aside>
         <section className="chat-card">
-        <header className="chat-header">
-          <div>
-            <p className="eyebrow">Messenger</p>
-            <h1>{activeTitle}</h1>
-            <p className="status-copy">Signed in as {user.username}</p>
-          </div>
-          <div className="status-stack">
-            <span
-              className={`status ${status === "Connected" ? "online" : ""}`}
-            >
-              {status}
-            </span>
-            {connectionError ? (
-              <p className="status-copy">{connectionError}</p>
-            ) : null}
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setEditingProfile((current) => !current);
-                setProfileSaveError(null);
-                setProfileSaveMessage(null);
-              }}
-            >
-              {editingProfile ? "Close profile" : "Edit profile"}
-            </Button>
-            <Button variant="outline" size="sm" onClick={onSignOut}>
-              Sign out
-            </Button>
-          </div>
-        </header>
-
         {editingProfile ? (
           <section className="profile-editor" aria-label="Edit your profile">
             <div className="profile-editor-header">
@@ -928,51 +958,6 @@ function ChatScreen({
             </form>
           </section>
         ) : null}
-
-        <section className="profile-search" aria-label="Search user profiles">
-          <form className="profile-search-form" onSubmit={handleProfileSearch}>
-            <input
-              type="search"
-              value={profileQuery}
-              placeholder="Search username"
-              autoComplete="off"
-              onChange={(event) => setProfileQuery(event.target.value)}
-            />
-            <Button type="submit" disabled={profileLoading}>
-              {profileLoading ? "Searching..." : "Search"}
-            </Button>
-          </form>
-          {profileError ? (
-            <p className="profile-error">{profileError}</p>
-          ) : null}
-          {profileResult ? (
-            <article className="profile-card">
-              <img
-                src={profileResult.avatar_url}
-                alt=""
-                className="profile-avatar"
-              />
-              <div>
-                <h2>
-                  {profileResult.first_name}
-                  {profileResult.last_name ? ` ${profileResult.last_name}` : ""}
-                </h2>
-                <p className="profile-username">@{profileResult.username}</p>
-                {profileResult.bio ? (
-                  <p className="profile-bio">{profileResult.bio}</p>
-                ) : null}
-                <span className="profile-status">{profileResult.status}</span>
-              </div>
-              <Button
-                type="button"
-                size="sm"
-                onClick={() => openDraftChat(profileResult)}
-              >
-                Message
-              </Button>
-            </article>
-          ) : null}
-        </section>
 
         {chatError ? (
           <p className="profile-error">{chatError}</p>
@@ -1049,9 +1034,14 @@ function ChatScreen({
           </button>
         </div>
         {status !== "Connected" ? (
-          <button className="retry-button" onClick={handleRetry}>
-            Retry connection
-          </button>
+          <div className="connection-retry">
+            {connectionError ? (
+              <p className="status-copy">{connectionError}</p>
+            ) : null}
+            <button className="retry-button" onClick={handleRetry}>
+              Retry connection
+            </button>
+          </div>
         ) : null}
         </section>
       </div>
