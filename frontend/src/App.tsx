@@ -9,7 +9,7 @@ import "./App.css";
 
 type ChatMessage = {
   id: number;
-  conversation_id: number;
+  chat_id: number;
   sender_id: number | null;
   sender_username: string | null;
   sender_avatar_url?: string | null;
@@ -53,7 +53,7 @@ type UserProfile = AuthResponse & {
   status: string;
 };
 
-type Conversation = {
+type Chat = {
   id: number;
   type: "self" | "direct" | "group" | string;
   title: string | null;
@@ -74,7 +74,7 @@ type Conversation = {
 };
 
 type DirectMessageResponse = {
-  conversation: Conversation;
+  chat: Chat;
   message: ChatMessage;
 };
 
@@ -84,59 +84,59 @@ type MessageAck = {
   error?: string;
 };
 
-type ConversationReadEvent = {
-  conversation_id: number;
+type ChatReadEvent = {
+  chat_id: number;
   user_id: number;
   last_read_message_id: number;
   last_read_at: string | null;
 };
 
 function applyLastMessagePreview(
-  conversation: Conversation,
+  chat: Chat,
   message: ChatMessage,
-): Conversation {
+): Chat {
   return {
-    ...conversation,
+    ...chat,
     last_message_id: message.id,
     last_message_text: message.content,
     last_message_sender_id: message.sender_id,
     last_message_created_at: message.created_at,
-    updated_at: message.updated_at ?? conversation.updated_at,
+    updated_at: message.updated_at ?? chat.updated_at,
   };
 }
 
-function upsertConversationPreview(
-  conversations: Conversation[],
-  conversation: Conversation,
+function upsertChatPreview(
+  chats: Chat[],
+  chat: Chat,
   message: ChatMessage,
 ) {
-  const nextConversation = applyLastMessagePreview(conversation, message);
-  const existingIndex = conversations.findIndex(
-    (item) => item.id === conversation.id,
+  const nextChat = applyLastMessagePreview(chat, message);
+  const existingIndex = chats.findIndex(
+    (item) => item.id === chat.id,
   );
 
   if (existingIndex === -1) {
-    return [nextConversation, ...conversations];
+    return [nextChat, ...chats];
   }
 
-  const nextConversations = [...conversations];
-  nextConversations.splice(existingIndex, 1);
-  return [nextConversation, ...nextConversations];
+  const nextChats = [...chats];
+  nextChats.splice(existingIndex, 1);
+  return [nextChat, ...nextChats];
 }
 
-function updateConversationPreview(
-  conversations: Conversation[],
+function updateChatPreview(
+  chats: Chat[],
   message: ChatMessage,
 ) {
-  const existingConversation = conversations.find(
-    (conversation) => conversation.id === message.conversation_id,
+  const existingChat = chats.find(
+    (chat) => chat.id === message.chat_id,
   );
 
-  if (!existingConversation) {
-    return conversations;
+  if (!existingChat) {
+    return chats;
   }
 
-  return upsertConversationPreview(conversations, existingConversation, message);
+  return upsertChatPreview(chats, existingChat, message);
 }
 
 function replaceTemporaryMessage(
@@ -172,11 +172,11 @@ function ChatScreen({
   onSessionExpired: () => void;
   onUserUpdated: (user: AuthResponse) => void;
 }) {
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState<
+  const [chats, setChats] = useState<Chat[]>([]);
+  const [activeChatId, setActiveChatId] = useState<
     number | null
   >(null);
-  const activeConversationIdRef = useRef<number | null>(null);
+  const activeChatIdRef = useRef<number | null>(null);
   const [draftRecipient, setDraftRecipient] = useState<UserProfile | null>(
     null,
   );
@@ -184,7 +184,7 @@ function ChatScreen({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState("Connecting...");
   const [connectionError, setConnectionError] = useState<string | null>(null);
-  const [conversationError, setConversationError] = useState<string | null>(
+  const [chatError, setChatError] = useState<string | null>(
     null,
   );
   const [profileQuery, setProfileQuery] = useState("");
@@ -210,8 +210,8 @@ function ChatScreen({
     socketRef.current = socket;
 
     socket.on("connect", () => {
-      if (activeConversationIdRef.current !== null) {
-        socket.emit("join_room", String(activeConversationIdRef.current));
+      if (activeChatIdRef.current !== null) {
+        socket.emit("join_room", String(activeChatIdRef.current));
       }
       setStatus("Connected");
       setConnectionError(null);
@@ -222,23 +222,23 @@ function ChatScreen({
         ...current,
         { ...data, isOwn: data.sender_id === user.userId },
       ]);
-      setConversations((current) => updateConversationPreview(current, data));
+      setChats((current) => updateChatPreview(current, data));
     });
 
-    socket.on("conversation_read", (data: ConversationReadEvent) => {
+    socket.on("chat_read", (data: ChatReadEvent) => {
       if (data.user_id === user.userId) {
         return;
       }
 
-      setConversations((current) =>
-        current.map((conversation) =>
-          conversation.id === data.conversation_id
+      setChats((current) =>
+        current.map((chat) =>
+          chat.id === data.chat_id
             ? {
-                ...conversation,
+                ...chat,
                 other_last_read_message_id: data.last_read_message_id,
                 other_last_read_at: data.last_read_at,
               }
-            : conversation,
+            : chat,
         ),
       );
     });
@@ -273,43 +273,43 @@ function ChatScreen({
   }, [onSessionExpired, user.userId]);
 
   useEffect(() => {
-    async function loadConversations() {
+    async function loadChats() {
       try {
-        const loadedConversations =
-          await apiFetch<Conversation[]>("/conversations");
+        const loadedChats =
+          await apiFetch<Chat[]>("/chats");
 
-        setConversations(loadedConversations);
-        setConversationError(null);
+        setChats(loadedChats);
+        setChatError(null);
 
-        if (loadedConversations.length > 0) {
-          const selfConversation =
-            loadedConversations.find(
-              (conversation) => conversation.type === "self",
-            ) ?? loadedConversations[0];
+        if (loadedChats.length > 0) {
+          const selfChat =
+            loadedChats.find(
+              (chat) => chat.type === "self",
+            ) ?? loadedChats[0];
 
-          activeConversationIdRef.current = selfConversation.id;
-          setActiveConversationId(selfConversation.id);
+          activeChatIdRef.current = selfChat.id;
+          setActiveChatId(selfChat.id);
         }
       } catch (error) {
         const message =
           error instanceof Error
             ? error.message
-            : "Unable to load conversations.";
+            : "Unable to load chats.";
 
         if (message === "Could not validate credentials") {
           onSessionExpired();
           return;
         }
 
-        setConversationError(message);
+        setChatError(message);
       }
     }
 
-    loadConversations();
+    loadChats();
   }, [onSessionExpired]);
 
   useEffect(() => {
-    if (activeConversationId === null) {
+    if (activeChatId === null) {
       setMessages([]);
       return;
     }
@@ -318,14 +318,14 @@ function ChatScreen({
 
     async function loadMessages() {
       try {
-        const roomMessages = await apiFetch<ChatMessage[]>(
-          `/rooms/${activeConversationId}/messages`,
+        const chatMessages = await apiFetch<ChatMessage[]>(
+          `/chats/${activeChatId}/messages`,
           {
             signal: controller.signal,
           },
         );
 
-        setMessages(roomMessages);
+        setMessages(chatMessages);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           return;
@@ -340,10 +340,10 @@ function ChatScreen({
     return () => {
       controller.abort();
     };
-  }, [activeConversationId]);
+  }, [activeChatId]);
 
   useEffect(() => {
-    if (activeConversationId === null || messages.length === 0) {
+    if (activeChatId === null || messages.length === 0) {
       return;
     }
 
@@ -359,10 +359,10 @@ function ChatScreen({
       return;
     }
 
-    apiFetch<{ ok: boolean }>(`/conversations/${activeConversationId}/read`, {
+    apiFetch<{ ok: boolean }>(`/chats/${activeChatId}/read`, {
       method: "POST",
       body: JSON.stringify({
-        conversation_id: activeConversationId,
+        chat_id: activeChatId,
         last_read_message_id: lastPersistedMessage.id,
       }),
     }).catch((error) => {
@@ -373,7 +373,7 @@ function ChatScreen({
         onSessionExpired();
       }
     });
-  }, [activeConversationId, messages, onSessionExpired]);
+  }, [activeChatId, messages, onSessionExpired]);
 
   useEffect(() => {
     setProfileFirstName(user.firstName);
@@ -392,7 +392,7 @@ function ChatScreen({
     const tempId = crypto.randomUUID();
     const optimisticMessage: ChatMessage = {
       id: Date.now(),
-      conversation_id: activeConversationId ?? 0,
+      chat_id: activeChatId ?? 0,
       sender_id: user.userId,
       sender_username: user.username,
       sender_avatar_url: user.avatarUrl,
@@ -426,16 +426,16 @@ function ChatScreen({
           },
         );
 
-        setConversations((current) =>
-          upsertConversationPreview(current, result.conversation, result.message),
+        setChats((current) =>
+          upsertChatPreview(current, result.chat, result.message),
         );
-        activeConversationIdRef.current = result.conversation.id;
-        setActiveConversationId(result.conversation.id);
+        activeChatIdRef.current = result.chat.id;
+        setActiveChatId(result.chat.id);
         setDraftRecipient(null);
         setMessages([
           { ...result.message, isOwn: true, delivery_status: "sent" },
         ]);
-        socket?.emit("join_room", String(result.conversation.id));
+        socket?.emit("join_room", String(result.chat.id));
       } catch (error) {
         setMessages((current) =>
           current.map((entry) =>
@@ -453,25 +453,25 @@ function ChatScreen({
           return;
         }
 
-        setConversationError(errorMessage);
+        setChatError(errorMessage);
       }
 
       return;
     }
 
-    if (!socket || activeConversationId === null) {
+    if (!socket || activeChatId === null) {
       return;
     }
 
     setMessages((current) => [...current, optimisticMessage]);
-    setConversations((current) =>
-      updateConversationPreview(current, optimisticMessage),
+    setChats((current) =>
+      updateChatPreview(current, optimisticMessage),
     );
     setMessage("");
     socket.emit(
       "message",
       {
-        conversation_id: activeConversationId,
+        chat_id: activeChatId,
         content: outgoingMessage,
         message_type: "text",
       },
@@ -496,8 +496,8 @@ function ChatScreen({
         setMessages((current) =>
           replaceTemporaryMessage(current, tempId, confirmedMessage),
         );
-        setConversations((current) =>
-          updateConversationPreview(current, confirmedMessage),
+        setChats((current) =>
+          updateChatPreview(current, confirmedMessage),
         );
       },
     );
@@ -514,18 +514,18 @@ function ChatScreen({
     socket.connect();
   };
 
-  const joinConversation = (conversationId: number) => {
+  const joinChat = (chatId: number) => {
     const socket = socketRef.current;
     if (!socket) {
       return;
     }
 
-    if (activeConversationIdRef.current !== null) {
-      socket.emit("leave_room", String(activeConversationIdRef.current));
+    if (activeChatIdRef.current !== null) {
+      socket.emit("leave_room", String(activeChatIdRef.current));
     }
-    socket.emit("join_room", String(conversationId));
-    activeConversationIdRef.current = conversationId;
-    setActiveConversationId(conversationId);
+    socket.emit("join_room", String(chatId));
+    activeChatIdRef.current = chatId;
+    setActiveChatId(chatId);
     setDraftRecipient(null);
   };
 
@@ -608,34 +608,34 @@ function ChatScreen({
     }
   };
 
-  const activeConversation = conversations.find(
-    (conversation) => conversation.id === activeConversationId,
+  const activeChat = chats.find(
+    (chat) => chat.id === activeChatId,
   );
 
-  const getConversationTitle = (conversation: Conversation) => {
-    return conversation.display_title || conversation.title || "Conversation";
+  const getChatTitle = (chat: Chat) => {
+    return chat.display_title || chat.title || "Chat";
   };
 
-  const getConversationSubtitle = (conversation: Conversation) => {
-    if (conversation.last_message_text) {
+  const getChatSubtitle = (chat: Chat) => {
+    if (chat.last_message_text) {
       const prefix =
-        conversation.last_message_sender_id === user.userId ? "You: " : "";
+        chat.last_message_sender_id === user.userId ? "You: " : "";
 
-      return `${prefix}${conversation.last_message_text}`;
+      return `${prefix}${chat.last_message_text}`;
     }
 
-    if (conversation.type === "self") {
+    if (chat.type === "self") {
       return "Private notes";
     }
 
-    if (conversation.type === "direct") {
+    if (chat.type === "direct") {
       return "Direct message";
     }
 
-    return conversation.type;
+    return chat.type;
   };
 
-  const formatConversationTime = (value: string | null) => {
+  const formatChatTime = (value: string | null) => {
     if (!value) {
       return null;
     }
@@ -666,19 +666,19 @@ function ChatScreen({
     ? `${draftRecipient.first_name}${
         draftRecipient.last_name ? ` ${draftRecipient.last_name}` : ""
       }`
-    : activeConversation
-      ? getConversationTitle(activeConversation)
-      : "Conversation";
+    : activeChat
+      ? getChatTitle(activeChat)
+      : "Chat";
 
-  const openDraftConversation = (profile: UserProfile) => {
+  const openDraftChat = (profile: UserProfile) => {
     const socket = socketRef.current;
 
-    if (activeConversationIdRef.current !== null) {
-      socket?.emit("leave_room", String(activeConversationIdRef.current));
+    if (activeChatIdRef.current !== null) {
+      socket?.emit("leave_room", String(activeChatIdRef.current));
     }
 
-    activeConversationIdRef.current = null;
-    setActiveConversationId(null);
+    activeChatIdRef.current = null;
+    setActiveChatId(null);
     setDraftRecipient(profile);
     setMessages([]);
     setMessage("");
@@ -718,7 +718,7 @@ function ChatScreen({
     }
 
     const otherLastReadMessageId =
-      activeConversation?.other_last_read_message_id;
+      activeChat?.other_last_read_message_id;
 
     if (
       otherLastReadMessageId !== null &&
@@ -727,9 +727,9 @@ function ChatScreen({
     ) {
       if (
         entry.id === otherLastReadMessageId &&
-        activeConversation?.other_last_read_at
+        activeChat?.other_last_read_at
       ) {
-        const readAt = formatConversationTime(activeConversation.other_last_read_at);
+        const readAt = formatChatTime(activeChat.other_last_read_at);
         return readAt ? `Read ${readAt}` : "Read";
       }
 
@@ -757,27 +757,27 @@ function ChatScreen({
             </div>
           </div>
           <div className="sidebar-section-label">Chats</div>
-          <div className="conversation-list">
-            {conversations.map((conversation) => (
+          <div className="chat-list">
+            {chats.map((chat) => (
               (() => {
-                const sentAt = formatConversationTime(
-                  conversation.last_message_created_at,
+                const sentAt = formatChatTime(
+                  chat.last_message_created_at,
                 );
 
                 return (
                   <button
-                    key={conversation.id}
+                    key={chat.id}
                     className={
-                      conversation.id === activeConversationId
+                      chat.id === activeChatId
                         ? "active"
                         : undefined
                     }
-                    onClick={() => joinConversation(conversation.id)}
+                    onClick={() => joinChat(chat.id)}
                   >
                     <img
                       src={
-                        conversation.display_avatar_url ||
-                        conversation.avatar_url ||
+                        chat.display_avatar_url ||
+                        chat.avatar_url ||
                         "/favicon.svg"
                       }
                       alt=""
@@ -786,15 +786,15 @@ function ChatScreen({
                       }}
                     />
                     <span>
-                      <span className="conversation-title-row">
-                        <strong>{getConversationTitle(conversation)}</strong>
-                        {sentAt && conversation.last_message_created_at ? (
-                          <time dateTime={conversation.last_message_created_at}>
+                      <span className="chat-title-row">
+                        <strong>{getChatTitle(chat)}</strong>
+                        {sentAt && chat.last_message_created_at ? (
+                          <time dateTime={chat.last_message_created_at}>
                             {sentAt}
                           </time>
                         ) : null}
                       </span>
-                      <small>{getConversationSubtitle(conversation)}</small>
+                      <small>{getChatSubtitle(chat)}</small>
                     </span>
                   </button>
                 );
@@ -953,7 +953,7 @@ function ChatScreen({
               <Button
                 type="button"
                 size="sm"
-                onClick={() => openDraftConversation(profileResult)}
+                onClick={() => openDraftChat(profileResult)}
               >
                 Message
               </Button>
@@ -961,16 +961,16 @@ function ChatScreen({
           ) : null}
         </section>
 
-        {conversationError ? (
-          <p className="profile-error">{conversationError}</p>
+        {chatError ? (
+          <p className="profile-error">{chatError}</p>
         ) : null}
 
         <ul id="messages">
           {messages.length === 0 ? (
-            <li className="empty-state">No messages yet in this room.</li>
+            <li className="empty-state">No messages yet in this chat.</li>
           ) : (
             messages.map((entry, index) => {
-              const sentAt = formatConversationTime(entry.created_at);
+              const sentAt = formatChatTime(entry.created_at);
               const deliveryLabel = getMessageDeliveryLabel(entry);
 
               return (
@@ -1029,7 +1029,7 @@ function ChatScreen({
             onClick={handleSend}
             disabled={
               status !== "Connected" ||
-              (activeConversationId === null && draftRecipient === null)
+              (activeChatId === null && draftRecipient === null)
             }
           >
             Send
