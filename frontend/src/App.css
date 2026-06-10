@@ -8,9 +8,17 @@
     linear-gradient(180deg, rgba(255, 248, 241, 0.95), rgba(255, 255, 255, 0.98));
 }
 
+.chat-layout {
+  width: min(100%, 1080px);
+  min-height: 680px;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 18px;
+}
+
 .chat-card {
-  width: min(100%, 720px);
-  min-height: 560px;
+  min-width: 0;
+  min-height: 680px;
   display: grid;
   grid-template-rows: auto auto auto 1fr auto;
   gap: 20px;
@@ -20,6 +28,150 @@
   border-radius: 28px;
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 24px 80px rgba(106, 58, 45, 0.12);
+}
+
+.chat-sidebar {
+  min-height: 680px;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  gap: 16px;
+  padding: 20px;
+  box-sizing: border-box;
+  border: 1px solid rgba(163, 88, 66, 0.15);
+  border-radius: 28px;
+  text-align: left;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 249, 244, 0.9)),
+    radial-gradient(circle at top left, rgba(244, 111, 84, 0.16), transparent 36%);
+  box-shadow: 0 24px 80px rgba(106, 58, 45, 0.1);
+  overflow: hidden;
+}
+
+.sidebar-profile {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid rgba(163, 88, 66, 0.12);
+}
+
+.sidebar-profile img {
+  width: 46px;
+  height: 46px;
+  border-radius: 16px;
+  object-fit: cover;
+  background: rgba(133, 144, 167, 0.14);
+}
+
+.sidebar-profile p {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 800;
+  color: #1f2937;
+}
+
+.sidebar-profile span {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: #8b5e34;
+}
+
+.sidebar-section-label {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #b45b43;
+}
+
+.conversation-list {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+}
+
+.conversation-list button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(163, 88, 66, 0.16);
+  border-radius: 18px;
+  font: inherit;
+  color: #8b5e34;
+  background: rgba(255, 255, 255, 0.78);
+  cursor: pointer;
+  text-align: left;
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    background 160ms ease;
+}
+
+.conversation-list button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(244, 111, 84, 0.35);
+}
+
+.conversation-list button img {
+  width: 42px;
+  height: 42px;
+  border-radius: 15px;
+  object-fit: cover;
+  background: rgba(133, 144, 167, 0.14);
+}
+
+.conversation-list button span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.conversation-title-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.conversation-list button strong,
+.conversation-list button small,
+.conversation-list button time {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conversation-list button strong {
+  font-size: 14px;
+  color: #1f2937;
+}
+
+.conversation-list button small {
+  font-size: 12px;
+  color: #8b5e34;
+}
+
+.conversation-list button time {
+  font-size: 11px;
+  font-weight: 700;
+  color: #a77852;
+}
+
+.conversation-list button.active {
+  border-color: transparent;
+  background: #f46f54;
+}
+
+.conversation-list button.active strong,
+.conversation-list button.active small,
+.conversation-list button.active time {
+  color: #fff;
 }
 
 .chat-header {
@@ -200,6 +352,11 @@
   background: linear-gradient(135deg, rgba(255, 245, 239, 0.95), rgba(255, 255, 255, 0.95));
 }
 
+.profile-card > div {
+  min-width: 0;
+  flex: 1;
+}
+
 .profile-avatar {
   width: 52px;
   height: 52px;
@@ -290,6 +447,14 @@
   gap: 5px;
 }
 
+.message-time {
+  justify-self: end;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0.64;
+}
+
 .sender {
   font-size: 12px;
   font-weight: 700;
@@ -351,6 +516,17 @@
 @media (max-width: 720px) {
   .chat-shell {
     padding: 16px;
+  }
+
+  .chat-layout {
+    min-height: calc(100svh - 32px);
+    grid-template-columns: 1fr;
+  }
+
+  .chat-sidebar {
+    min-height: auto;
+    max-height: 300px;
+    border-radius: 24px;
   }
 
   .chat-card {

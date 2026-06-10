@@ -51,7 +51,76 @@ type UserProfile = AuthResponse & {
   status: string;
 };
 
-const conversations = [{ id: 1, title: "General" }] as const;
+type Conversation = {
+  id: number;
+  type: "self" | "direct" | "group" | string;
+  title: string | null;
+  description: string | null;
+  avatar_url: string;
+  display_title: string;
+  display_avatar_url: string;
+  other_user_id: number | null;
+  last_message_id: number | null;
+  last_message_text: string | null;
+  last_message_sender_id: number | null;
+  last_message_created_at: string | null;
+  deleted_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type DirectMessageResponse = {
+  conversation: Conversation;
+  message: ChatMessage;
+};
+
+function applyLastMessagePreview(
+  conversation: Conversation,
+  message: ChatMessage,
+): Conversation {
+  return {
+    ...conversation,
+    last_message_id: message.id,
+    last_message_text: message.content,
+    last_message_sender_id: message.sender_id,
+    last_message_created_at: message.created_at,
+    updated_at: message.updated_at ?? conversation.updated_at,
+  };
+}
+
+function upsertConversationPreview(
+  conversations: Conversation[],
+  conversation: Conversation,
+  message: ChatMessage,
+) {
+  const nextConversation = applyLastMessagePreview(conversation, message);
+  const existingIndex = conversations.findIndex(
+    (item) => item.id === conversation.id,
+  );
+
+  if (existingIndex === -1) {
+    return [nextConversation, ...conversations];
+  }
+
+  const nextConversations = [...conversations];
+  nextConversations.splice(existingIndex, 1);
+  return [nextConversation, ...nextConversations];
+}
+
+function updateConversationPreview(
+  conversations: Conversation[],
+  message: ChatMessage,
+) {
+  const existingConversation = conversations.find(
+    (conversation) => conversation.id === message.conversation_id,
+  );
+
+  if (!existingConversation) {
+    return conversations;
+  }
+
+  return upsertConversationPreview(conversations, existingConversation, message);
+}
 
 function toAuthUser(authUser: AuthResponse): AuthUser {
   return {
@@ -76,14 +145,21 @@ function ChatScreen({
   onSessionExpired: () => void;
   onUserUpdated: (user: AuthResponse) => void;
 }) {
-  const [activeConversationId, setActiveConversationId] = useState<number>(
-    conversations[0].id,
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<
+    number | null
+  >(null);
+  const activeConversationIdRef = useRef<number | null>(null);
+  const [draftRecipient, setDraftRecipient] = useState<UserProfile | null>(
+    null,
   );
-  const activeConversationIdRef = useRef<number>(conversations[0].id);
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState("Connecting...");
   const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [conversationError, setConversationError] = useState<string | null>(
+    null,
+  );
   const [profileQuery, setProfileQuery] = useState("");
   const [profileResult, setProfileResult] = useState<UserProfile | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -107,7 +183,9 @@ function ChatScreen({
     socketRef.current = socket;
 
     socket.on("connect", () => {
-      socket.emit("join_room", String(activeConversationIdRef.current));
+      if (activeConversationIdRef.current !== null) {
+        socket.emit("join_room", String(activeConversationIdRef.current));
+      }
       setStatus("Connected");
       setConnectionError(null);
     });
@@ -117,6 +195,7 @@ function ChatScreen({
         ...current,
         { ...data, isOwn: data.sender_id === user.userId },
       ]);
+      setConversations((current) => updateConversationPreview(current, data));
     });
 
     socket.on("disconnect", (reason) => {
@@ -149,6 +228,47 @@ function ChatScreen({
   }, [onSessionExpired, user.userId]);
 
   useEffect(() => {
+    async function loadConversations() {
+      try {
+        const loadedConversations =
+          await apiFetch<Conversation[]>("/conversations");
+
+        setConversations(loadedConversations);
+        setConversationError(null);
+
+        if (loadedConversations.length > 0) {
+          const selfConversation =
+            loadedConversations.find(
+              (conversation) => conversation.type === "self",
+            ) ?? loadedConversations[0];
+
+          activeConversationIdRef.current = selfConversation.id;
+          setActiveConversationId(selfConversation.id);
+        }
+      } catch (error) {
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Unable to load conversations.";
+
+        if (message === "Could not validate credentials") {
+          onSessionExpired();
+          return;
+        }
+
+        setConversationError(message);
+      }
+    }
+
+    loadConversations();
+  }, [onSessionExpired]);
+
+  useEffect(() => {
+    if (activeConversationId === null) {
+      setMessages([]);
+      return;
+    }
+
     const controller = new AbortController();
 
     async function loadMessages() {
@@ -184,13 +304,55 @@ function ChatScreen({
     setProfileAvatarUrl(user.avatarUrl);
   }, [user]);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     const socket = socketRef.current;
-    if (!socket || !message.trim()) {
+    if (!message.trim()) {
       return;
     }
 
     const outgoingMessage = message.trim();
+
+    if (draftRecipient) {
+      try {
+        const result = await apiFetch<DirectMessageResponse>(
+          "/messages/direct",
+          {
+            method: "POST",
+            body: JSON.stringify({
+              recipient_id: draftRecipient.id,
+              content: outgoingMessage,
+            }),
+          },
+        );
+
+        setConversations((current) =>
+          upsertConversationPreview(current, result.conversation, result.message),
+        );
+        activeConversationIdRef.current = result.conversation.id;
+        setActiveConversationId(result.conversation.id);
+        setDraftRecipient(null);
+        setMessages([{ ...result.message, isOwn: true }]);
+        socket?.emit("join_room", String(result.conversation.id));
+        setMessage("");
+      } catch (error) {
+        const errorMessage =
+          error instanceof Error ? error.message : "Unable to send message.";
+
+        if (errorMessage === "Could not validate credentials") {
+          onSessionExpired();
+          return;
+        }
+
+        setConversationError(errorMessage);
+      }
+
+      return;
+    }
+
+    if (!socket || activeConversationId === null) {
+      return;
+    }
+
     const optimisticMessage: ChatMessage = {
       id: Date.now(),
       conversation_id: activeConversationId,
@@ -210,6 +372,9 @@ function ChatScreen({
     };
 
     setMessages((current) => [...current, optimisticMessage]);
+    setConversations((current) =>
+      updateConversationPreview(current, optimisticMessage),
+    );
     socket.emit("message", {
       conversation_id: activeConversationId,
       content: outgoingMessage,
@@ -235,10 +400,13 @@ function ChatScreen({
       return;
     }
 
-    socket.emit("leave_room", String(activeConversationIdRef.current));
+    if (activeConversationIdRef.current !== null) {
+      socket.emit("leave_room", String(activeConversationIdRef.current));
+    }
     socket.emit("join_room", String(conversationId));
     activeConversationIdRef.current = conversationId;
     setActiveConversationId(conversationId);
+    setDraftRecipient(null);
   };
 
   const handleProfileSearch = async (event: React.FormEvent) => {
@@ -324,6 +492,78 @@ function ChatScreen({
     (conversation) => conversation.id === activeConversationId,
   );
 
+  const getConversationTitle = (conversation: Conversation) => {
+    return conversation.display_title || conversation.title || "Conversation";
+  };
+
+  const getConversationSubtitle = (conversation: Conversation) => {
+    if (conversation.last_message_text) {
+      const prefix =
+        conversation.last_message_sender_id === user.userId ? "You: " : "";
+
+      return `${prefix}${conversation.last_message_text}`;
+    }
+
+    if (conversation.type === "self") {
+      return "Private notes";
+    }
+
+    if (conversation.type === "direct") {
+      return "Direct message";
+    }
+
+    return conversation.type;
+  };
+
+  const formatConversationTime = (value: string | null) => {
+    if (!value) {
+      return null;
+    }
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return null;
+    }
+
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+
+    if (isToday) {
+      return new Intl.DateTimeFormat(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+      }).format(date);
+    }
+
+    return new Intl.DateTimeFormat(undefined, {
+      month: "short",
+      day: "numeric",
+    }).format(date);
+  };
+
+  const activeTitle = draftRecipient
+    ? `${draftRecipient.first_name}${
+        draftRecipient.last_name ? ` ${draftRecipient.last_name}` : ""
+      }`
+    : activeConversation
+      ? getConversationTitle(activeConversation)
+      : "Conversation";
+
+  const openDraftConversation = (profile: UserProfile) => {
+    const socket = socketRef.current;
+
+    if (activeConversationIdRef.current !== null) {
+      socket?.emit("leave_room", String(activeConversationIdRef.current));
+    }
+
+    activeConversationIdRef.current = null;
+    setActiveConversationId(null);
+    setDraftRecipient(profile);
+    setMessages([]);
+    setMessage("");
+  };
+
   const getSenderName = (entry: ChatMessage) => {
     if (entry.sender_id === user.userId) {
       return "You";
@@ -346,21 +586,92 @@ function ChatScreen({
 
   return (
     <main className="chat-shell">
-      <div>
-        {conversations.map((conversation) => (
-          <button
-            key={conversation.id}
-            onClick={() => joinConversation(conversation.id)}
-          >
-            {conversation.title}
-          </button>
-        ))}
-      </div>
-      <section className="chat-card">
+      <div className="chat-layout">
+        <aside className="chat-sidebar" aria-label="Chats">
+          <div className="sidebar-profile">
+            <img
+              src={user.avatarUrl}
+              alt=""
+              onError={(event) => {
+                event.currentTarget.src = "/favicon.svg";
+              }}
+            />
+            <div>
+              <p>{user.firstName}</p>
+              <span>@{user.username}</span>
+            </div>
+          </div>
+          <div className="sidebar-section-label">Chats</div>
+          <div className="conversation-list">
+            {conversations.map((conversation) => (
+              (() => {
+                const sentAt = formatConversationTime(
+                  conversation.last_message_created_at,
+                );
+
+                return (
+                  <button
+                    key={conversation.id}
+                    className={
+                      conversation.id === activeConversationId
+                        ? "active"
+                        : undefined
+                    }
+                    onClick={() => joinConversation(conversation.id)}
+                  >
+                    <img
+                      src={
+                        conversation.display_avatar_url ||
+                        conversation.avatar_url ||
+                        "/favicon.svg"
+                      }
+                      alt=""
+                      onError={(event) => {
+                        event.currentTarget.src = "/favicon.svg";
+                      }}
+                    />
+                    <span>
+                      <span className="conversation-title-row">
+                        <strong>{getConversationTitle(conversation)}</strong>
+                        {sentAt && conversation.last_message_created_at ? (
+                          <time dateTime={conversation.last_message_created_at}>
+                            {sentAt}
+                          </time>
+                        ) : null}
+                      </span>
+                      <small>{getConversationSubtitle(conversation)}</small>
+                    </span>
+                  </button>
+                );
+              })()
+            ))}
+            {draftRecipient ? (
+              <button className="active" type="button">
+                <img
+                  src={draftRecipient.avatar_url}
+                  alt=""
+                  onError={(event) => {
+                    event.currentTarget.src = "/favicon.svg";
+                  }}
+                />
+                <span>
+                  <strong>
+                    {draftRecipient.first_name}
+                    {draftRecipient.last_name
+                      ? ` ${draftRecipient.last_name}`
+                      : ""}
+                  </strong>
+                  <small>New direct message</small>
+                </span>
+              </button>
+            ) : null}
+          </div>
+        </aside>
+        <section className="chat-card">
         <header className="chat-header">
           <div>
             <p className="eyebrow">Messenger</p>
-            <h1>{activeConversation?.title ?? "Conversation"}</h1>
+            <h1>{activeTitle}</h1>
             <p className="status-copy">Signed in as {user.username}</p>
           </div>
           <div className="status-stack">
@@ -484,33 +795,53 @@ function ChatScreen({
                 ) : null}
                 <span className="profile-status">{profileResult.status}</span>
               </div>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => openDraftConversation(profileResult)}
+              >
+                Message
+              </Button>
             </article>
           ) : null}
         </section>
+
+        {conversationError ? (
+          <p className="profile-error">{conversationError}</p>
+        ) : null}
 
         <ul id="messages">
           {messages.length === 0 ? (
             <li className="empty-state">No messages yet in this room.</li>
           ) : (
-            messages.map((entry, index) => (
-              <li
-                key={`${entry.sender_id ?? "system"}-${entry.id ?? index}`}
-                className={entry.isOwn ? "you" : "server"}
-              >
-                <img
-                  src={getSenderAvatar(entry)}
-                  alt=""
-                  className="message-avatar"
-                  onError={(event) => {
-                    event.currentTarget.src = "/favicon.svg";
-                  }}
-                />
-                <div className="message-copy">
-                  <span className="sender">{getSenderName(entry)}</span>
-                  <span>{entry.content}</span>
-                </div>
-              </li>
-            ))
+            messages.map((entry, index) => {
+              const sentAt = formatConversationTime(entry.created_at);
+
+              return (
+                <li
+                  key={`${entry.sender_id ?? "system"}-${entry.id ?? index}`}
+                  className={entry.isOwn ? "you" : "server"}
+                >
+                  <img
+                    src={getSenderAvatar(entry)}
+                    alt=""
+                    className="message-avatar"
+                    onError={(event) => {
+                      event.currentTarget.src = "/favicon.svg";
+                    }}
+                  />
+                  <div className="message-copy">
+                    <span className="sender">{getSenderName(entry)}</span>
+                    <span>{entry.content}</span>
+                    {sentAt && entry.created_at ? (
+                      <time className="message-time" dateTime={entry.created_at}>
+                        {sentAt}
+                      </time>
+                    ) : null}
+                  </div>
+                </li>
+              );
+            })
           )}
         </ul>
 
@@ -519,7 +850,7 @@ function ChatScreen({
             id="message"
             type="text"
             value={message}
-            placeholder={`Message ${activeConversation?.title ?? ""}`}
+            placeholder={`Message ${activeTitle}`}
             onChange={(event) => setMessage(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
@@ -527,7 +858,13 @@ function ChatScreen({
               }
             }}
           />
-          <button onClick={handleSend} disabled={status !== "Connected"}>
+          <button
+            onClick={handleSend}
+            disabled={
+              status !== "Connected" ||
+              (activeConversationId === null && draftRecipient === null)
+            }
+          >
             Send
           </button>
         </div>
@@ -536,7 +873,8 @@ function ChatScreen({
             Retry connection
           </button>
         ) : null}
-      </section>
+        </section>
+      </div>
     </main>
   );
 }

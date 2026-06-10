@@ -242,3 +242,30 @@ class MessageUpdate(MessageBase):
     edited_at: datetime | None = None
     deleted_at: datetime | None = None
     is_pinned: bool | None = None
+
+
+class ConversationListItem(SQLModel):
+    id: int
+    type: str
+    title: str | None = None
+    description: str | None = None
+    avatar_url: str
+    display_title: str
+    display_avatar_url: str
+    other_user_id: int | None = None
+    last_message_id: int | None = None
+    last_message_created_at: datetime | None = None
+    last_message_text: str | None = None
+    last_message_sender_id: int | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class DirectMessageCreate(SQLModel):
+    recipient_id: int
+    content: str
+
+
+class DirectMessageResponse(SQLModel):
+    conversation: ConversationListItem
+    message: MessagePublic
