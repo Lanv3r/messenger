@@ -429,14 +429,18 @@ def get_chats(
     current_user_id = current_user.id
     if current_user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
-    chat_ids = select(ChatParticipant.chat_id).where(
-        ChatParticipant.user_id == current_user_id,
-        col(ChatParticipant.left_at).is_(None),
-    )
-    chats = session.exec(select(Chat).where(col(Chat.id).in_(chat_ids))).all()
+
+    rows = session.exec(
+        select(ChatParticipant, Chat)
+        .join(Chat, col(Chat.id) == ChatParticipant.chat_id)
+        .where(
+            ChatParticipant.user_id == current_user_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).all()
     result = []
 
-    for chat in chats:
+    for current_participant, chat in rows:
         display_title = chat.title
         display_avatar_url = chat.avatar_url
         other_user_id = None
@@ -446,6 +450,7 @@ def get_chats(
         if chat.type == "self":
             display_title = "Saved Messages"
             display_avatar_url = SAVED_MESSAGES_AVATAR_URL
+            unread_count = 0
 
         elif chat.type == "direct":
             other_participant = session.exec(
@@ -488,6 +493,23 @@ def get_chats(
         if last_message is None and chat.type != "self":
             continue
 
+        last_read_message_id = (
+            current_participant.last_read_message_id if current_participant else None
+        )
+
+        unread_statement = select(func.count(col(Message.id))).where(
+            Message.chat_id == chat.id,
+            Message.sender_id != current_user_id,
+            col(Message.deleted_at).is_(None),
+        )
+
+        if last_read_message_id is not None:
+            unread_statement = unread_statement.where(
+                col(Message.id) > last_read_message_id
+            )
+
+        unread_count = session.exec(unread_statement).one()
+
         result.append(
             ChatListItem(
                 id=chat.id,
@@ -504,6 +526,7 @@ def get_chats(
                 last_message_created_at=last_message.created_at
                 if last_message
                 else None,
+                unread_count=unread_count,
                 other_last_read_message_id=other_last_read_message_id,
                 other_last_read_at=other_last_read_at,
                 created_at=chat.created_at,

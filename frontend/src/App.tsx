@@ -67,6 +67,7 @@ type Chat = {
   last_message_text: string | null;
   last_message_sender_id: number | null;
   last_message_created_at: string | null;
+  unread_count: number;
   other_last_read_message_id: number | null;
   other_last_read_at: string | null;
   deleted_at: string | null;
@@ -410,14 +411,24 @@ function ChatScreen({
         chat_id: activeChatId,
         last_read_message_id: lastPersistedMessage.id,
       }),
-    }).catch((error) => {
-      if (
-        error instanceof Error &&
-        error.message === "Could not validate credentials"
-      ) {
-        onSessionExpired();
-      }
-    });
+    })
+      .then(() => {
+        setChats((current) =>
+          current.map((chat) =>
+            chat.id === activeChatId
+              ? { ...chat, unread_count: 0 }
+              : chat,
+          ),
+        );
+      })
+      .catch((error) => {
+        if (
+          error instanceof Error &&
+          error.message === "Could not validate credentials"
+        ) {
+          onSessionExpired();
+        }
+      });
   }, [activeChatId, messages, onSessionExpired]);
 
   useEffect(() => {
@@ -975,6 +986,8 @@ function ChatScreen({
                 const sentAt = formatChatTime(
                   chat.last_message_created_at,
                 );
+                const unreadCount =
+                  chat.unread_count > 99 ? "99+" : chat.unread_count;
 
                 return (
                   <button
@@ -1000,11 +1013,21 @@ function ChatScreen({
                     <span>
                       <span className="chat-title-row">
                         <strong>{getChatTitle(chat)}</strong>
-                        {sentAt && chat.last_message_created_at ? (
-                          <time dateTime={chat.last_message_created_at}>
-                            {sentAt}
-                          </time>
-                        ) : null}
+                        <span className="chat-title-meta">
+                          {chat.unread_count > 0 ? (
+                            <span
+                              className="unread-badge"
+                              aria-label={`${chat.unread_count} unread messages`}
+                            >
+                              {unreadCount}
+                            </span>
+                          ) : null}
+                          {sentAt && chat.last_message_created_at ? (
+                            <time dateTime={chat.last_message_created_at}>
+                              {sentAt}
+                            </time>
+                          ) : null}
+                        </span>
                       </span>
                       <small>{getChatSubtitle(chat)}</small>
                     </span>

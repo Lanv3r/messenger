@@ -164,6 +164,30 @@
   gap: 8px;
 }
 
+.chat-list button .chat-title-meta {
+  min-width: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: end;
+  gap: 6px;
+}
+
+.chat-list button .unread-badge {
+  min-width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 6px;
+  border-radius: 999px;
+  box-sizing: border-box;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
+  color: #fff;
+  background: #f46f54;
+}
+
 .chat-list button strong,
 .chat-list button small,
 .chat-list button time {
@@ -197,6 +221,11 @@
 .chat-list button.active small,
 .chat-list button.active time {
   color: #fff;
+}
+
+.chat-list button.active .unread-badge {
+  color: #f46f54;
+  background: #fff;
 }
 
 .status {
