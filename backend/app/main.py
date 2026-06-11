@@ -527,6 +527,7 @@ def get_chats(
                 if last_message
                 else None,
                 unread_count=unread_count,
+                current_last_read_message_id=last_read_message_id,
                 other_last_read_message_id=other_last_read_message_id,
                 other_last_read_at=other_last_read_at,
                 created_at=chat.created_at,

@@ -68,6 +68,7 @@ type Chat = {
   last_message_sender_id: number | null;
   last_message_created_at: string | null;
   unread_count: number;
+  current_last_read_message_id: number | null;
   other_last_read_message_id: number | null;
   other_last_read_at: string | null;
   deleted_at: string | null;
@@ -209,6 +210,11 @@ function ChatScreen({
   );
   const [profileSaving, setProfileSaving] = useState(false);
   const messagesRef = useRef<HTMLUListElement | null>(null);
+  const pendingMessageScrollRef = useRef<{
+    chatId: number;
+    lastReadMessageId: number | null;
+    unreadCount: number;
+  } | null>(null);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -333,6 +339,11 @@ function ChatScreen({
               (chat) => chat.type === "self",
             ) ?? loadedChats[0];
 
+          pendingMessageScrollRef.current = {
+            chatId: selfChat.id,
+            lastReadMessageId: selfChat.current_last_read_message_id,
+            unreadCount: selfChat.unread_count,
+          };
           activeChatIdRef.current = selfChat.id;
           setActiveChatId(selfChat.id);
         }
@@ -393,7 +404,11 @@ function ChatScreen({
       return;
     }
 
-    const lastPersistedMessage = [...messages]
+    const activeMessages = messages.filter(
+      (entry) => entry.chat_id === activeChatId,
+    );
+
+    const lastPersistedMessage = [...activeMessages]
       .reverse()
       .find(
         (entry) =>
@@ -434,14 +449,52 @@ function ChatScreen({
   useEffect(() => {
     const messagesElement = messagesRef.current;
 
-    if (!messagesElement) {
+    if (!messagesElement || activeChatId === null) {
+      return;
+    }
+
+    const activeMessages = messages.filter(
+      (entry) => entry.chat_id === activeChatId,
+    );
+
+    if (activeMessages.length === 0) {
       return;
     }
 
     requestAnimationFrame(() => {
+      const pendingScroll = pendingMessageScrollRef.current;
+
+      if (
+        pendingScroll &&
+        pendingScroll.chatId === activeChatId &&
+        pendingScroll.unreadCount > 0
+      ) {
+        const firstUnreadMessage = activeMessages.find(
+          (entry) =>
+            entry.sender_id !== user.userId &&
+            entry.delivery_status !== "sending" &&
+            entry.delivery_status !== "failed" &&
+            (pendingScroll.lastReadMessageId === null ||
+              entry.id > pendingScroll.lastReadMessageId),
+        );
+
+        if (firstUnreadMessage) {
+          const target = messagesElement.querySelector(
+            `[data-message-id="${firstUnreadMessage.id}"]`,
+          );
+
+          if (target instanceof HTMLElement) {
+            target.scrollIntoView({ block: "center" });
+            pendingMessageScrollRef.current = null;
+            return;
+          }
+        }
+      }
+
       messagesElement.scrollTop = messagesElement.scrollHeight;
+      pendingMessageScrollRef.current = null;
     });
-  }, [activeChatId, messages.length]);
+  }, [activeChatId, messages.length, user.userId]);
 
   useEffect(() => {
     setProfileFirstName(user.firstName);
@@ -582,19 +635,27 @@ function ChatScreen({
     socket.connect();
   };
 
-  const joinChat = (chatId: number) => {
+  const joinChat = (chat: Chat) => {
     const socket = socketRef.current;
     if (!socket) {
       return;
     }
 
+    const chatId = chat.id;
+
     if (activeChatIdRef.current !== null) {
       socket.emit("leave_room", String(activeChatIdRef.current));
     }
     socket.emit("join_room", String(chatId));
+    pendingMessageScrollRef.current = {
+      chatId,
+      lastReadMessageId: chat.current_last_read_message_id,
+      unreadCount: chat.unread_count,
+    };
     activeChatIdRef.current = chatId;
     setActiveChatId(chatId);
     setDraftRecipient(null);
+    setMessages([]);
   };
 
   const handleProfileSearch = async (event: React.FormEvent) => {
@@ -997,7 +1058,7 @@ function ChatScreen({
                         ? "active"
                         : undefined
                     }
-                    onClick={() => joinChat(chat.id)}
+                    onClick={() => joinChat(chat)}
                   >
                     <img
                       src={
@@ -1145,7 +1206,10 @@ function ChatScreen({
                     <li className="message-day-separator">{dayLabel}</li>
                   ) : null}
 
-                  <li className={entry.isOwn ? "you" : "server"}>
+                  <li
+                    className={entry.isOwn ? "you" : "server"}
+                    data-message-id={entry.id}
+                  >
                     <img
                       src={getSenderAvatar(entry)}
                       alt=""

@@ -258,6 +258,7 @@ class ChatListItem(SQLModel):
     last_message_text: str | None = None
     last_message_sender_id: int | None = None
     unread_count: int = 0
+    current_last_read_message_id: int | None = None
     other_last_read_message_id: int | None = None
     other_last_read_at: datetime | None = None
     created_at: datetime | None = None
