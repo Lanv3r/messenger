@@ -157,6 +157,39 @@ function replaceTemporaryMessage(
   );
 }
 
+function getMessageTime(message: ChatMessage) {
+  if (!message.created_at) {
+    return 0;
+  }
+
+  const timestamp = new Date(message.created_at).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function compareMessages(first: ChatMessage, second: ChatMessage) {
+  const timeDifference =
+    getMessageTime(first) - getMessageTime(second);
+
+  if (timeDifference !== 0) {
+    return timeDifference;
+  }
+
+  return first.id - second.id;
+}
+
+function getVisibleMessages(
+  messages: ChatMessage[],
+  activeChatId: number | null,
+) {
+  if (activeChatId === null) {
+    return [];
+  }
+
+  return messages
+    .filter((entry) => entry.chat_id === activeChatId)
+    .sort(compareMessages);
+}
+
 function toAuthUser(authUser: AuthResponse): AuthUser {
   return {
     userId: authUser.id,
@@ -215,7 +248,14 @@ function ChatScreen({
     lastReadMessageId: number | null;
     unreadCount: number;
   } | null>(null);
+  const readCoverageByChatRef = useRef<
+    Record<number, { top: number; bottom: number }>
+  >({});
+  const lastReadMessageIdByChatRef = useRef<Record<number, number>>({});
   const socketRef = useRef<Socket | null>(null);
+  const activeChat = chats.find(
+    (chat) => chat.id === activeChatId,
+  );
 
   useEffect(() => {
     const socket: Socket = io(API_URL, {
@@ -400,51 +440,176 @@ function ChatScreen({
   }, [activeChatId]);
 
   useEffect(() => {
-    if (activeChatId === null || messages.length === 0) {
+    const messagesElement = messagesRef.current;
+
+    if (!messagesElement || activeChatId === null || !activeChat) {
       return;
     }
 
-    const activeMessages = messages.filter(
-      (entry) => entry.chat_id === activeChatId,
+    const serverLastReadMessageId =
+      activeChat.current_last_read_message_id ?? 0;
+    const localLastReadMessageId =
+      lastReadMessageIdByChatRef.current[activeChatId] ?? 0;
+    lastReadMessageIdByChatRef.current[activeChatId] = Math.max(
+      serverLastReadMessageId,
+      localLastReadMessageId,
     );
 
-    const lastPersistedMessage = [...activeMessages]
-      .reverse()
-      .find(
-        (entry) =>
-          entry.delivery_status !== "sending" &&
-          entry.delivery_status !== "failed",
+    const activeMessages = getVisibleMessages(messages, activeChatId);
+
+    const getCurrentLastReadMessageId = () =>
+      Math.max(
+        activeChat.current_last_read_message_id ?? 0,
+        lastReadMessageIdByChatRef.current[activeChatId] ?? 0,
       );
 
-    if (!lastPersistedMessage) {
-      return;
-    }
+    const getUnreadIncomingMessages = () =>
+      activeMessages.filter(
+        (entry) =>
+          entry.sender_id !== user.userId &&
+          entry.delivery_status !== "sending" &&
+          entry.delivery_status !== "failed" &&
+          entry.id > getCurrentLastReadMessageId(),
+      );
 
-    apiFetch<{ ok: boolean }>(`/chats/${activeChatId}/read`, {
-      method: "POST",
-      body: JSON.stringify({
-        chat_id: activeChatId,
-        last_read_message_id: lastPersistedMessage.id,
-      }),
-    })
-      .then(() => {
-        setChats((current) =>
-          current.map((chat) =>
-            chat.id === activeChatId
-              ? { ...chat, unread_count: 0 }
-              : chat,
-          ),
-        );
-      })
-      .catch((error) => {
+    const getMessageBounds = (messageId: number) => {
+      const target = messagesElement.querySelector(
+        `[data-message-id="${messageId}"]`,
+      );
+
+      if (!(target instanceof HTMLElement)) {
+        return null;
+      }
+
+      const containerRect = messagesElement.getBoundingClientRect();
+      const messageRect = target.getBoundingClientRect();
+      const top =
+        messageRect.top - containerRect.top + messagesElement.scrollTop;
+
+      return {
+        top,
+        bottom: top + messageRect.height,
+      };
+    };
+
+    const markCoveredMessagesRead = (coverage: {
+      top: number;
+      bottom: number;
+    }) => {
+      const currentLastReadMessageId = getCurrentLastReadMessageId();
+      const unreadIncomingMessages = getUnreadIncomingMessages();
+      let nextLastReadMessageId = currentLastReadMessageId;
+
+      for (const entry of unreadIncomingMessages) {
+        const messageBounds = getMessageBounds(entry.id);
+
+        if (!messageBounds) {
+          break;
+        }
+
+        const messageWasCovered =
+          messageBounds.top >= coverage.top - 2 &&
+          messageBounds.bottom <= coverage.bottom + 2;
+
+        if (!messageWasCovered) {
+          break;
+        }
+
+        nextLastReadMessageId = entry.id;
+      }
+
+      if (nextLastReadMessageId <= currentLastReadMessageId) {
+        return;
+      }
+
+      const newlyReadCount = unreadIncomingMessages.filter(
+        (entry) => entry.id <= nextLastReadMessageId,
+      ).length;
+
+      lastReadMessageIdByChatRef.current[activeChatId] =
+        nextLastReadMessageId;
+
+      setChats((current) =>
+        current.map((chat) =>
+          chat.id === activeChatId
+            ? {
+                ...chat,
+                current_last_read_message_id: Math.max(
+                  chat.current_last_read_message_id ?? 0,
+                  nextLastReadMessageId,
+                ),
+                unread_count: Math.max(
+                  0,
+                  chat.unread_count - newlyReadCount,
+                ),
+              }
+            : chat,
+        ),
+      );
+
+      apiFetch<{ ok: boolean }>(`/chats/${activeChatId}/read`, {
+        method: "POST",
+        body: JSON.stringify({
+          chat_id: activeChatId,
+          last_read_message_id: nextLastReadMessageId,
+        }),
+      }).catch((error) => {
         if (
           error instanceof Error &&
           error.message === "Could not validate credentials"
         ) {
           onSessionExpired();
+          return;
         }
+
+        const message =
+          error instanceof Error ? error.message : "Unable to mark chat read.";
+        setChatError(message);
       });
-  }, [activeChatId, messages, onSessionExpired]);
+    };
+
+    const updateReadCoverage = () => {
+      const viewportTop = messagesElement.scrollTop;
+      const viewportBottom =
+        messagesElement.scrollTop + messagesElement.clientHeight;
+      const previousCoverage =
+        readCoverageByChatRef.current[activeChatId];
+      const nextCoverage = previousCoverage
+        ? {
+            top: Math.min(previousCoverage.top, viewportTop),
+            bottom: Math.max(previousCoverage.bottom, viewportBottom),
+          }
+        : {
+            top: viewportTop,
+            bottom: viewportBottom,
+          };
+
+      readCoverageByChatRef.current[activeChatId] = nextCoverage;
+      markCoveredMessagesRead(nextCoverage);
+    };
+
+    let animationFrameId = requestAnimationFrame(updateReadCoverage);
+
+    const handleScroll = () => {
+      cancelAnimationFrame(animationFrameId);
+      animationFrameId = requestAnimationFrame(updateReadCoverage);
+    };
+
+    messagesElement.addEventListener("scroll", handleScroll, {
+      passive: true,
+    });
+
+    return () => {
+      cancelAnimationFrame(animationFrameId);
+      messagesElement.removeEventListener("scroll", handleScroll);
+    };
+  }, [
+    activeChat,
+    activeChatId,
+    messages,
+    onSessionExpired,
+    user.userId,
+  ]);
 
   useEffect(() => {
     const messagesElement = messagesRef.current;
@@ -453,9 +618,7 @@ function ChatScreen({
       return;
     }
 
-    const activeMessages = messages.filter(
-      (entry) => entry.chat_id === activeChatId,
-    );
+    const activeMessages = getVisibleMessages(messages, activeChatId);
 
     if (activeMessages.length === 0) {
       return;
@@ -486,6 +649,9 @@ function ChatScreen({
           if (target instanceof HTMLElement) {
             target.scrollIntoView({ block: "center" });
             pendingMessageScrollRef.current = null;
+            requestAnimationFrame(() => {
+              messagesElement.dispatchEvent(new Event("scroll"));
+            });
             return;
           }
         }
@@ -493,6 +659,9 @@ function ChatScreen({
 
       messagesElement.scrollTop = messagesElement.scrollHeight;
       pendingMessageScrollRef.current = null;
+      requestAnimationFrame(() => {
+        messagesElement.dispatchEvent(new Event("scroll"));
+      });
     });
   }, [activeChatId, messages.length, user.userId]);
 
@@ -737,10 +906,6 @@ function ChatScreen({
     }
   };
 
-  const activeChat = chats.find(
-    (chat) => chat.id === activeChatId,
-  );
-
   const getChatTitle = (chat: Chat) => {
     return chat.display_title || chat.title || "Chat";
   };
@@ -960,6 +1125,8 @@ function ChatScreen({
 
     return { kind: "sent", label: "Sent" };
   };
+
+  const visibleMessages = getVisibleMessages(messages, activeChatId);
 
   return (
     <main className="chat-shell">
@@ -1185,11 +1352,11 @@ function ChatScreen({
         ) : null}
 
         <ul id="messages" ref={messagesRef}>
-          {messages.length === 0 ? (
+          {visibleMessages.length === 0 ? (
             <li className="empty-state">No messages yet in this chat.</li>
           ) : (
-            messages.map((entry, index) => {
-              const previousEntry = messages[index - 1];
+            visibleMessages.map((entry, index) => {
+              const previousEntry = visibleMessages[index - 1];
               const sentAt = formatMessageTime(entry.created_at);
               const dayLabel = formatMessageDay(entry.created_at);
               const showDaySeparator =
