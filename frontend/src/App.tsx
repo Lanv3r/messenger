@@ -1163,6 +1163,29 @@ function ChatScreen({
     return entry.sender_avatar_url ?? "/favicon.svg";
   };
 
+  const visibleMessages = getVisibleMessages(messages, activeChatId);
+  const otherLastReadMessageId =
+    activeChat?.other_last_read_message_id;
+  const latestOwnReadMessageId =
+    otherLastReadMessageId === null ||
+    otherLastReadMessageId === undefined
+      ? null
+      : visibleMessages.reduce<number | null>((latestMessageId, entry) => {
+          if (
+            entry.sender_id !== user.userId ||
+            entry.delivery_status === "sending" ||
+            entry.delivery_status === "failed" ||
+            entry.id > otherLastReadMessageId
+          ) {
+            return latestMessageId;
+          }
+
+          return latestMessageId === null ||
+            entry.id > latestMessageId
+            ? entry.id
+            : latestMessageId;
+        }, null);
+
   const getMessageDeliveryStatus = (entry: ChatMessage) => {
     if (entry.sender_id !== user.userId) {
       return null;
@@ -1176,16 +1199,13 @@ function ChatScreen({
       return { kind: "failed", label: "Failed" };
     }
 
-    const otherLastReadMessageId =
-      activeChat?.other_last_read_message_id;
-
     if (
       otherLastReadMessageId !== null &&
       otherLastReadMessageId !== undefined &&
       entry.id <= otherLastReadMessageId
     ) {
       if (
-        entry.id === otherLastReadMessageId &&
+        entry.id === latestOwnReadMessageId &&
         activeChat?.other_last_read_at
       ) {
         const readAt = formatChatTime(activeChat.other_last_read_at);
@@ -1200,8 +1220,6 @@ function ChatScreen({
 
     return { kind: "sent", label: "Sent" };
   };
-
-  const visibleMessages = getVisibleMessages(messages, activeChatId);
 
   return (
     <main className="chat-shell">
