@@ -252,10 +252,116 @@ function ChatScreen({
     Record<number, { top: number; bottom: number }>
   >({});
   const lastReadMessageIdByChatRef = useRef<Record<number, number>>({});
+  const unreadCountOverrideByChatRef = useRef<Record<number, number>>({});
   const socketRef = useRef<Socket | null>(null);
   const activeChat = chats.find(
     (chat) => chat.id === activeChatId,
   );
+
+  function applyLocalReadState(chat: Chat) {
+    const localLastReadMessageId =
+      lastReadMessageIdByChatRef.current[chat.id];
+    const unreadCountOverride =
+      unreadCountOverrideByChatRef.current[chat.id];
+
+    if (
+      localLastReadMessageId === undefined ||
+      localLastReadMessageId <= (chat.current_last_read_message_id ?? 0)
+    ) {
+      return unreadCountOverride === undefined
+        ? chat
+        : { ...chat, unread_count: unreadCountOverride };
+    }
+
+    return {
+      ...chat,
+      current_last_read_message_id: localLastReadMessageId,
+      unread_count:
+        unreadCountOverride ??
+        (chat.last_message_id !== null &&
+        localLastReadMessageId >= chat.last_message_id
+          ? 0
+          : chat.unread_count),
+    };
+  }
+
+  function setLoadedChats(loadedChats: Chat[]) {
+    setChats(loadedChats.map(applyLocalReadState));
+  }
+
+  function markChatReadThrough(
+    chatId: number,
+    messageId: number,
+    options: {
+      resetUnread?: boolean;
+      unreadCountChange?: number;
+    } = {},
+  ) {
+    const previousLastReadMessageId =
+      lastReadMessageIdByChatRef.current[chatId] ?? 0;
+    const nextLastReadMessageId = Math.max(
+      previousLastReadMessageId,
+      messageId,
+    );
+
+    lastReadMessageIdByChatRef.current[chatId] =
+      nextLastReadMessageId;
+
+    if (options.resetUnread) {
+      unreadCountOverrideByChatRef.current[chatId] = 0;
+    }
+
+    setChats((current) =>
+      current.map((chat) => {
+        if (chat.id !== chatId) {
+          return chat;
+        }
+
+        const nextUnreadCount = options.resetUnread
+          ? 0
+          : Math.max(
+              0,
+              chat.unread_count - (options.unreadCountChange ?? 0),
+            );
+
+        unreadCountOverrideByChatRef.current[chatId] =
+          nextUnreadCount;
+
+        return {
+          ...chat,
+          current_last_read_message_id: Math.max(
+            chat.current_last_read_message_id ?? 0,
+            nextLastReadMessageId,
+          ),
+          unread_count: nextUnreadCount,
+        };
+      }),
+    );
+
+    if (messageId <= previousLastReadMessageId) {
+      return;
+    }
+
+    apiFetch<{ ok: boolean }>(`/chats/${chatId}/read`, {
+      method: "POST",
+      body: JSON.stringify({
+        chat_id: chatId,
+        last_read_message_id: messageId,
+      }),
+    }).catch((error) => {
+      if (
+        error instanceof Error &&
+        error.message === "Could not validate credentials"
+      ) {
+        onSessionExpired();
+        return;
+      }
+
+      const message =
+        error instanceof Error ? error.message : "Unable to mark chat read.";
+      setChatError(message);
+    });
+  }
 
   useEffect(() => {
     const socket: Socket = io(API_URL, {
@@ -284,7 +390,7 @@ function ChatScreen({
 
       apiFetch<Chat[]>("/chats")
         .then((loadedChats) => {
-          setChats(loadedChats);
+          setLoadedChats(loadedChats);
           setChatError(null);
         })
         .catch((error) => {
@@ -319,7 +425,7 @@ function ChatScreen({
 
       apiFetch<Chat[]>("/chats")
         .then((loadedChats) => {
-          setChats(loadedChats);
+          setLoadedChats(loadedChats);
           setChatError(null);
         })
         .catch((error) => {
@@ -370,7 +476,7 @@ function ChatScreen({
         const loadedChats =
           await apiFetch<Chat[]>("/chats");
 
-        setChats(loadedChats);
+        setLoadedChats(loadedChats);
         setChatError(null);
 
         if (loadedChats.length > 0) {
@@ -526,45 +632,8 @@ function ChatScreen({
         (entry) => entry.id <= nextLastReadMessageId,
       ).length;
 
-      lastReadMessageIdByChatRef.current[activeChatId] =
-        nextLastReadMessageId;
-
-      setChats((current) =>
-        current.map((chat) =>
-          chat.id === activeChatId
-            ? {
-                ...chat,
-                current_last_read_message_id: Math.max(
-                  chat.current_last_read_message_id ?? 0,
-                  nextLastReadMessageId,
-                ),
-                unread_count: Math.max(
-                  0,
-                  chat.unread_count - newlyReadCount,
-                ),
-              }
-            : chat,
-        ),
-      );
-
-      apiFetch<{ ok: boolean }>(`/chats/${activeChatId}/read`, {
-        method: "POST",
-        body: JSON.stringify({
-          chat_id: activeChatId,
-          last_read_message_id: nextLastReadMessageId,
-        }),
-      }).catch((error) => {
-        if (
-          error instanceof Error &&
-          error.message === "Could not validate credentials"
-        ) {
-          onSessionExpired();
-          return;
-        }
-
-        const message =
-          error instanceof Error ? error.message : "Unable to mark chat read.";
-        setChatError(message);
+      markChatReadThrough(activeChatId, nextLastReadMessageId, {
+        unreadCountChange: newlyReadCount,
       });
     };
 
@@ -725,6 +794,9 @@ function ChatScreen({
         setMessages([
           { ...result.message, isOwn: true, delivery_status: "sent" },
         ]);
+        markChatReadThrough(result.chat.id, result.message.id, {
+          resetUnread: true,
+        });
         socket?.emit("join_room", String(result.chat.id));
       } catch (error) {
         setMessages((current) =>
@@ -789,6 +861,9 @@ function ChatScreen({
         setChats((current) =>
           updateChatPreview(current, confirmedMessage),
         );
+        markChatReadThrough(activeChatId, confirmedMessage.id, {
+          resetUnread: true,
+        });
       },
     );
   };
