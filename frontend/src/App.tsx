@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
+import { Check, CheckCheck, ClockArrowUp } from "lucide-react";
 import { io, Socket } from "socket.io-client";
 
 import { API_URL, apiFetch } from "@/lib/api";
@@ -850,17 +851,17 @@ function ChatScreen({
     return entry.sender_avatar_url ?? "/favicon.svg";
   };
 
-  const getMessageDeliveryLabel = (entry: ChatMessage) => {
+  const getMessageDeliveryStatus = (entry: ChatMessage) => {
     if (entry.sender_id !== user.userId) {
       return null;
     }
 
     if (entry.delivery_status === "sending") {
-      return "Sending";
+      return { kind: "sending", label: "Sending" };
     }
 
     if (entry.delivery_status === "failed") {
-      return "Failed";
+      return { kind: "failed", label: "Failed" };
     }
 
     const otherLastReadMessageId =
@@ -876,13 +877,16 @@ function ChatScreen({
         activeChat?.other_last_read_at
       ) {
         const readAt = formatChatTime(activeChat.other_last_read_at);
-        return readAt ? `Read ${readAt}` : "Read";
+        return {
+          kind: "read",
+          label: readAt ? `Read ${readAt}` : "Read",
+        };
       }
 
-      return "Read";
+      return { kind: "read", label: "Read" };
     }
 
-    return "Sent";
+    return { kind: "sent", label: "Sent" };
   };
 
   return (
@@ -1107,7 +1111,7 @@ function ChatScreen({
               const showDaySeparator =
                 !previousEntry ||
                 !isSameMessageDay(previousEntry.created_at, entry.created_at);
-              const deliveryLabel = getMessageDeliveryLabel(entry);
+              const deliveryStatus = getMessageDeliveryStatus(entry);
               const messageKey = `${entry.sender_id ?? "system"}-${
                 entry.id ?? index
               }`;
@@ -1134,15 +1138,24 @@ function ChatScreen({
                         {sentAt && entry.created_at ? (
                           <time dateTime={entry.created_at}>{sentAt}</time>
                         ) : null}
-                        {deliveryLabel ? (
+                        {deliveryStatus ? (
                           <span
-                            className={
-                              entry.delivery_status === "failed"
-                                ? "message-status failed"
-                                : "message-status"
-                            }
+                            className={`message-status ${deliveryStatus.kind}`}
+                            aria-label={deliveryStatus.label}
+                            title={deliveryStatus.label}
                           >
-                            {deliveryLabel}
+                            {deliveryStatus.kind === "sending" ? (
+                              <ClockArrowUp size={14} aria-hidden="true" />
+                            ) : null}
+                            {deliveryStatus.kind === "sent" ? (
+                              <Check size={15} aria-hidden="true" />
+                            ) : null}
+                            {deliveryStatus.kind === "read" ? (
+                              <CheckCheck size={16} aria-hidden="true" />
+                            ) : null}
+                            {deliveryStatus.kind === "failed" ? (
+                              <span aria-hidden="true">!</span>
+                            ) : null}
                           </span>
                         ) : null}
                       </span>

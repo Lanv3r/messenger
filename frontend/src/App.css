@@ -481,12 +481,37 @@
   opacity: 0.64;
 }
 
+.message-status {
+  display: inline-grid;
+  width: 18px;
+  height: 16px;
+  place-items: center;
+  line-height: 1;
+}
+
+.message-status svg {
+  stroke-width: 2.4;
+}
+
+.message-status.sending {
+  opacity: 0.82;
+}
+
+.message-status.read {
+  color: currentColor;
+}
+
 .message-status.failed {
-  color: #b42318;
+  width: 14px;
+  height: 14px;
+  border-radius: 999px;
+  color: #fff;
+  background: #b42318;
 }
 
 #messages li.you .message-status.failed {
-  color: #ffe0dc;
+  color: #b42318;
+  background: #ffe0dc;
 }
 
 .message-time {
