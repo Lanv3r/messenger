@@ -562,8 +562,7 @@
 }
 
 .message-search-results button strong,
-.message-search-results button time,
-.message-search-results button small {
+.message-search-results button time {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -582,7 +581,12 @@
 }
 
 .message-search-results button small {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   font-size: 12px;
+  line-height: 1.35;
   color: #8b5e34;
 }
 
@@ -634,10 +638,16 @@
 }
 
 .message-search-match {
-  padding: 0 2px;
-  border-radius: 4px;
+  padding: 0;
+  border-radius: 2px;
   color: inherit;
-  background: rgba(255, 226, 92, 0.85);
+  background: linear-gradient(
+    180deg,
+    transparent 14%,
+    rgba(255, 226, 92, 0.88) 14%,
+    rgba(255, 226, 92, 0.88) 88%,
+    transparent 88%
+  );
 }
 
 #messages li.you .message-search-match {

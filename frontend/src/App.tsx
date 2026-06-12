@@ -222,6 +222,55 @@ function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function getSearchExcerpt(content: string | null, query: string) {
+  if (!content) {
+    return "No message text";
+  }
+
+  const normalizedQuery = query.trim().toLowerCase();
+
+  if (!normalizedQuery) {
+    return content;
+  }
+
+  const matchIndex = content.toLowerCase().indexOf(normalizedQuery);
+
+  if (matchIndex === -1) {
+    return content;
+  }
+
+  const contextLength = 42;
+  const matchEnd = matchIndex + normalizedQuery.length;
+  const start = Math.max(0, matchIndex - contextLength);
+  const end = Math.min(content.length, matchEnd + contextLength);
+  const prefix = start > 0 ? "..." : "";
+  const suffix = end < content.length ? "..." : "";
+
+  return `${prefix}${content.slice(start, end)}${suffix}`;
+}
+
+function highlightSearchText(content: string, query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+
+  if (!normalizedQuery) {
+    return content;
+  }
+
+  const parts = content.split(
+    new RegExp(`(${escapeRegExp(normalizedQuery)})`, "gi"),
+  );
+
+  return parts.map((part, index) =>
+    part.toLowerCase() === normalizedQuery ? (
+      <mark className="message-search-match" key={`${part}-${index}`}>
+        {part}
+      </mark>
+    ) : (
+      <Fragment key={`${part}-${index}`}>{part}</Fragment>
+    ),
+  );
+}
+
 function toAuthUser(authUser: AuthResponse): AuthUser {
   return {
     userId: authUser.id,
@@ -1139,18 +1188,7 @@ function ChatScreen({
       return content;
     }
 
-    const parts = content.split(new RegExp(`(${escapeRegExp(query)})`, "gi"));
-    const normalizedQuery = query.toLowerCase();
-
-    return parts.map((part, index) =>
-      part.toLowerCase() === normalizedQuery ? (
-        <mark className="message-search-match" key={`${part}-${index}`}>
-          {part}
-        </mark>
-      ) : (
-        <Fragment key={`${part}-${index}`}>{part}</Fragment>
-      ),
-    );
+    return highlightSearchText(content, query);
   };
 
   const handleProfileUpdate = async (event: React.FormEvent) => {
@@ -1748,7 +1786,15 @@ function ChatScreen({
                       </time>
                     ) : null}
                   </span>
-                  <small>{result.content || "No message text"}</small>
+                  <small>
+                    {highlightSearchText(
+                      getSearchExcerpt(
+                        result.content,
+                        messageSearchQuery,
+                      ),
+                      messageSearchQuery,
+                    )}
+                  </small>
                 </button>
               ))}
             </div>
