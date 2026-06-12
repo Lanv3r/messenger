@@ -489,8 +489,7 @@
 
 .message-search-form {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
+  grid-template-columns: 1fr;
 }
 
 .message-search-form input {
@@ -508,23 +507,6 @@
 .message-search-form input:focus {
   outline: 2px solid rgba(244, 111, 84, 0.25);
   border-color: rgba(244, 111, 84, 0.45);
-}
-
-.message-search-clear {
-  width: 42px;
-  min-height: 42px;
-  display: grid;
-  place-items: center;
-  border: 0;
-  border-radius: 14px;
-  color: #8b5e34;
-  background: rgba(244, 111, 84, 0.12);
-  cursor: pointer;
-}
-
-.message-search-clear:hover {
-  color: #fff;
-  background: #f46f54;
 }
 
 .message-search-results {

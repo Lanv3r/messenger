@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Check, CheckCheck, ClockArrowUp, Pin, X } from "lucide-react";
+import { Check, CheckCheck, ClockArrowUp, Pin } from "lucide-react";
 import { io, Socket } from "socket.io-client";
 
 import { API_URL, apiFetch } from "@/lib/api";
@@ -1172,14 +1172,6 @@ function ChatScreen({
     }
   };
 
-  const clearMessageSearch = () => {
-    setMessageSearchQuery("");
-    setMessageSearchResults([]);
-    setMessageSearchError(null);
-    setMessageSearchHasSearched(false);
-    setActiveSearchResultId(null);
-  };
-
   const renderMessageContent = (entry: ChatMessage) => {
     const content = entry.content ?? "";
     const query = messageSearchQuery.trim();
@@ -1743,18 +1735,6 @@ function ChatScreen({
                 }
               }}
             />
-            {messageSearchQuery ||
-            messageSearchResults.length > 0 ||
-            activeSearchResultId !== null ? (
-              <button
-                type="button"
-                className="message-search-clear"
-                aria-label="Clear message search"
-                onClick={clearMessageSearch}
-              >
-                <X size={16} aria-hidden="true" />
-              </button>
-            ) : null}
           </form>
 
           {messageSearchError ? (
