@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Check, CheckCheck, ClockArrowUp, Pin } from "lucide-react";
+import { Check, CheckCheck, ClockArrowUp, Pin, X } from "lucide-react";
 import { io, Socket } from "socket.io-client";
 
 import { API_URL, apiFetch } from "@/lib/api";
@@ -216,6 +216,10 @@ function getVisibleMessages(
   return messages
     .filter((entry) => entry.chat_id === activeChatId)
     .sort(compareMessages);
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function toAuthUser(authUser: AuthResponse): AuthUser {
@@ -593,6 +597,65 @@ function ChatScreen({
     setMessageSearchHasSearched(false);
     setActiveSearchResultId(null);
   }, [activeChatId, draftRecipient?.id]);
+
+  useEffect(() => {
+    const query = messageSearchQuery.trim();
+
+    if (activeChatId === null || !query) {
+      setMessageSearchResults([]);
+      setMessageSearchError(null);
+      setMessageSearchLoading(false);
+      setMessageSearchHasSearched(false);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    setMessageSearchLoading(true);
+    setMessageSearchError(null);
+    setMessageSearchHasSearched(true);
+
+    const timeoutId = window.setTimeout(() => {
+      apiFetch<ChatMessage[]>(
+        `/chats/${activeChatId}/messages/search?query=${encodeURIComponent(query)}`,
+        {
+          signal: controller.signal,
+        },
+      )
+        .then((results) => {
+          setMessageSearchResults(results);
+        })
+        .catch((error) => {
+          if (error instanceof DOMException && error.name === "AbortError") {
+            return;
+          }
+
+          setMessageSearchResults([]);
+
+          const message =
+            error instanceof Error
+              ? error.message
+              : "Unable to search messages.";
+
+          if (message === "Could not validate credentials") {
+            onSessionExpired();
+            return;
+          }
+
+          setMessageSearchError(message);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setMessageSearchLoading(false);
+          }
+        });
+    }, 250);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [activeChatId, messageSearchQuery, onSessionExpired]);
 
   useEffect(() => {
     const messagesElement = messagesRef.current;
@@ -1060,54 +1123,34 @@ function ChatScreen({
     }
   };
 
-  const handleMessageSearch = async (event: React.FormEvent) => {
-    event.preventDefault();
+  const clearMessageSearch = () => {
+    setMessageSearchQuery("");
+    setMessageSearchResults([]);
+    setMessageSearchError(null);
+    setMessageSearchHasSearched(false);
+    setActiveSearchResultId(null);
+  };
 
-    if (activeChatId === null) {
-      return;
-    }
-
+  const renderMessageContent = (entry: ChatMessage) => {
+    const content = entry.content ?? "";
     const query = messageSearchQuery.trim();
 
-    if (!query) {
-      setMessageSearchResults([]);
-      setMessageSearchError(null);
-      setMessageSearchHasSearched(false);
-      setActiveSearchResultId(null);
-      return;
+    if (!query || entry.id !== activeSearchResultId) {
+      return content;
     }
 
-    setMessageSearchLoading(true);
-    setMessageSearchError(null);
-    setMessageSearchHasSearched(true);
+    const parts = content.split(new RegExp(`(${escapeRegExp(query)})`, "gi"));
+    const normalizedQuery = query.toLowerCase();
 
-    try {
-      const results = await apiFetch<ChatMessage[]>(
-        `/chats/${activeChatId}/messages/search?query=${encodeURIComponent(query)}`,
-      );
-
-      setMessageSearchResults(results);
-
-      if (results.length > 0) {
-        revealMessageSearchResult(results[0]);
-      } else {
-        setActiveSearchResultId(null);
-      }
-    } catch (error) {
-      setMessageSearchResults([]);
-
-      const message =
-        error instanceof Error ? error.message : "Unable to search messages.";
-
-      if (message === "Could not validate credentials") {
-        onSessionExpired();
-        return;
-      }
-
-      setMessageSearchError(message);
-    } finally {
-      setMessageSearchLoading(false);
-    }
+    return parts.map((part, index) =>
+      part.toLowerCase() === normalizedQuery ? (
+        <mark className="message-search-match" key={`${part}-${index}`}>
+          {part}
+        </mark>
+      ) : (
+        <Fragment key={`${part}-${index}`}>{part}</Fragment>
+      ),
+    );
   };
 
   const handleProfileUpdate = async (event: React.FormEvent) => {
@@ -1639,39 +1682,49 @@ function ChatScreen({
         ) : null}
 
         <section className="message-search" aria-label="Search messages">
-          <form className="message-search-form" onSubmit={handleMessageSearch}>
+          <form
+            className="message-search-form"
+            onSubmit={(event) => event.preventDefault()}
+          >
             <input
               type="search"
               value={messageSearchQuery}
-              placeholder={
-                activeChatId === null
-                  ? "Open a chat to search messages"
-                  : `Search in ${activeTitle}`
-              }
+              placeholder="Search in this chat"
               autoComplete="off"
               disabled={activeChatId === null}
               onChange={(event) => {
                 const value = event.target.value;
                 setMessageSearchQuery(value);
+                setMessageSearchResults([]);
+                setMessageSearchError(null);
+                setMessageSearchHasSearched(false);
+                setActiveSearchResultId(null);
 
                 if (!value.trim()) {
-                  setMessageSearchResults([]);
-                  setMessageSearchError(null);
-                  setMessageSearchHasSearched(false);
                   setActiveSearchResultId(null);
                 }
               }}
             />
-            <Button
-              type="submit"
-              disabled={activeChatId === null || messageSearchLoading}
-            >
-              {messageSearchLoading ? "Searching..." : "Search"}
-            </Button>
+            {messageSearchQuery ||
+            messageSearchResults.length > 0 ||
+            activeSearchResultId !== null ? (
+              <button
+                type="button"
+                className="message-search-clear"
+                aria-label="Clear message search"
+                onClick={clearMessageSearch}
+              >
+                <X size={16} aria-hidden="true" />
+              </button>
+            ) : null}
           </form>
 
           {messageSearchError ? (
             <p className="profile-error">{messageSearchError}</p>
+          ) : null}
+
+          {messageSearchLoading ? (
+            <p className="message-search-empty">Searching...</p>
           ) : null}
 
           {messageSearchResults.length > 0 ? (
@@ -1758,7 +1811,7 @@ function ChatScreen({
                     />
                     <div className="message-copy">
                       <span className="sender">{getSenderName(entry)}</span>
-                      <span>{entry.content}</span>
+                      <span>{renderMessageContent(entry)}</span>
                       <span className="message-meta">
                         {sentAt && entry.created_at ? (
                           <time dateTime={entry.created_at}>{sentAt}</time>
