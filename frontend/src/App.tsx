@@ -271,6 +271,17 @@ function highlightSearchText(content: string, query: string) {
   );
 }
 
+function readNumberFromSessionStorage(key: string) {
+  const value = window.sessionStorage.getItem(key);
+
+  if (value === null) {
+    return null;
+  }
+
+  const parsedValue = Number(value);
+  return Number.isFinite(parsedValue) ? parsedValue : null;
+}
+
 function toAuthUser(authUser: AuthResponse): AuthUser {
   return {
     userId: authUser.id,
@@ -341,6 +352,7 @@ function ChatScreen({
     chatId: number;
     lastReadMessageId: number | null;
     unreadCount: number;
+    scrollTop?: number | null;
   } | null>(null);
   const readCoverageByChatRef = useRef<
     Record<number, { top: number; bottom: number }>
@@ -351,6 +363,40 @@ function ChatScreen({
   const activeChat = chats.find(
     (chat) => chat.id === activeChatId,
   );
+
+  function getChatSessionStorageKey(key: string) {
+    return `messenger:${user.userId}:${key}`;
+  }
+
+  function getChatScrollSessionStorageKey(chatId: number) {
+    return getChatSessionStorageKey(`chat:${chatId}:scrollTop`);
+  }
+
+  function saveActiveChatId(chatId: number) {
+    window.sessionStorage.setItem(
+      getChatSessionStorageKey("activeChatId"),
+      String(chatId),
+    );
+  }
+
+  function getSavedActiveChatId() {
+    return readNumberFromSessionStorage(
+      getChatSessionStorageKey("activeChatId"),
+    );
+  }
+
+  function saveChatScrollPosition(chatId: number, scrollTop: number) {
+    window.sessionStorage.setItem(
+      getChatScrollSessionStorageKey(chatId),
+      String(Math.max(0, Math.round(scrollTop))),
+    );
+  }
+
+  function getSavedChatScrollPosition(chatId: number) {
+    return readNumberFromSessionStorage(
+      getChatScrollSessionStorageKey(chatId),
+    );
+  }
 
   function applyLocalReadState(chat: Chat) {
     const localLastReadMessageId =
@@ -574,18 +620,30 @@ function ChatScreen({
         setChatError(null);
 
         if (loadedChats.length > 0) {
-          const selfChat =
+          const savedActiveChatId = getSavedActiveChatId();
+          const restoredChat =
+            savedActiveChatId === null
+              ? null
+              : loadedChats.find((chat) => chat.id === savedActiveChatId);
+          const selectedChat =
+            restoredChat ??
             loadedChats.find(
               (chat) => chat.type === "self",
-            ) ?? loadedChats[0];
+            ) ??
+            loadedChats[0];
 
           pendingMessageScrollRef.current = {
-            chatId: selfChat.id,
-            lastReadMessageId: selfChat.current_last_read_message_id,
-            unreadCount: selfChat.unread_count,
+            chatId: selectedChat.id,
+            lastReadMessageId: selectedChat.current_last_read_message_id,
+            unreadCount: selectedChat.unread_count,
+            scrollTop:
+              restoredChat === null
+                ? null
+                : getSavedChatScrollPosition(selectedChat.id),
           };
-          activeChatIdRef.current = selfChat.id;
-          setActiveChatId(selfChat.id);
+          activeChatIdRef.current = selectedChat.id;
+          saveActiveChatId(selectedChat.id);
+          setActiveChatId(selectedChat.id);
         }
       } catch (error) {
         const message =
@@ -821,6 +879,7 @@ function ChatScreen({
     let animationFrameId = requestAnimationFrame(updateReadCoverage);
 
     const handleScroll = () => {
+      saveChatScrollPosition(activeChatId, messagesElement.scrollTop);
       cancelAnimationFrame(animationFrameId);
       animationFrameId = requestAnimationFrame(updateReadCoverage);
     };
@@ -856,6 +915,25 @@ function ChatScreen({
 
     requestAnimationFrame(() => {
       const pendingScroll = pendingMessageScrollRef.current;
+
+      if (
+        pendingScroll &&
+        pendingScroll.chatId === activeChatId &&
+        pendingScroll.scrollTop !== null &&
+        pendingScroll.scrollTop !== undefined
+      ) {
+        const maxScrollTop =
+          messagesElement.scrollHeight - messagesElement.clientHeight;
+        messagesElement.scrollTop = Math.min(
+          pendingScroll.scrollTop,
+          Math.max(0, maxScrollTop),
+        );
+        pendingMessageScrollRef.current = null;
+        requestAnimationFrame(() => {
+          messagesElement.dispatchEvent(new Event("scroll"));
+        });
+        return;
+      }
 
       if (
         pendingScroll &&
@@ -950,6 +1028,7 @@ function ChatScreen({
           upsertChatPreview(current, result.chat, result.message),
         );
         activeChatIdRef.current = result.chat.id;
+        saveActiveChatId(result.chat.id);
         setActiveChatId(result.chat.id);
         setDraftRecipient(null);
         setMessages([
@@ -1058,6 +1137,7 @@ function ChatScreen({
       unreadCount: chat.unread_count,
     };
     activeChatIdRef.current = chatId;
+    saveActiveChatId(chatId);
     setActiveChatId(chatId);
     setDraftRecipient(null);
     setMessages([]);
