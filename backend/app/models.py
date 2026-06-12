@@ -263,6 +263,7 @@ class ChatListItem(SQLModel):
     other_last_read_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    is_pinned: bool = False
 
 
 class DirectMessageCreate(SQLModel):
@@ -277,3 +278,9 @@ class DirectMessageResponse(SQLModel):
 
 class ChatReadRequest(SQLModel):
     last_read_message_id: int
+
+
+class ChatSettingsUpdate(SQLModel):
+    is_pinned: bool | None = None
+    is_archived: bool | None = None
+    muted_until: datetime | None = None

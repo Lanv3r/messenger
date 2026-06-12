@@ -18,6 +18,7 @@ from app.models import (
     ChatListItem,
     ChatParticipant,
     ChatReadRequest,
+    ChatSettingsUpdate,
     DirectMessageCreate,
     DirectMessageResponse,
     LoginRequest,
@@ -532,10 +533,14 @@ def get_chats(
                 other_last_read_at=other_last_read_at,
                 created_at=chat.created_at,
                 updated_at=chat.updated_at,
+                is_pinned=current_participant.is_pinned,
             )
         )
     result.sort(
-        key=lambda chat: chat.last_message_created_at or chat.created_at,
+        key=lambda chat: (
+            chat.is_pinned,
+            chat.last_message_created_at or chat.created_at,
+        ),
         reverse=True,
     )
     return result
@@ -748,6 +753,42 @@ async def chat_read(
         )
 
     return {"ok": True}
+
+
+@fastapi_app.patch("/chats/{chat_id}/settings")
+def pin_chat(
+    chat_id: int,
+    payload: ChatSettingsUpdate,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    participant = session.exec(
+        select(ChatParticipant).where(
+            ChatParticipant.chat_id == chat_id,
+            ChatParticipant.user_id == user_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).first()
+    if participant is None:
+        raise HTTPException(status_code=403, detail="Not a participant")
+
+    update_data = payload.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(participant, key, value)
+    session.add(participant)
+    session.commit()
+    session.refresh(participant)
+
+    return {
+        "ok": True,
+        "chat_id": chat_id,
+        "is_pinned": participant.is_pinned,
+        "is_archived": participant.is_archived,
+        "muted_until": participant.muted_until,
+    }
 
 
 # Socket.IO server

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Check, CheckCheck, ClockArrowUp } from "lucide-react";
+import { Check, CheckCheck, ClockArrowUp, Pin } from "lucide-react";
 import { io, Socket } from "socket.io-client";
 
 import { API_URL, apiFetch } from "@/lib/api";
@@ -68,6 +68,7 @@ type Chat = {
   last_message_sender_id: number | null;
   last_message_created_at: string | null;
   unread_count: number;
+  is_pinned: boolean;
   current_last_read_message_id: number | null;
   other_last_read_message_id: number | null;
   other_last_read_at: string | null;
@@ -99,6 +100,33 @@ type ChatUpdatedEvent = {
   last_message: ChatMessage;
 };
 
+type ChatSettingsResponse = {
+  ok: boolean;
+  chat_id: number;
+  is_pinned: boolean;
+  is_archived?: boolean;
+  muted_until?: string | null;
+};
+
+function getChatSortTime(chat: Chat) {
+  const value = chat.last_message_created_at ?? chat.created_at;
+  const timestamp = new Date(value).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function sortChats(chats: Chat[]) {
+  return [...chats].sort((first, second) => {
+    const firstIsPinned = Boolean(first.is_pinned);
+    const secondIsPinned = Boolean(second.is_pinned);
+
+    if (firstIsPinned !== secondIsPinned) {
+      return firstIsPinned ? -1 : 1;
+    }
+
+    return getChatSortTime(second) - getChatSortTime(first);
+  });
+}
+
 function applyLastMessagePreview(
   chat: Chat,
   message: ChatMessage,
@@ -124,12 +152,12 @@ function upsertChatPreview(
   );
 
   if (existingIndex === -1) {
-    return [nextChat, ...chats];
+    return sortChats([nextChat, ...chats]);
   }
 
   const nextChats = [...chats];
   nextChats.splice(existingIndex, 1);
-  return [nextChat, ...nextChats];
+  return sortChats([nextChat, ...nextChats]);
 }
 
 function updateChatPreview(
@@ -286,7 +314,7 @@ function ChatScreen({
   }
 
   function setLoadedChats(loadedChats: Chat[]) {
-    setChats(loadedChats.map(applyLocalReadState));
+    setChats(sortChats(loadedChats.map(applyLocalReadState)));
   }
 
   function markChatReadThrough(
@@ -902,6 +930,63 @@ function ChatScreen({
     setMessages([]);
   };
 
+  const toggleChatPin = async (chat: Chat) => {
+    const nextIsPinned = !chat.is_pinned;
+
+    setChats((current) =>
+      sortChats(
+        current.map((item) =>
+          item.id === chat.id
+            ? { ...item, is_pinned: nextIsPinned }
+            : item,
+        ),
+      ),
+    );
+
+    try {
+      const result = await apiFetch<ChatSettingsResponse>(
+        `/chats/${chat.id}/settings`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ is_pinned: nextIsPinned }),
+        },
+      );
+
+      setChats((current) =>
+        sortChats(
+          current.map((item) =>
+            item.id === chat.id
+              ? { ...item, is_pinned: result.is_pinned }
+              : item,
+          ),
+        ),
+      );
+      setChatError(null);
+    } catch (error) {
+      setChats((current) =>
+        sortChats(
+          current.map((item) =>
+            item.id === chat.id
+              ? { ...item, is_pinned: chat.is_pinned }
+              : item,
+          ),
+        ),
+      );
+
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to update chat settings.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setChatError(message);
+    }
+  };
+
   const handleProfileSearch = async (event: React.FormEvent) => {
     event.preventDefault();
 
@@ -1311,70 +1396,97 @@ function ChatScreen({
                   chat.unread_count > 99 ? "99+" : chat.unread_count;
 
                 return (
-                  <button
+                  <div
                     key={chat.id}
                     className={
-                      chat.id === activeChatId
-                        ? "active"
-                        : undefined
+                      [
+                        "chat-list-item",
+                        chat.id === activeChatId ? "active" : "",
+                        chat.is_pinned ? "pinned" : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")
                     }
-                    onClick={() => joinChat(chat)}
                   >
-                    <img
-                      src={
-                        chat.display_avatar_url ||
-                        chat.avatar_url ||
-                        "/favicon.svg"
-                      }
-                      alt=""
-                      onError={(event) => {
-                        event.currentTarget.src = "/favicon.svg";
-                      }}
-                    />
-                    <span>
-                      <span className="chat-title-row">
-                        <strong>{getChatTitle(chat)}</strong>
-                        <span className="chat-title-meta">
-                          {chat.unread_count > 0 ? (
-                            <span
-                              className="unread-badge"
-                              aria-label={`${chat.unread_count} unread messages`}
-                            >
-                              {unreadCount}
-                            </span>
-                          ) : null}
-                          {sentAt && chat.last_message_created_at ? (
-                            <time dateTime={chat.last_message_created_at}>
-                              {sentAt}
-                            </time>
-                          ) : null}
+                    <button
+                      type="button"
+                      className="chat-open-button"
+                      onClick={() => joinChat(chat)}
+                    >
+                      <img
+                        src={
+                          chat.display_avatar_url ||
+                          chat.avatar_url ||
+                          "/favicon.svg"
+                        }
+                        alt=""
+                        onError={(event) => {
+                          event.currentTarget.src = "/favicon.svg";
+                        }}
+                      />
+                      <span>
+                        <span className="chat-title-row">
+                          <strong>{getChatTitle(chat)}</strong>
+                          <span className="chat-title-meta">
+                            {chat.unread_count > 0 ? (
+                              <span
+                                className="unread-badge"
+                                aria-label={`${chat.unread_count} unread messages`}
+                              >
+                                {unreadCount}
+                              </span>
+                            ) : null}
+                            {sentAt && chat.last_message_created_at ? (
+                              <time dateTime={chat.last_message_created_at}>
+                                {sentAt}
+                              </time>
+                            ) : null}
+                          </span>
                         </span>
+                        <small>{getChatSubtitle(chat)}</small>
                       </span>
-                      <small>{getChatSubtitle(chat)}</small>
-                    </span>
-                  </button>
+                    </button>
+                    <button
+                      type="button"
+                      className="chat-pin-button"
+                      aria-label={
+                        chat.is_pinned
+                          ? `Unpin ${getChatTitle(chat)}`
+                          : `Pin ${getChatTitle(chat)}`
+                      }
+                      aria-pressed={chat.is_pinned}
+                      title={chat.is_pinned ? "Unpin" : "Pin"}
+                      onClick={() => {
+                        void toggleChatPin(chat);
+                      }}
+                    >
+                      <Pin size={14} aria-hidden="true" />
+                    </button>
+                  </div>
                 );
               })()
             ))}
             {draftRecipient ? (
-              <button className="active" type="button">
-                <img
-                  src={draftRecipient.avatar_url}
-                  alt=""
-                  onError={(event) => {
-                    event.currentTarget.src = "/favicon.svg";
-                  }}
-                />
-                <span>
-                  <strong>
-                    {draftRecipient.first_name}
-                    {draftRecipient.last_name
-                      ? ` ${draftRecipient.last_name}`
-                      : ""}
-                  </strong>
-                  <small>New direct message</small>
-                </span>
-              </button>
+              <div className="chat-list-item active">
+                <button className="chat-open-button" type="button">
+                  <img
+                    src={draftRecipient.avatar_url}
+                    alt=""
+                    onError={(event) => {
+                      event.currentTarget.src = "/favicon.svg";
+                    }}
+                  />
+                  <span>
+                    <strong>
+                      {draftRecipient.first_name}
+                      {draftRecipient.last_name
+                        ? ` ${draftRecipient.last_name}`
+                        : ""}
+                    </strong>
+                    <small>New direct message</small>
+                  </span>
+                </button>
+              </div>
             ) : null}
           </div>
         </aside>
