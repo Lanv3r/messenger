@@ -478,6 +478,107 @@
   background: rgba(41, 163, 118, 0.12);
 }
 
+.message-search {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(163, 88, 66, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 250, 246, 0.72);
+}
+
+.message-search-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.message-search-form input {
+  width: 100%;
+  min-height: 42px;
+  padding: 0 14px;
+  border: 1px solid rgba(163, 88, 66, 0.18);
+  border-radius: 14px;
+  font: inherit;
+  color: #111827;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.message-search-form input:focus {
+  outline: 2px solid rgba(244, 111, 84, 0.25);
+  border-color: rgba(244, 111, 84, 0.45);
+}
+
+.message-search-form button {
+  min-height: 42px;
+}
+
+.message-search-results {
+  display: grid;
+  gap: 6px;
+  max-height: 146px;
+  overflow: auto;
+}
+
+.message-search-results button {
+  display: grid;
+  gap: 3px;
+  padding: 9px 10px;
+  border: 1px solid rgba(163, 88, 66, 0.12);
+  border-radius: 13px;
+  text-align: left;
+  font: inherit;
+  color: #8b5e34;
+  background: rgba(255, 255, 255, 0.78);
+  cursor: pointer;
+}
+
+.message-search-results button:hover,
+.message-search-results button.active {
+  border-color: rgba(244, 111, 84, 0.36);
+  background: rgba(244, 111, 84, 0.1);
+}
+
+.message-search-results button span {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.message-search-results button strong,
+.message-search-results button time,
+.message-search-results button small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.message-search-results button strong {
+  font-size: 12px;
+  color: #1f2937;
+}
+
+.message-search-results button time {
+  flex: 0 0 auto;
+  font-size: 11px;
+  font-weight: 700;
+  color: #a77852;
+}
+
+.message-search-results button small {
+  font-size: 12px;
+  color: #8b5e34;
+}
+
+.message-search-empty {
+  margin: 0;
+  font-size: 13px;
+  color: #8b5e34;
+}
+
 #messages {
   flex: 1 1 auto;
   min-height: 0;
@@ -511,6 +612,12 @@
 
 #messages li.server {
   margin-right: auto;
+}
+
+#messages li.search-highlight {
+  outline: 3px solid rgba(244, 111, 84, 0.42);
+  outline-offset: 3px;
+  box-shadow: 0 0 0 7px rgba(244, 111, 84, 0.08);
 }
 
 #messages li.empty-state {

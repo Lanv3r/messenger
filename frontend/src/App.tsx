@@ -270,6 +270,19 @@ function ChatScreen({
     null,
   );
   const [profileSaving, setProfileSaving] = useState(false);
+  const [messageSearchQuery, setMessageSearchQuery] = useState("");
+  const [messageSearchResults, setMessageSearchResults] = useState<
+    ChatMessage[]
+  >([]);
+  const [messageSearchLoading, setMessageSearchLoading] = useState(false);
+  const [messageSearchError, setMessageSearchError] = useState<string | null>(
+    null,
+  );
+  const [messageSearchHasSearched, setMessageSearchHasSearched] =
+    useState(false);
+  const [activeSearchResultId, setActiveSearchResultId] = useState<
+    number | null
+  >(null);
   const messagesRef = useRef<HTMLUListElement | null>(null);
   const pendingMessageScrollRef = useRef<{
     chatId: number;
@@ -572,6 +585,14 @@ function ChatScreen({
       controller.abort();
     };
   }, [activeChatId]);
+
+  useEffect(() => {
+    setMessageSearchQuery("");
+    setMessageSearchResults([]);
+    setMessageSearchError(null);
+    setMessageSearchHasSearched(false);
+    setActiveSearchResultId(null);
+  }, [activeChatId, draftRecipient?.id]);
 
   useEffect(() => {
     const messagesElement = messagesRef.current;
@@ -1021,6 +1042,71 @@ function ChatScreen({
       setProfileError(message);
     } finally {
       setProfileLoading(false);
+    }
+  };
+
+  const revealMessageSearchResult = (entry: ChatMessage) => {
+    setActiveSearchResultId(entry.id);
+
+    const target = messagesRef.current?.querySelector(
+      `[data-message-id="${entry.id}"]`,
+    );
+
+    if (target instanceof HTMLElement) {
+      target.scrollIntoView({ block: "center" });
+      requestAnimationFrame(() => {
+        messagesRef.current?.dispatchEvent(new Event("scroll"));
+      });
+    }
+  };
+
+  const handleMessageSearch = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (activeChatId === null) {
+      return;
+    }
+
+    const query = messageSearchQuery.trim();
+
+    if (!query) {
+      setMessageSearchResults([]);
+      setMessageSearchError(null);
+      setMessageSearchHasSearched(false);
+      setActiveSearchResultId(null);
+      return;
+    }
+
+    setMessageSearchLoading(true);
+    setMessageSearchError(null);
+    setMessageSearchHasSearched(true);
+
+    try {
+      const results = await apiFetch<ChatMessage[]>(
+        `/chats/${activeChatId}/messages/search?query=${encodeURIComponent(query)}`,
+      );
+
+      setMessageSearchResults(results);
+
+      if (results.length > 0) {
+        revealMessageSearchResult(results[0]);
+      } else {
+        setActiveSearchResultId(null);
+      }
+    } catch (error) {
+      setMessageSearchResults([]);
+
+      const message =
+        error instanceof Error ? error.message : "Unable to search messages.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setMessageSearchError(message);
+    } finally {
+      setMessageSearchLoading(false);
     }
   };
 
@@ -1552,6 +1638,77 @@ function ChatScreen({
           </section>
         ) : null}
 
+        <section className="message-search" aria-label="Search messages">
+          <form className="message-search-form" onSubmit={handleMessageSearch}>
+            <input
+              type="search"
+              value={messageSearchQuery}
+              placeholder={
+                activeChatId === null
+                  ? "Open a chat to search messages"
+                  : `Search in ${activeTitle}`
+              }
+              autoComplete="off"
+              disabled={activeChatId === null}
+              onChange={(event) => {
+                const value = event.target.value;
+                setMessageSearchQuery(value);
+
+                if (!value.trim()) {
+                  setMessageSearchResults([]);
+                  setMessageSearchError(null);
+                  setMessageSearchHasSearched(false);
+                  setActiveSearchResultId(null);
+                }
+              }}
+            />
+            <Button
+              type="submit"
+              disabled={activeChatId === null || messageSearchLoading}
+            >
+              {messageSearchLoading ? "Searching..." : "Search"}
+            </Button>
+          </form>
+
+          {messageSearchError ? (
+            <p className="profile-error">{messageSearchError}</p>
+          ) : null}
+
+          {messageSearchResults.length > 0 ? (
+            <div className="message-search-results">
+              {messageSearchResults.map((result) => (
+                <button
+                  key={result.id}
+                  type="button"
+                  className={
+                    result.id === activeSearchResultId
+                      ? "active"
+                      : undefined
+                  }
+                  onClick={() => revealMessageSearchResult(result)}
+                >
+                  <span>
+                    <strong>{getSenderName(result)}</strong>
+                    {result.created_at ? (
+                      <time dateTime={result.created_at}>
+                        {formatMessageTime(result.created_at)}
+                      </time>
+                    ) : null}
+                  </span>
+                  <small>{result.content || "No message text"}</small>
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {messageSearchHasSearched &&
+          !messageSearchLoading &&
+          !messageSearchError &&
+          messageSearchResults.length === 0 ? (
+            <p className="message-search-empty">No matching messages.</p>
+          ) : null}
+        </section>
+
         {chatError ? (
           <p className="profile-error">{chatError}</p>
         ) : null}
@@ -1579,7 +1736,16 @@ function ChatScreen({
                   ) : null}
 
                   <li
-                    className={entry.isOwn ? "you" : "server"}
+                    className={[
+                      entry.sender_id === user.userId || entry.isOwn
+                        ? "you"
+                        : "server",
+                      entry.id === activeSearchResultId
+                        ? "search-highlight"
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
                     data-message-id={entry.id}
                   >
                     <img

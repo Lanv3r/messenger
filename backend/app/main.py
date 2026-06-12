@@ -10,7 +10,7 @@ from fastapi import Cookie, Depends, FastAPI, HTTPException, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from pwdlib import PasswordHash
 from sqlalchemy import func
-from sqlmodel import Session, col, select
+from sqlmodel import Session, col, exists, select
 
 from app.db import SessionDep, engine
 from app.models import (
@@ -23,6 +23,7 @@ from app.models import (
     DirectMessageResponse,
     LoginRequest,
     Message,
+    MessageDeletion,
     MessagePublic,
     User,
     UserCreate,
@@ -789,6 +790,64 @@ def pin_chat(
         "is_archived": participant.is_archived,
         "muted_until": participant.muted_until,
     }
+
+
+@fastapi_app.get(
+    "/chats/{chat_id}/messages/search",
+    response_model=list[MessagePublic],
+)
+def search_chat_messages(
+    chat_id: int,
+    query: str,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    participant = session.exec(
+        select(ChatParticipant).where(
+            ChatParticipant.chat_id == chat_id,
+            ChatParticipant.user_id == user_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).first()
+    if participant is None:
+        raise HTTPException(status_code=403, detail="Not a participant")
+
+    normalized_query = query.strip()
+    if not normalized_query:
+        return []
+
+    messages = session.exec(
+        select(Message)
+        .where(
+            Message.chat_id == chat_id,
+            col(Message.deleted_at).is_(None),
+            col(Message.content).ilike(f"%{normalized_query}%"),
+            ~exists().where(
+                col(MessageDeletion.message_id) == col(Message.id),
+                col(MessageDeletion.user_id) == user_id,
+            ),
+        )
+        .order_by(col(Message.created_at).desc())
+        .limit(50)
+    ).all()
+
+    serialized_messages = []
+
+    for message in messages:
+        sender = session.get(User, message.sender_id)
+
+        serialized_messages.append(
+            serialize_message(
+                message,
+                sender.username if sender else None,
+                sender.avatar_url if sender else None,
+            )
+        )
+
+    return serialized_messages
 
 
 # Socket.IO server

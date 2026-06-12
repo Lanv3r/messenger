@@ -3,7 +3,7 @@ from typing import ClassVar
 
 from sqlalchemy import Column, DateTime, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlmodel import Field, SQLModel
+from sqlmodel import Field, Index, SQLModel
 
 
 class UserBase(SQLModel):
@@ -138,6 +138,7 @@ class ChatParticipant(ChatParticipantBase, table=True):
     )
 
     id: int | None = Field(default=None, primary_key=True)
+    cleared_at: datetime | None = None
     joined_at: datetime | None = Field(
         default=None,
         sa_type=DateTime,
@@ -196,6 +197,7 @@ class MessageBase(SQLModel):
 
 class Message(MessageBase, table=True):
     __tablename__: ClassVar[str] = "messages"
+    __table_args__ = (Index("ix_messages_chat_id_created_at", "chat_id", "created_at"),)
 
     id: int | None = Field(default=None, primary_key=True)
     created_at: datetime | None = Field(
@@ -284,3 +286,13 @@ class ChatSettingsUpdate(SQLModel):
     is_pinned: bool | None = None
     is_archived: bool | None = None
     muted_until: datetime | None = None
+
+
+class MessageDeletion(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "message_deletions"
+    __table_args__ = (UniqueConstraint("message_id", "user_id"),)
+
+    id: int | None = Field(default=None, primary_key=True)
+    message_id: int = Field(foreign_key="messages.id", ondelete="CASCADE")
+    user_id: int = Field(foreign_key="users.id", ondelete="CASCADE")
+    deleted_at: datetime | None = None
