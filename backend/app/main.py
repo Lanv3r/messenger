@@ -128,6 +128,12 @@ def to_message_public(
     sender_username: str | None = None,
     sender_avatar_url: str | None = None,
 ) -> MessagePublic:
+    if message.id is None or message.created_at is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Message was not persisted correctly",
+        )
+
     return MessagePublic(
         id=message.id,
         chat_id=message.chat_id,
