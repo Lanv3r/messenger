@@ -72,7 +72,7 @@ class ChatBase(SQLModel):
     type: str = Field(max_length=32)
     title: str | None = Field(default=None, max_length=128)
     description: str | None = Field(default=None, max_length=255)
-    avatar_url: str
+    avatar_url: str | None = None
     last_message_id: int | None = None
     deleted_at: datetime | None = Field(default=None, sa_type=DateTime)
 
@@ -227,17 +227,14 @@ class Message(MessageBase, table=True):
 
 class MessagePublic(MessageBase):
     id: int
+    chat_id: int
     sender_username: str | None = None
     sender_avatar_url: str | None = None
     created_at: datetime
-    updated_at: datetime
+    updated_at: datetime | None = None
     edited_at: datetime | None = None
     deleted_at: datetime | None = None
-    is_pinned: bool
-
-
-class MessageCreate(MessageBase):
-    pass
+    is_pinned: bool = False
 
 
 class MessageUpdate(MessageBase):
@@ -256,9 +253,9 @@ class ChatListItem(SQLModel):
     type: str
     title: str | None = None
     description: str | None = None
-    avatar_url: str
+    avatar_url: str | None = None
     display_title: str
-    display_avatar_url: str
+    display_avatar_url: str = "/favicon.svg"
 
     # Direct-chat-only
     other_user_id: int | None = None
@@ -282,6 +279,10 @@ class ChatListItem(SQLModel):
 
 class DirectMessageCreate(SQLModel):
     recipient_id: int
+    content: str
+
+
+class MessageCreate(SQLModel):
     content: str
 
 

@@ -59,7 +59,7 @@ type Chat = {
   type: "self" | "direct" | "group" | string;
   title: string | null;
   description: string | null;
-  avatar_url: string;
+  avatar_url: string | null;
   display_title: string;
   display_avatar_url: string;
   other_user_id: number | null;
@@ -83,12 +83,6 @@ type Chat = {
 type DirectMessageResponse = {
   chat: Chat;
   message: ChatMessage;
-};
-
-type MessageAck = {
-  ok: boolean;
-  message?: ChatMessage;
-  error?: string;
 };
 
 type ChatReadEvent = {
@@ -581,15 +575,39 @@ function ChatScreen({
     });
 
     socket.on("message", (data: ChatMessage) => {
-      setMessages((current) => [
-        ...current,
-        { ...data, isOwn: data.sender_id === user.userId },
-      ]);
+      setMessages((current) => {
+        if (current.some((entry) => entry.id === data.id)) {
+          return current;
+        }
+
+        return [
+          ...current,
+          { ...data, isOwn: data.sender_id === user.userId },
+        ];
+      });
       setChats((current) => updateChatPreview(current, data));
     });
 
     socket.on("chat_updated", (data: ChatUpdatedEvent) => {
       setChats((current) => updateChatPreview(current, data.last_message));
+      if (
+        data.chat_id === activeChatIdRef.current &&
+        data.last_message.sender_id !== user.userId
+      ) {
+        setMessages((current) => {
+          if (current.some((entry) => entry.id === data.last_message.id)) {
+            return current;
+          }
+
+          return [
+            ...current,
+            {
+              ...data.last_message,
+              isOwn: false,
+            },
+          ];
+        });
+      }
 
       apiFetch<Chat[]>("/chats")
         .then((loadedChats) => {
@@ -1162,7 +1180,7 @@ function ChatScreen({
       return;
     }
 
-    if (!socket || activeChatId === null) {
+    if (activeChatId === null) {
       return;
     }
 
@@ -1171,42 +1189,52 @@ function ChatScreen({
       updateChatPreview(current, optimisticMessage),
     );
     setMessage("");
-    socket.emit(
-      "message",
-      {
-        chat_id: activeChatId,
-        content: outgoingMessage,
-        message_type: "text",
-      },
-      (response: MessageAck) => {
-        if (!response?.ok || !response.message) {
-          setMessages((current) =>
-            current.map((entry) =>
-              entry.temp_id === tempId
-                ? { ...entry, delivery_status: "failed" }
-                : entry,
-            ),
-          );
-          return;
-        }
 
-        const confirmedMessage = {
-          ...response.message,
-          isOwn: true,
-          delivery_status: "sent" as const,
-        };
+    try {
+      const responseMessage = await apiFetch<ChatMessage>(
+        `/messages/${activeChatId}`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            content: outgoingMessage,
+          }),
+        },
+      );
 
-        setMessages((current) =>
-          replaceTemporaryMessage(current, tempId, confirmedMessage),
-        );
-        setChats((current) =>
-          updateChatPreview(current, confirmedMessage),
-        );
-        markChatReadThrough(activeChatId, confirmedMessage.id, {
-          resetUnread: true,
-        });
-      },
-    );
+      const confirmedMessage = {
+        ...responseMessage,
+        isOwn: true,
+        delivery_status: "sent" as const,
+      };
+
+      setMessages((current) =>
+        replaceTemporaryMessage(current, tempId, confirmedMessage),
+      );
+      setChats((current) =>
+        updateChatPreview(current, confirmedMessage),
+      );
+      markChatReadThrough(activeChatId, confirmedMessage.id, {
+        resetUnread: true,
+      });
+    } catch (error) {
+      setMessages((current) =>
+        current.map((entry) =>
+          entry.temp_id === tempId
+            ? { ...entry, delivery_status: "failed" }
+            : entry,
+        ),
+      );
+
+      const errorMessage =
+        error instanceof Error ? error.message : "Unable to send message.";
+
+      if (errorMessage === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setChatError(errorMessage);
+    }
   };
 
   const handleRetry = () => {
@@ -1730,6 +1758,18 @@ function ChatScreen({
       : "Chat";
 
   const openDraftChat = (profile: UserProfile) => {
+    const existingDirectChat = chats.find(
+      (chat) =>
+        chat.type === "direct" && chat.other_user_id === profile.id,
+    );
+
+    if (existingDirectChat) {
+      joinChat(existingDirectChat);
+      setProfileResult(null);
+      setProfileError(null);
+      return;
+    }
+
     const socket = socketRef.current;
 
     if (activeChatIdRef.current !== null) {
@@ -2394,10 +2434,7 @@ function ChatScreen({
           />
           <button
             onClick={handleSend}
-            disabled={
-              status !== "Connected" ||
-              (activeChatId === null && draftRecipient === null)
-            }
+            disabled={activeChatId === null && draftRecipient === null}
           >
             Send
           </button>

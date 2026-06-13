@@ -25,6 +25,7 @@ from app.models import (
     GroupCreate,
     LoginRequest,
     Message,
+    MessageCreate,
     MessageDeletion,
     MessagePublic,
     User,
@@ -121,27 +122,47 @@ def get_cookie_from_environ(environ: dict, key: str) -> str | None:
     return cookie[key].value
 
 
-def serialize_message(
+def to_message_public(
     message: Message,
+    sender: User | None = None,
     sender_username: str | None = None,
     sender_avatar_url: str | None = None,
-):
-    return {
-        "id": message.id,
-        "chat_id": message.chat_id,
-        "sender_id": message.sender_id,
-        "sender_username": sender_username,
-        "sender_avatar_url": sender_avatar_url,
-        "content": message.content,
-        "message_type": message.message_type,
-        "reply_to_message_id": message.reply_to_message_id,
-        "created_at": message.created_at.isoformat() if message.created_at else None,
-        "updated_at": message.updated_at.isoformat() if message.updated_at else None,
-        "edited_at": message.edited_at.isoformat() if message.edited_at else None,
-        "deleted_at": message.deleted_at.isoformat() if message.deleted_at else None,
-        "is_pinned": message.is_pinned,
-        "metadata": message.metadata_,
-    }
+) -> MessagePublic:
+    return MessagePublic(
+        id=message.id,
+        chat_id=message.chat_id,
+        sender_id=message.sender_id,
+        sender_username=sender.username if sender else sender_username,
+        sender_avatar_url=sender.avatar_url if sender else sender_avatar_url,
+        content=message.content,
+        message_type=message.message_type,
+        reply_to_message_id=message.reply_to_message_id,
+        metadata=message.metadata_,
+        created_at=message.created_at,
+        updated_at=message.updated_at,
+        edited_at=message.edited_at,
+        deleted_at=message.deleted_at,
+        is_pinned=message.is_pinned,
+    )
+
+
+def get_active_participant(
+    session: Session,
+    chat_id: int,
+    user_id: int,
+) -> ChatParticipant:
+    participant = session.exec(
+        select(ChatParticipant).where(
+            ChatParticipant.chat_id == chat_id,
+            ChatParticipant.user_id == user_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).first()
+
+    if participant is None:
+        raise HTTPException(status_code=403, detail="Not a participant")
+
+    return participant
 
 
 @fastapi_app.get("/users/username-availability")
@@ -219,6 +240,11 @@ def get_chat_messages(
     session: SessionDep,
     current_user: Annotated[User, Depends(get_current_user)],
 ):
+    current_user_id = current_user.id
+    if current_user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    get_active_participant(session, chat_id, current_user_id)
+
     messages = session.exec(select(Message).where(Message.chat_id == chat_id)).all()
     sender_ids = {
         message.sender_id for message in messages if message.sender_id is not None
@@ -230,20 +256,13 @@ def get_chat_messages(
     )
     users_by_id = {user.id: user for user in users}
 
-    serialized_messages = []
+    public_messages = []
 
     for message in messages:
         sender = users_by_id.get(message.sender_id)
+        public_messages.append(to_message_public(message, sender))
 
-        serialized_messages.append(
-            serialize_message(
-                message,
-                sender.username if sender else None,
-                sender.avatar_url if sender else None,
-            )
-        )
-
-    return serialized_messages
+    return public_messages
 
 
 @fastapi_app.post("/login", response_model=UserPublic)
@@ -446,13 +465,19 @@ def get_chats(
 
     for current_participant, chat in rows:
         display_title = chat.title
-        display_avatar_url = chat.avatar_url
+        display_avatar_url = chat.avatar_url or "/favicon.svg"
         other_user_id = None
         other_last_read_at = None
         other_last_read_message_id = None
         member_ids: list[int] = []
         member_count = 0
         current_user_role = None
+
+        if chat.id is None or chat.created_at is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Chat was not fetched correctly",
+            )
 
         if chat.type == "self":
             display_title = "Saved Messages"
@@ -481,14 +506,7 @@ def get_chats(
                     display_avatar_url = other_user.avatar_url
                     other_last_read_message_id = other_participant.last_read_message_id
                     other_last_read_at = other_participant.last_read_at
-
-        if chat.id is None or chat.created_at is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Chat was not fetched correctly",
-            )
-
-        if chat.type == "group":
+        else:
             member_ids = list(
                 session.exec(
                     select(ChatParticipant.user_id).where(
@@ -586,77 +604,63 @@ async def create_direct_message(
         raise HTTPException(status_code=400, detail="Message cannot be empty")
 
     if payload.recipient_id == sender_id:
-        participant_ids = [sender_id]
-        chat = session.exec(
-            select(Chat)
-            .join(
-                ChatParticipant,
-                col(ChatParticipant.chat_id) == col(Chat.id),
-            )
-            .where(
-                Chat.type == "self",
-                ChatParticipant.user_id == sender_id,
-            )
-        ).first()
-    else:
-        participant_ids = [sender_id, payload.recipient_id]
-        matching_chat_ids = (
-            select(col(ChatParticipant.chat_id))
-            .where(col(ChatParticipant.user_id).in_(participant_ids))
-            .group_by(col(ChatParticipant.chat_id))
-            .having(func.count(col(ChatParticipant.user_id)) == 2)
-        )
-
-        chat = session.exec(
-            select(Chat).where(
-                Chat.type == "direct",
-                col(Chat.id).in_(matching_chat_ids),
-            )
-        ).first()
-
-        if chat is None:
-            chat = Chat(
-                type="direct",
-                title=None,
-                description=None,
-                avatar_url=recipient.avatar_url,
-            )
-
-            session.add(chat)
-            session.flush()
-
-            if chat.id is None:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Chat was not created correctly",
-                )
-
-            session.add(
-                ChatParticipant(
-                    chat_id=chat.id,
-                    user_id=sender_id,
-                    role="member",
-                )
-            )
-            session.add(
-                ChatParticipant(
-                    chat_id=chat.id,
-                    user_id=payload.recipient_id,
-                    role="member",
-                )
-            )
-
-    if chat is None:
         raise HTTPException(
-            status_code=500,
-            detail="Chat was not found",
+            status_code=403,
+            detail="Can't start a direct chat with yourself",
         )
+
+    participant_ids = [sender_id, payload.recipient_id]
+
+    matching_chat_ids = (
+        select(col(ChatParticipant.chat_id))
+        .where(
+            col(ChatParticipant.user_id).in_(participant_ids),
+            col(ChatParticipant.left_at).is_(None),
+        )
+        .group_by(col(ChatParticipant.chat_id))
+        .having(func.count(col(ChatParticipant.user_id)) == 2)
+    )
+
+    direct_chat = session.exec(
+        select(Chat).where(
+            Chat.type == "direct",
+            col(Chat.id).in_(matching_chat_ids),
+        )
+    ).first()
+
+    if direct_chat is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Chat already exists",
+        )
+
+    chat = Chat(
+        type="direct",
+    )
+
+    session.add(chat)
+    session.flush()
 
     if chat.id is None:
         raise HTTPException(
             status_code=500,
-            detail="Chat was not fetched correctly",
+            detail="Chat was not created correctly",
         )
+
+    session.add(
+        ChatParticipant(
+            chat_id=chat.id,
+            user_id=sender_id,
+            role="member",
+        )
+    )
+    session.add(
+        ChatParticipant(
+            chat_id=chat.id,
+            user_id=payload.recipient_id,
+            role="member",
+        )
+    )
 
     message = Message(
         chat_id=chat.id,
@@ -664,6 +668,7 @@ async def create_direct_message(
         content=content,
         message_type="text",
     )
+
     session.add(message)
     session.flush()
     session.refresh(message)
@@ -676,15 +681,11 @@ async def create_direct_message(
     session.refresh(message)
     session.refresh(chat)
 
-    serialized_message = serialize_message(
-        message,
-        current_user.username,
-        current_user.avatar_url,
-    )
+    public_message = to_message_public(message, current_user)
 
     chat_update = {
         "chat_id": chat.id,
-        "last_message": serialized_message,
+        "last_message": public_message.model_dump(mode="json", by_alias=True),
     }
 
     for participant_id in participant_ids:
@@ -698,22 +699,14 @@ async def create_direct_message(
         "chat": ChatListItem(
             id=chat.id,
             type=chat.type,
-            title=chat.title,
-            description=chat.description,
             avatar_url=chat.avatar_url,
             display_title=(
-                "Saved Messages"
-                if chat.type == "self"
-                else (
-                    f"{recipient.first_name} {recipient.last_name}"
-                    if recipient.last_name
-                    else recipient.first_name
-                )
+                f"{recipient.first_name} {recipient.last_name}"
+                if recipient.last_name
+                else recipient.first_name
             ),
-            display_avatar_url=(
-                current_user.avatar_url if chat.type == "self" else recipient.avatar_url
-            ),
-            other_user_id=None if chat.type == "self" else recipient.id,
+            display_avatar_url=recipient.avatar_url,
+            other_user_id=recipient.id,
             last_message_id=message.id,
             last_message_text=message.content,
             last_message_sender_id=message.sender_id,
@@ -721,8 +714,75 @@ async def create_direct_message(
             created_at=chat.created_at,
             updated_at=chat.updated_at,
         ),
-        "message": serialized_message,
+        "message": public_message,
     }
+
+
+@fastapi_app.post("/messages/{chat_id}", response_model=MessagePublic)
+async def create_message(
+    chat_id: int,
+    payload: MessageCreate,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    sender_id = current_user.id
+    if sender_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    participant = get_active_participant(session, chat_id, sender_id)
+
+    content = payload.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+    chat = session.get(Chat, chat_id)
+    if chat is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Chat was not found",
+        )
+
+    message = Message(
+        chat_id=chat_id,
+        sender_id=sender_id,
+        content=content,
+        message_type="text",
+    )
+
+    session.add(message)
+    session.flush()
+    session.refresh(message)
+
+    # update chat
+    chat.last_message_id = message.id
+    chat.updated_at = message.created_at
+
+    session.commit()
+    session.refresh(message)
+    session.refresh(chat)
+
+    public_message = to_message_public(message, current_user)
+
+    chat_update = {
+        "chat_id": chat.id,
+        "last_message": public_message.model_dump(mode="json", by_alias=True),
+    }
+
+    participant_ids = session.exec(
+        select(ChatParticipant.user_id).where(
+            ChatParticipant.chat_id == chat_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).all()
+
+    for participant_id in participant_ids:
+        await sio.emit(
+            "chat_updated",
+            chat_update,
+            room=f"user:{participant_id}",
+        )
+
+    return public_message
 
 
 @fastapi_app.post("/chats/{chat_id}/read")
@@ -735,14 +795,7 @@ async def chat_read(
     user_id = current_user.id
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
-    participant = session.exec(
-        select(ChatParticipant).where(
-            ChatParticipant.chat_id == chat_id,
-            ChatParticipant.user_id == user_id,
-        )
-    ).first()
-    if participant is None:
-        raise HTTPException(status_code=403, detail="Not a participant")
+    participant = get_active_participant(session, chat_id, user_id)
     participant.last_read_message_id = payload.last_read_message_id
     participant.last_read_at = datetime.now(timezone.utc)
 
@@ -786,15 +839,7 @@ def pin_chat(
     user_id = current_user.id
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
-    participant = session.exec(
-        select(ChatParticipant).where(
-            ChatParticipant.chat_id == chat_id,
-            ChatParticipant.user_id == user_id,
-            col(ChatParticipant.left_at).is_(None),
-        )
-    ).first()
-    if participant is None:
-        raise HTTPException(status_code=403, detail="Not a participant")
+    participant = get_active_participant(session, chat_id, user_id)
 
     update_data = payload.model_dump(exclude_unset=True)
     for key, value in update_data.items():
@@ -868,7 +913,6 @@ async def create_group_chat(
         description=chat.description,
         avatar_url=chat.avatar_url,
         display_title=payload.title,
-        display_avatar_url=chat.avatar_url,
         member_ids=member_ids,
         member_count=len(member_ids),
         current_user_role="owner",
@@ -895,25 +939,6 @@ async def create_group_chat(
     return chat_list_item
 
 
-def get_participant_or_404(
-    session: Session,
-    chat_id: int,
-    user_id: int,
-) -> ChatParticipant:
-    participant = session.exec(
-        select(ChatParticipant).where(
-            ChatParticipant.chat_id == chat_id,
-            ChatParticipant.user_id == user_id,
-            col(ChatParticipant.left_at).is_(None),
-        )
-    ).first()
-
-    if participant is None:
-        raise HTTPException(status_code=403, detail="Not a participant")
-
-    return participant
-
-
 @fastapi_app.post("/chats/{chat_id}/members")
 async def add_group_members(
     chat_id: int,
@@ -924,7 +949,20 @@ async def add_group_members(
     user_id = current_user.id
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
-    participant = get_participant_or_404(session, chat_id, user_id)
+
+    participant = get_active_participant(session, chat_id, user_id)
+
+    chat = session.get(Chat, chat_id)
+    if chat is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Chat was not found",
+        )
+
+    if chat.type != "group":
+        raise HTTPException(
+            status_code=403, detail="Can't add members to non-group chats"
+        )
 
     participants = session.exec(
         select(ChatParticipant).where(
@@ -941,6 +979,10 @@ async def add_group_members(
 
     # add users
     for member_id in set(payload.member_ids):
+        member = session.get(User, member_id)
+        if member is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
         if member_id in roles_by_user_id:
             continue
 
@@ -958,13 +1000,6 @@ async def add_group_members(
 
     session.commit()
 
-    chat = session.get(Chat, chat_id)
-    if chat is None:
-        raise HTTPException(
-            status_code=500,
-            detail="Chat was not found",
-        )
-
     all_member_ids = list(roles_by_user_id.keys())
 
     chat_list_item = ChatListItem(
@@ -974,7 +1009,6 @@ async def add_group_members(
         description=chat.description,
         avatar_url=chat.avatar_url,
         display_title=chat.title if chat.title is not None else "New group chat",
-        display_avatar_url=chat.avatar_url,
         member_ids=all_member_ids,
         member_count=len(all_member_ids),
         current_user_role=participant.role,
@@ -985,6 +1019,9 @@ async def add_group_members(
         created_at=chat.created_at,
         updated_at=chat.updated_at,
     )
+
+    if not new_member_ids:
+        return chat_list_item
 
     for member_id in all_member_ids:
         member_chat_list_item = chat_list_item.model_copy(
@@ -1015,42 +1052,6 @@ async def add_group_members(
     return chat_list_item
 
 
-# @fastapi_app.patch("/messages/{message_id}/settings")
-# def patch_message(
-#     chat_id: int,
-#     payload: ChatSettingsUpdate,
-#     session: SessionDep,
-#     current_user: Annotated[User, Depends(get_current_user)],
-# ):
-#     user_id = current_user.id
-#     if user_id is None:
-#         raise HTTPException(status_code=401, detail="Invalid user")
-#     participant = session.exec(
-#         select(ChatParticipant).where(
-#             ChatParticipant.chat_id == chat_id,
-#             ChatParticipant.user_id == user_id,
-#             col(ChatParticipant.left_at).is_(None),
-#         )
-#     ).first()
-#     if participant is None:
-#         raise HTTPException(status_code=403, detail="Not a participant")
-
-#     update_data = payload.model_dump(exclude_unset=True)
-#     for key, value in update_data.items():
-#         setattr(participant, key, value)
-#     session.add(participant)
-#     session.commit()
-#     session.refresh(participant)
-
-#     return {
-#         "ok": True,
-#         "chat_id": chat_id,
-#         "is_pinned": participant.is_pinned,
-#         "is_archived": participant.is_archived,
-#         "muted_until": participant.muted_until,
-#     }
-
-
 @fastapi_app.get(
     "/chats/{chat_id}/messages/search",
     response_model=list[MessagePublic],
@@ -1064,15 +1065,7 @@ def search_chat_messages(
     user_id = current_user.id
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
-    participant = session.exec(
-        select(ChatParticipant).where(
-            ChatParticipant.chat_id == chat_id,
-            ChatParticipant.user_id == user_id,
-            col(ChatParticipant.left_at).is_(None),
-        )
-    ).first()
-    if participant is None:
-        raise HTTPException(status_code=403, detail="Not a participant")
+    participant = get_active_participant(session, chat_id, user_id)
 
     normalized_query = query.strip()
     if not normalized_query:
@@ -1093,20 +1086,14 @@ def search_chat_messages(
         .limit(50)
     ).all()
 
-    serialized_messages = []
+    public_messages = []
 
     for message in messages:
         sender = session.get(User, message.sender_id)
 
-        serialized_messages.append(
-            serialize_message(
-                message,
-                sender.username if sender else None,
-                sender.avatar_url if sender else None,
-            )
-        )
+        public_messages.append(to_message_public(message, sender))
 
-    return serialized_messages
+    return public_messages
 
 
 # Socket.IO server
@@ -1162,13 +1149,30 @@ async def disconnect(sid, reason):
 @sio.event
 async def join_room(sid, room):
     session = await sio.get_session(sid)
+    user_id = session["user_id"]
 
     if datetime.now(timezone.utc).timestamp() >= session["token_expires_at"]:
         await sio.disconnect(sid)
-        return
-    if not room:
-        return
-    await sio.enter_room(sid, room)
+        return {"ok": False, "error": "Session expired"}
+    try:
+        chat_id = int(room)
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "Invalid room"}
+
+    with Session(engine) as db:
+        participant = db.exec(
+            select(ChatParticipant).where(
+                ChatParticipant.chat_id == chat_id,
+                ChatParticipant.user_id == user_id,
+                col(ChatParticipant.left_at).is_(None),
+            )
+        ).first()
+
+        if participant is None:
+            return {"ok": False, "error": "Not a participant"}
+
+    await sio.enter_room(sid, str(chat_id))
+    return {"ok": True}
 
 
 @sio.event
@@ -1178,9 +1182,13 @@ async def leave_room(sid, room):
     if datetime.now(timezone.utc).timestamp() >= session["token_expires_at"]:
         await sio.disconnect(sid)
         return
-    if not room:
-        return
-    await sio.leave_room(sid, room)
+    try:
+        chat_id = int(room)
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "Invalid room"}
+
+    await sio.leave_room(sid, str(chat_id))
+    return {"ok": True}
 
 
 @sio.event
@@ -1195,18 +1203,29 @@ async def message(sid, data):
         return
 
     content = data.get("content", "").strip()
-    chat_id = data.get("chat_id")
 
-    if not content or not chat_id:
-        return
+    if not content:
+        return {"ok": False, "error": "No content"}
+    try:
+        chat_id = int(data.get("chat_id"))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "Invalid chat"}
 
-    with Session(engine) as session:
-        chat = session.get(Chat, chat_id)
-        if chat is None:
-            raise HTTPException(
-                status_code=500,
-                detail="Chat was not found",
+    with Session(engine) as db:
+        participant = db.exec(
+            select(ChatParticipant).where(
+                ChatParticipant.chat_id == chat_id,
+                ChatParticipant.user_id == sender_id,
+                col(ChatParticipant.left_at).is_(None),
             )
+        ).first()
+
+        if participant is None:
+            return {"ok": False, "error": "Not a participant"}
+
+        chat = db.get(Chat, chat_id)
+        if chat is None:
+            return {"ok": False, "error": "Chat was not found"}
 
         message = Message(
             chat_id=chat_id,
@@ -1216,42 +1235,42 @@ async def message(sid, data):
             reply_to_message_id=data.get("reply_to_message_id"),
         )
 
-        session.add(message)
-        session.flush()
-        session.refresh(message)
+        db.add(message)
+        db.flush()
+        db.refresh(message)
 
         # update chat
         chat.last_message_id = message.id
         chat.updated_at = message.created_at
 
-        session.commit()
-        session.refresh(chat)
-        session.refresh(message)
+        db.commit()
+        db.refresh(chat)
+        db.refresh(message)
 
         # collect participants
-        participant_ids = session.exec(
+        participant_ids = db.exec(
             select(ChatParticipant.user_id).where(
                 ChatParticipant.chat_id == chat_id,
                 col(ChatParticipant.left_at).is_(None),
             )
         ).all()
 
-        serialized_message = serialize_message(
+        public_message = to_message_public(
             message,
-            sender_username,
-            sender_avatar_url,
-        )
+            sender_username=sender_username,
+            sender_avatar_url=sender_avatar_url,
+        ).model_dump(mode="json", by_alias=True)
 
     await sio.emit(
         "message",
-        serialized_message,
+        public_message,
         room=str(chat_id),
         skip_sid=sid,
     )
 
     chat_update = {
         "chat_id": chat_id,
-        "last_message": serialized_message,
+        "last_message": public_message,
     }
 
     for participant_id in participant_ids:
@@ -1263,7 +1282,7 @@ async def message(sid, data):
 
     return {
         "ok": True,
-        "message": serialized_message,
+        "message": public_message,
     }
 
 
