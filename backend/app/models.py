@@ -119,6 +119,11 @@ class ChatUpdate(ChatBase):
 class ChatParticipantBase(SQLModel):
     chat_id: int = Field(foreign_key="chats.id", ondelete="CASCADE")
     user_id: int = Field(foreign_key="users.id", ondelete="CASCADE")
+    added_by: int | None = Field(
+        default=None,
+        foreign_key="users.id",
+        ondelete="SET NULL",
+    )
     role: str = Field(default="member", max_length=20)
     last_read_message_id: int | None = None
     last_read_at: datetime | None = Field(default=None, sa_type=DateTime)
@@ -160,6 +165,7 @@ class ChatParticipantCreate(ChatParticipantBase):
 class ChatParticipantUpdate(ChatParticipantBase):
     chat_id: int | None = None
     user_id: int | None = None
+    added_by: int | None = None
     role: str | None = None
     last_read_message_id: int | None = None
     last_read_at: datetime | None = None
@@ -236,7 +242,6 @@ class MessageCreate(MessageBase):
 
 class MessageUpdate(MessageBase):
     chat_id: int | None = None
-    sender_id: int | None = None
     content: str | None = None
     message_type: str | None = None
     reply_to_message_id: int | None = None
@@ -254,7 +259,14 @@ class ChatListItem(SQLModel):
     avatar_url: str
     display_title: str
     display_avatar_url: str
+
+    # Direct-chat-only
     other_user_id: int | None = None
+    # Group-chat-only
+    member_ids: list[int] = Field(default_factory=list)
+    member_count: int = 0
+    current_user_role: str | None = None
+
     last_message_id: int | None = None
     last_message_created_at: datetime | None = None
     last_message_text: str | None = None
@@ -296,3 +308,14 @@ class MessageDeletion(SQLModel, table=True):
     message_id: int = Field(foreign_key="messages.id", ondelete="CASCADE")
     user_id: int = Field(foreign_key="users.id", ondelete="CASCADE")
     deleted_at: datetime | None = None
+
+
+class GroupCreate(SQLModel):
+    title: str
+    description: str | None = None
+    avatar_url: str
+    member_ids: list[int] = Field(default_factory=list)
+
+
+class AddGroupMembers(SQLModel):
+    member_ids: list[int]

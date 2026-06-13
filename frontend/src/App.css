@@ -36,7 +36,7 @@
 .chat-sidebar {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto auto auto 1fr;
+  grid-template-rows: auto auto auto auto 1fr;
   gap: 16px;
   padding: 20px;
   box-sizing: border-box;
@@ -120,6 +120,7 @@
 
 .chat-list-item {
   width: 100%;
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -453,6 +454,128 @@
   width: 100%;
 }
 
+.group-panel {
+  min-height: 0;
+  display: grid;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.group-panel > button {
+  width: 100%;
+}
+
+.group-form {
+  min-height: 0;
+  max-height: min(420px, 46svh);
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(163, 88, 66, 0.16);
+  border-radius: 18px;
+  background: rgba(255, 250, 246, 0.82);
+  overflow: auto;
+}
+
+.group-form-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.group-form-header strong {
+  font-size: 14px;
+  color: #1f2937;
+}
+
+.group-form-header button,
+.selected-member button {
+  padding: 0;
+  border: 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  color: #b45b43;
+  background: transparent;
+  cursor: pointer;
+}
+
+.group-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #374151;
+}
+
+.group-form input,
+.chat-members-panel input {
+  width: 100%;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid rgba(163, 88, 66, 0.18);
+  border-radius: 12px;
+  font: inherit;
+  font-weight: 400;
+  color: #111827;
+  background: #fff;
+  box-sizing: border-box;
+}
+
+.group-form input:focus,
+.chat-members-panel input:focus {
+  outline: 2px solid rgba(244, 111, 84, 0.25);
+  border-color: rgba(244, 111, 84, 0.45);
+}
+
+.group-inline-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.group-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+  color: #8b5e34;
+}
+
+.selected-members {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.selected-member {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 7px 9px;
+  border-radius: 999px;
+  color: #8b5e34;
+  background: rgba(244, 111, 84, 0.1);
+}
+
+.selected-member span {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #1f2937;
+}
+
+.selected-member small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 11px;
+  font-weight: 600;
+  color: #8b5e34;
+}
+
 .profile-card h2 {
   margin: 0;
   font-size: 17px;
@@ -485,6 +608,37 @@
   border: 1px solid rgba(163, 88, 66, 0.14);
   border-radius: 18px;
   background: rgba(255, 250, 246, 0.72);
+}
+
+.chat-members-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(163, 88, 66, 0.14);
+  border-radius: 18px;
+  text-align: left;
+  background: rgba(255, 250, 246, 0.72);
+}
+
+.chat-members-panel > div {
+  display: grid;
+  gap: 2px;
+}
+
+.chat-members-panel strong {
+  font-size: 14px;
+  color: #1f2937;
+}
+
+.chat-members-panel span {
+  font-size: 12px;
+  color: #8b5e34;
+}
+
+.chat-members-panel form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
 }
 
 .message-search-form {
@@ -807,6 +961,10 @@
     border-radius: 24px;
   }
 
+  .group-form {
+    max-height: 220px;
+  }
+
   .chat-card {
     height: calc(100svh - 32px);
     min-height: 0;
@@ -832,6 +990,11 @@
   }
 
   .composer {
+    grid-template-columns: 1fr;
+  }
+
+  .group-inline-form,
+  .chat-members-panel form {
     grid-template-columns: 1fr;
   }
 

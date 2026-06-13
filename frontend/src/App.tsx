@@ -63,6 +63,9 @@ type Chat = {
   display_title: string;
   display_avatar_url: string;
   other_user_id: number | null;
+  member_ids: number[];
+  member_count: number;
+  current_user_role: string | null;
   last_message_id: number | null;
   last_message_text: string | null;
   last_message_sender_id: number | null;
@@ -100,6 +103,12 @@ type ChatUpdatedEvent = {
   last_message: ChatMessage;
 };
 
+type ChatMembersUpdatedEvent = {
+  chat: Chat;
+  added_member_ids: number[];
+  added_by: number;
+};
+
 type ChatSettingsResponse = {
   ok: boolean;
   chat_id: number;
@@ -125,6 +134,44 @@ function sortChats(chats: Chat[]) {
 
     return getChatSortTime(second) - getChatSortTime(first);
   });
+}
+
+function upsertChat(chats: Chat[], chat: Chat) {
+  const existingIndex = chats.findIndex((item) => item.id === chat.id);
+
+  if (existingIndex === -1) {
+    return sortChats([chat, ...chats]);
+  }
+
+  const nextChats = [...chats];
+  nextChats.splice(existingIndex, 1, chat);
+  return sortChats(nextChats);
+}
+
+function mergeChatMembershipUpdate(existingChat: Chat | undefined, chat: Chat) {
+  if (!existingChat) {
+    return chat;
+  }
+
+  return {
+    ...existingChat,
+    ...chat,
+    last_message_id:
+      chat.last_message_id ?? existingChat.last_message_id,
+    last_message_text:
+      chat.last_message_text ?? existingChat.last_message_text,
+    last_message_sender_id:
+      chat.last_message_sender_id ?? existingChat.last_message_sender_id,
+    last_message_created_at:
+      chat.last_message_created_at ?? existingChat.last_message_created_at,
+    unread_count: existingChat.unread_count,
+    current_last_read_message_id:
+      existingChat.current_last_read_message_id,
+    other_last_read_message_id:
+      existingChat.other_last_read_message_id,
+    other_last_read_at: existingChat.other_last_read_at,
+    is_pinned: existingChat.is_pinned,
+  };
 }
 
 function applyLastMessagePreview(
@@ -334,6 +381,22 @@ function ChatScreen({
     null,
   );
   const [profileSaving, setProfileSaving] = useState(false);
+  const [creatingGroup, setCreatingGroup] = useState(false);
+  const [groupTitle, setGroupTitle] = useState("");
+  const [groupDescription, setGroupDescription] = useState("");
+  const [groupAvatarUrl, setGroupAvatarUrl] = useState("/favicon.svg");
+  const [groupMemberQuery, setGroupMemberQuery] = useState("");
+  const [groupSelectedMembers, setGroupSelectedMembers] = useState<
+    UserProfile[]
+  >([]);
+  const [groupMemberLoading, setGroupMemberLoading] = useState(false);
+  const [groupCreating, setGroupCreating] = useState(false);
+  const [groupError, setGroupError] = useState<string | null>(null);
+  const [groupMessage, setGroupMessage] = useState<string | null>(null);
+  const [addMemberQuery, setAddMemberQuery] = useState("");
+  const [addMemberLoading, setAddMemberLoading] = useState(false);
+  const [addMemberError, setAddMemberError] = useState<string | null>(null);
+  const [addMemberMessage, setAddMemberMessage] = useState<string | null>(null);
   const [messageSearchQuery, setMessageSearchQuery] = useState("");
   const [messageSearchResults, setMessageSearchResults] = useState<
     ChatMessage[]
@@ -546,6 +609,41 @@ function ChatScreen({
         });
     });
 
+    socket.on("chat_created", (data: Chat) => {
+      setChats((current) =>
+        upsertChat(current, applyLocalReadState(data)),
+      );
+
+      apiFetch<Chat[]>("/chats")
+        .then((loadedChats) => {
+          setLoadedChats(loadedChats);
+          setChatError(null);
+        })
+        .catch((error) => {
+          const message =
+            error instanceof Error ? error.message : "Unable to load chats.";
+
+          if (message === "Could not validate credentials") {
+            onSessionExpired();
+            return;
+          }
+
+          setChatError(message);
+        });
+    });
+
+    socket.on("chat_members_updated", (data: ChatMembersUpdatedEvent) => {
+      setChats((current) => {
+        const existingChat = current.find((chat) => chat.id === data.chat.id);
+        const updatedChat = mergeChatMembershipUpdate(
+          existingChat,
+          data.chat,
+        );
+
+        return upsertChat(current, applyLocalReadState(updatedChat));
+      });
+    });
+
     socket.on("chat_read", (data: ChatReadEvent) => {
       if (data.user_id === user.userId) {
         return;
@@ -703,6 +801,9 @@ function ChatScreen({
     setMessageSearchError(null);
     setMessageSearchHasSearched(false);
     setActiveSearchResultId(null);
+    setAddMemberQuery("");
+    setAddMemberError(null);
+    setAddMemberMessage(null);
   }, [activeChatId, draftRecipient?.id]);
 
   useEffect(() => {
@@ -1121,16 +1222,12 @@ function ChatScreen({
 
   const joinChat = (chat: Chat) => {
     const socket = socketRef.current;
-    if (!socket) {
-      return;
-    }
-
     const chatId = chat.id;
 
-    if (activeChatIdRef.current !== null) {
+    if (socket && activeChatIdRef.current !== null) {
       socket.emit("leave_room", String(activeChatIdRef.current));
     }
-    socket.emit("join_room", String(chatId));
+    socket?.emit("join_room", String(chatId));
     pendingMessageScrollRef.current = {
       chatId,
       lastReadMessageId: chat.current_last_read_message_id,
@@ -1234,6 +1331,185 @@ function ChatScreen({
       setProfileError(message);
     } finally {
       setProfileLoading(false);
+    }
+  };
+
+  const getProfileDisplayName = (profile: UserProfile) => {
+    return `${profile.first_name}${
+      profile.last_name ? ` ${profile.last_name}` : ""
+    }`;
+  };
+
+  const handleAddSelectedGroupMember = async () => {
+    const username = groupMemberQuery.trim();
+
+    if (!username) {
+      setGroupError("Enter a username to add.");
+      setGroupMessage(null);
+      return;
+    }
+
+    setGroupMemberLoading(true);
+    setGroupError(null);
+    setGroupMessage(null);
+
+    try {
+      const profile = await apiFetch<UserProfile>(
+        `/users/by-username/${encodeURIComponent(username)}`,
+      );
+
+      if (profile.id === user.userId) {
+        setGroupError("You are already included in every group you create.");
+        return;
+      }
+
+      if (groupSelectedMembers.some((member) => member.id === profile.id)) {
+        setGroupError(`${profile.username} is already selected.`);
+        return;
+      }
+
+      setGroupSelectedMembers((current) => [...current, profile]);
+      setGroupMemberQuery("");
+      setGroupMessage(`${profile.username} selected.`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to find that user.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setGroupError(message);
+    } finally {
+      setGroupMemberLoading(false);
+    }
+  };
+
+  const removeSelectedGroupMember = (memberId: number) => {
+    setGroupSelectedMembers((current) =>
+      current.filter((member) => member.id !== memberId),
+    );
+  };
+
+  const resetGroupForm = () => {
+    setGroupTitle("");
+    setGroupDescription("");
+    setGroupAvatarUrl("/favicon.svg");
+    setGroupMemberQuery("");
+    setGroupSelectedMembers([]);
+    setGroupError(null);
+    setGroupMessage(null);
+  };
+
+  const handleCreateGroup = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!groupTitle.trim()) {
+      setGroupError("Group name is required.");
+      setGroupMessage(null);
+      return;
+    }
+
+    setGroupCreating(true);
+    setGroupError(null);
+    setGroupMessage(null);
+
+    try {
+      const createdChat = await apiFetch<Chat>("/chats/group", {
+        method: "POST",
+        body: JSON.stringify({
+          title: groupTitle.trim(),
+          description: groupDescription.trim() || null,
+          avatar_url: groupAvatarUrl.trim() || "/favicon.svg",
+          member_ids: groupSelectedMembers.map((member) => member.id),
+        }),
+      });
+
+      setChats((current) =>
+        upsertChat(current, applyLocalReadState(createdChat)),
+      );
+      setCreatingGroup(false);
+      resetGroupForm();
+      joinChat(createdChat);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to create group.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setGroupError(message);
+    } finally {
+      setGroupCreating(false);
+    }
+  };
+
+  const handleAddMemberToActiveGroup = async (event: React.FormEvent) => {
+    event.preventDefault();
+
+    if (!activeChat || activeChat.type !== "group") {
+      return;
+    }
+
+    const username = addMemberQuery.trim();
+
+    if (!username) {
+      setAddMemberError("Enter a username to add.");
+      setAddMemberMessage(null);
+      return;
+    }
+
+    setAddMemberLoading(true);
+    setAddMemberError(null);
+    setAddMemberMessage(null);
+
+    try {
+      const profile = await apiFetch<UserProfile>(
+        `/users/by-username/${encodeURIComponent(username)}`,
+      );
+
+      if (activeChat.member_ids.includes(profile.id)) {
+        setAddMemberMessage(`${profile.username} is already in this chat.`);
+        setAddMemberQuery("");
+        return;
+      }
+
+      const updatedChat = await apiFetch<Chat>(
+        `/chats/${activeChat.id}/members`,
+        {
+          method: "POST",
+          body: JSON.stringify({
+            member_ids: [profile.id],
+          }),
+        },
+      );
+
+      setChats((current) => {
+        const existingChat = current.find((chat) => chat.id === updatedChat.id);
+        const mergedChat = mergeChatMembershipUpdate(
+          existingChat,
+          updatedChat,
+        );
+
+        return upsertChat(current, applyLocalReadState(mergedChat));
+      });
+      setAddMemberQuery("");
+      setAddMemberMessage(`${profile.username} added to this chat.`);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to add member.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setAddMemberError(message);
+    } finally {
+      setAddMemberLoading(false);
     }
   };
 
@@ -1624,6 +1900,127 @@ function ChatScreen({
               </article>
             ) : null}
           </section>
+          <section className="group-panel" aria-label="Create group chat">
+            {!creatingGroup ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setCreatingGroup(true);
+                  setGroupError(null);
+                  setGroupMessage(null);
+                }}
+              >
+                New group
+              </Button>
+            ) : (
+              <form className="group-form" onSubmit={handleCreateGroup}>
+                <div className="group-form-header">
+                  <strong>Create group</strong>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreatingGroup(false);
+                      resetGroupForm();
+                    }}
+                  >
+                    Close
+                  </button>
+                </div>
+                <label>
+                  Group name
+                  <input
+                    type="text"
+                    value={groupTitle}
+                    placeholder="Weekend plans"
+                    onChange={(event) => setGroupTitle(event.target.value)}
+                    required
+                  />
+                </label>
+                <label>
+                  Description
+                  <input
+                    type="text"
+                    value={groupDescription}
+                    placeholder="Optional"
+                    onChange={(event) =>
+                      setGroupDescription(event.target.value)
+                    }
+                  />
+                </label>
+                <label>
+                  Avatar URL
+                  <input
+                    type="url"
+                    value={groupAvatarUrl}
+                    placeholder="/favicon.svg"
+                    onChange={(event) => setGroupAvatarUrl(event.target.value)}
+                  />
+                </label>
+                <label>
+                  Add members
+                  <span className="group-inline-form">
+                    <input
+                      type="search"
+                      value={groupMemberQuery}
+                      placeholder="Username"
+                      autoComplete="off"
+                      onChange={(event) =>
+                        setGroupMemberQuery(event.target.value)
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          void handleAddSelectedGroupMember();
+                        }
+                      }}
+                    />
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={groupMemberLoading}
+                      onClick={() => {
+                        void handleAddSelectedGroupMember();
+                      }}
+                    >
+                      {groupMemberLoading ? "Adding..." : "Add"}
+                    </Button>
+                  </span>
+                </label>
+                <p className="group-hint">
+                  Leave members empty to create a group with only yourself.
+                </p>
+                {groupSelectedMembers.length > 0 ? (
+                  <div className="selected-members">
+                    {groupSelectedMembers.map((member) => (
+                      <span className="selected-member" key={member.id}>
+                        <span>
+                          {getProfileDisplayName(member)}
+                          <small>@{member.username}</small>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeSelectedGroupMember(member.id)}
+                        >
+                          Remove
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+                {groupError ? (
+                  <p className="profile-error">{groupError}</p>
+                ) : null}
+                {groupMessage ? (
+                  <p className="profile-success">{groupMessage}</p>
+                ) : null}
+                <Button type="submit" disabled={groupCreating}>
+                  {groupCreating ? "Creating..." : "Create group"}
+                </Button>
+              </form>
+            )}
+          </section>
           <div className="sidebar-section-label">Chats</div>
           <div className="chat-list">
             {chats.map((chat) => (
@@ -1788,6 +2185,37 @@ function ChatScreen({
                 {profileSaving ? "Saving..." : "Save profile"}
               </Button>
             </form>
+          </section>
+        ) : null}
+
+        {activeChat?.type === "group" ? (
+          <section className="chat-members-panel" aria-label="Group members">
+            <div>
+              <strong>{activeChat.member_count} members</strong>
+              <span>Anyone in this group can add another user.</span>
+            </div>
+            <form onSubmit={handleAddMemberToActiveGroup}>
+              <input
+                type="search"
+                value={addMemberQuery}
+                placeholder="Add member by username"
+                autoComplete="off"
+                onChange={(event) => {
+                  setAddMemberQuery(event.target.value);
+                  setAddMemberError(null);
+                  setAddMemberMessage(null);
+                }}
+              />
+              <Button type="submit" disabled={addMemberLoading}>
+                {addMemberLoading ? "Adding..." : "Add member"}
+              </Button>
+            </form>
+            {addMemberError ? (
+              <p className="profile-error">{addMemberError}</p>
+            ) : null}
+            {addMemberMessage ? (
+              <p className="profile-success">{addMemberMessage}</p>
+            ) : null}
           </section>
         ) : null}
 

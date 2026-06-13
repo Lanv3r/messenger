@@ -14,6 +14,7 @@ from sqlmodel import Session, col, exists, select
 
 from app.db import SessionDep, engine
 from app.models import (
+    AddGroupMembers,
     Chat,
     ChatListItem,
     ChatParticipant,
@@ -21,6 +22,7 @@ from app.models import (
     ChatSettingsUpdate,
     DirectMessageCreate,
     DirectMessageResponse,
+    GroupCreate,
     LoginRequest,
     Message,
     MessageDeletion,
@@ -448,6 +450,9 @@ def get_chats(
         other_user_id = None
         other_last_read_at = None
         other_last_read_message_id = None
+        member_ids: list[int] = []
+        member_count = 0
+        current_user_role = None
 
         if chat.type == "self":
             display_title = "Saved Messages"
@@ -483,6 +488,18 @@ def get_chats(
                 detail="Chat was not fetched correctly",
             )
 
+        if chat.type == "group":
+            member_ids = list(
+                session.exec(
+                    select(ChatParticipant.user_id).where(
+                        ChatParticipant.chat_id == chat.id,
+                        col(ChatParticipant.left_at).is_(None),
+                    )
+                ).all()
+            )
+            member_count = len(member_ids)
+            current_user_role = current_participant.role
+
         last_message = session.exec(
             select(Message)
             .where(
@@ -492,7 +509,7 @@ def get_chats(
             .order_by(col(Message.created_at).desc())
         ).first()
 
-        if last_message is None and chat.type != "self":
+        if last_message is None and chat.type not in {"self", "group"}:
             continue
 
         last_read_message_id = (
@@ -522,6 +539,9 @@ def get_chats(
                 display_title=display_title or "Chat",
                 display_avatar_url=display_avatar_url,
                 other_user_id=other_user_id,
+                member_ids=member_ids,
+                member_count=member_count,
+                current_user_role=current_user_role,
                 last_message_id=last_message.id if last_message else None,
                 last_message_text=last_message.content if last_message else None,
                 last_message_sender_id=last_message.sender_id if last_message else None,
@@ -790,6 +810,245 @@ def pin_chat(
         "is_archived": participant.is_archived,
         "muted_until": participant.muted_until,
     }
+
+
+@fastapi_app.post("/chats/group", response_model=ChatListItem)
+async def create_group_chat(
+    payload: GroupCreate,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    chat = Chat(
+        type="group",
+        title=payload.title,
+        description=payload.description,
+        avatar_url=payload.avatar_url,
+    )
+    session.add(chat)
+    session.flush()
+
+    if chat.id is None:
+        raise HTTPException(status_code=500, detail="Chat was not created")
+
+    session.add(
+        ChatParticipant(
+            chat_id=chat.id,
+            user_id=user_id,
+            role="owner",
+        )
+    )
+
+    member_ids = [user_id]
+
+    for member_id in set(payload.member_ids):
+        if member_id == user_id:
+            continue
+
+        member_ids.append(member_id)
+        session.add(
+            ChatParticipant(
+                chat_id=chat.id,
+                user_id=member_id,
+                added_by=user_id,
+                role="member",
+            )
+        )
+
+    session.commit()
+    session.refresh(chat)
+
+    chat_list_item = ChatListItem(
+        id=chat.id,
+        type=chat.type,
+        title=chat.title,
+        description=chat.description,
+        avatar_url=chat.avatar_url,
+        display_title=payload.title,
+        display_avatar_url=chat.avatar_url,
+        member_ids=member_ids,
+        member_count=len(member_ids),
+        current_user_role="owner",
+        last_message_id=None,
+        last_message_text=None,
+        last_message_sender_id=None,
+        last_message_created_at=None,
+        created_at=chat.created_at,
+        updated_at=chat.updated_at,
+    )
+
+    for member_id in member_ids:
+        member_chat_list_item = chat_list_item.model_copy(
+            update={
+                "current_user_role": "owner" if member_id == user_id else "member",
+            }
+        )
+        await sio.emit(
+            "chat_created",
+            member_chat_list_item.model_dump(mode="json"),
+            room=f"user:{member_id}",
+        )
+
+    return chat_list_item
+
+
+def get_participant_or_404(
+    session: Session,
+    chat_id: int,
+    user_id: int,
+) -> ChatParticipant:
+    participant = session.exec(
+        select(ChatParticipant).where(
+            ChatParticipant.chat_id == chat_id,
+            ChatParticipant.user_id == user_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).first()
+
+    if participant is None:
+        raise HTTPException(status_code=403, detail="Not a participant")
+
+    return participant
+
+
+@fastapi_app.post("/chats/{chat_id}/members")
+async def add_group_members(
+    chat_id: int,
+    payload: AddGroupMembers,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    participant = get_participant_or_404(session, chat_id, user_id)
+
+    participants = session.exec(
+        select(ChatParticipant).where(
+            ChatParticipant.chat_id == chat_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).all()
+
+    roles_by_user_id = {
+        participant.user_id: participant.role for participant in participants
+    }
+
+    new_member_ids = []
+
+    # add users
+    for member_id in set(payload.member_ids):
+        if member_id in roles_by_user_id:
+            continue
+
+        new_member_ids.append(member_id)
+        roles_by_user_id[member_id] = "member"
+
+        session.add(
+            ChatParticipant(
+                chat_id=chat_id,
+                user_id=member_id,
+                added_by=user_id,
+                role="member",
+            )
+        )
+
+    session.commit()
+
+    chat = session.get(Chat, chat_id)
+    if chat is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Chat was not found",
+        )
+
+    all_member_ids = list(roles_by_user_id.keys())
+
+    chat_list_item = ChatListItem(
+        id=chat_id,
+        type=chat.type,
+        title=chat.title,
+        description=chat.description,
+        avatar_url=chat.avatar_url,
+        display_title=chat.title if chat.title is not None else "New group chat",
+        display_avatar_url=chat.avatar_url,
+        member_ids=all_member_ids,
+        member_count=len(all_member_ids),
+        current_user_role=participant.role,
+        last_message_id=None,
+        last_message_text=None,
+        last_message_sender_id=None,
+        last_message_created_at=None,
+        created_at=chat.created_at,
+        updated_at=chat.updated_at,
+    )
+
+    for member_id in all_member_ids:
+        member_chat_list_item = chat_list_item.model_copy(
+            update={
+                "current_user_role": roles_by_user_id[member_id],
+            }
+        )
+
+        # New users only
+        if member_id in new_member_ids:
+            await sio.emit(
+                "chat_created",
+                member_chat_list_item.model_dump(mode="json"),
+                room=f"user:{member_id}",
+            )
+        # Old users only
+        else:
+            await sio.emit(
+                "chat_members_updated",
+                {
+                    "chat": member_chat_list_item.model_dump(mode="json"),
+                    "added_member_ids": new_member_ids,
+                    "added_by": user_id,
+                },
+                room=f"user:{member_id}",
+            )
+
+    return chat_list_item
+
+
+# @fastapi_app.patch("/messages/{message_id}/settings")
+# def patch_message(
+#     chat_id: int,
+#     payload: ChatSettingsUpdate,
+#     session: SessionDep,
+#     current_user: Annotated[User, Depends(get_current_user)],
+# ):
+#     user_id = current_user.id
+#     if user_id is None:
+#         raise HTTPException(status_code=401, detail="Invalid user")
+#     participant = session.exec(
+#         select(ChatParticipant).where(
+#             ChatParticipant.chat_id == chat_id,
+#             ChatParticipant.user_id == user_id,
+#             col(ChatParticipant.left_at).is_(None),
+#         )
+#     ).first()
+#     if participant is None:
+#         raise HTTPException(status_code=403, detail="Not a participant")
+
+#     update_data = payload.model_dump(exclude_unset=True)
+#     for key, value in update_data.items():
+#         setattr(participant, key, value)
+#     session.add(participant)
+#     session.commit()
+#     session.refresh(participant)
+
+#     return {
+#         "ok": True,
+#         "chat_id": chat_id,
+#         "is_pinned": participant.is_pinned,
+#         "is_archived": participant.is_archived,
+#         "muted_until": participant.muted_until,
+#     }
 
 
 @fastapi_app.get(
