@@ -866,6 +866,7 @@ def get_chat_members(
             username=member_user.username,
             first_name=member_user.first_name,
             last_name=member_user.last_name,
+            bio=member_user.bio,
             avatar_url=member_user.avatar_url,
             status=member_user.status,
             role=member.role,

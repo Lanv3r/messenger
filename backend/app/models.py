@@ -327,6 +327,7 @@ class ChatMemberPublic(SQLModel):
     username: str
     first_name: str
     last_name: str | None = None
+    bio: str | None = None
     avatar_url: str
     status: str
     role: str

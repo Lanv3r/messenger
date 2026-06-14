@@ -59,6 +59,7 @@ type ChatMember = {
   username: string;
   first_name: string;
   last_name: string | null;
+  bio: string | null;
   avatar_url: string;
   status: string;
   role: string;
@@ -389,6 +390,8 @@ function ChatScreen({
   const [profileSaving, setProfileSaving] = useState(false);
   const [chatInfoOpen, setChatInfoOpen] = useState(false);
   const [chatInfoMembers, setChatInfoMembers] = useState<ChatMember[]>([]);
+  const [selectedChatMember, setSelectedChatMember] =
+    useState<ChatMember | null>(null);
   const [chatInfoLoading, setChatInfoLoading] = useState(false);
   const [chatInfoError, setChatInfoError] = useState<string | null>(null);
   const [creatingGroup, setCreatingGroup] = useState(false);
@@ -837,6 +840,7 @@ function ChatScreen({
     setActiveSearchResultId(null);
     setChatInfoOpen(false);
     setChatInfoMembers([]);
+    setSelectedChatMember(null);
     setChatInfoError(null);
     setAddMemberQuery("");
     setAddMemberError(null);
@@ -1391,16 +1395,30 @@ function ChatScreen({
     return `${member.first_name}${member.last_name ? ` ${member.last_name}` : ""}`;
   };
 
-  const loadChatMembers = async (chat: Chat) => {
-    setChatInfoOpen(true);
+  const loadChatMembers = async (
+    chat: Chat,
+    options: { showPanel?: boolean; openOtherProfile?: boolean } = {},
+  ) => {
+    const showPanel = options.showPanel ?? true;
+
+    setChatInfoOpen(showPanel);
     setChatInfoLoading(true);
     setChatInfoError(null);
+    setSelectedChatMember(null);
 
     try {
       const members = await apiFetch<ChatMember[]>(
         `/chats/${chat.id}/members`,
       );
       setChatInfoMembers(members);
+
+      if (options.openOtherProfile) {
+        setSelectedChatMember(
+          members.find((member) => member.user_id !== user.userId) ??
+            members[0] ??
+            null,
+        );
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to load chat members.";
@@ -1411,6 +1429,9 @@ function ChatScreen({
       }
 
       setChatInfoError(message);
+      if (!showPanel) {
+        setChatError(message);
+      }
     } finally {
       setChatInfoLoading(false);
     }
@@ -1421,13 +1442,26 @@ function ChatScreen({
       return;
     }
 
+    if (selectedChatMember) {
+      setSelectedChatMember(null);
+      return;
+    }
+
+    if (activeChat.type === "direct") {
+      void loadChatMembers(activeChat, {
+        showPanel: false,
+        openOtherProfile: true,
+      });
+      return;
+    }
+
     if (chatInfoOpen) {
       setChatInfoOpen(false);
       setChatInfoError(null);
       return;
     }
 
-    void loadChatMembers(activeChat);
+    void loadChatMembers(activeChat, { showPanel: true });
   };
 
   const handleAddSelectedGroupMember = async () => {
@@ -1834,7 +1868,7 @@ function ChatScreen({
           activeChat.member_count === 1 ? "member" : "members"
         }`
       : activeChat?.type === "direct"
-        ? "Direct message"
+        ? ""
         : activeChat?.type === "self"
           ? "Private notes"
           : "Select a chat";
@@ -1842,11 +1876,6 @@ function ChatScreen({
     Boolean(activeChat) &&
     activeChat?.type !== "self" &&
     draftRecipient === null;
-  const directChatMember =
-    activeChat?.type === "direct"
-      ? (chatInfoMembers.find((member) => member.user_id !== user.userId) ??
-        chatInfoMembers[0])
-      : null;
 
   const openDraftChat = (profile: UserProfile) => {
     const existingDirectChat = chats.find(
@@ -2282,9 +2311,7 @@ function ChatScreen({
         {chatInfoOpen && activeChat && activeChat.type !== "self" ? (
           <section className="chat-info-panel" aria-label="Chat details">
             <div className="chat-info-header">
-              <strong>
-                {activeChat.type === "group" ? "Group members" : "Profile"}
-              </strong>
+              <strong>Group members</strong>
               <button
                 type="button"
                 onClick={() => {
@@ -2305,35 +2332,16 @@ function ChatScreen({
 
             {!chatInfoLoading &&
             !chatInfoError &&
-            activeChat.type === "direct" &&
-            directChatMember ? (
-              <article className="chat-info-profile">
-                <img
-                  src={directChatMember.avatar_url}
-                  alt=""
-                  onError={(event) => {
-                    event.currentTarget.src = "/favicon.svg";
-                  }}
-                />
-                <div>
-                  <h2>{getChatMemberDisplayName(directChatMember)}</h2>
-                  <p className="profile-username">
-                    @{directChatMember.username}
-                  </p>
-                  <span className="profile-status">
-                    {directChatMember.status}
-                  </span>
-                </div>
-              </article>
-            ) : null}
-
-            {!chatInfoLoading &&
-            !chatInfoError &&
             activeChat.type === "group" ? (
               <>
                 <div className="chat-member-list">
                   {chatInfoMembers.map((member) => (
-                    <article className="chat-member-row" key={member.user_id}>
+                    <button
+                      type="button"
+                      className="chat-member-row"
+                      key={member.user_id}
+                      onClick={() => setSelectedChatMember(member)}
+                    >
                       <img
                         src={member.avatar_url}
                         alt=""
@@ -2349,7 +2357,7 @@ function ChatScreen({
                         <span>@{member.username}</span>
                       </div>
                       <small>{member.role}</small>
-                    </article>
+                    </button>
                   ))}
                 </div>
 
@@ -2384,6 +2392,50 @@ function ChatScreen({
               </>
             ) : null}
           </section>
+        ) : null}
+
+        {selectedChatMember ? (
+          <div
+            className="profile-card-backdrop"
+            role="presentation"
+            onClick={() => setSelectedChatMember(null)}
+          >
+            <article
+              className="profile-popup-card"
+              role="dialog"
+              aria-modal="true"
+              aria-label={`${getChatMemberDisplayName(selectedChatMember)} profile`}
+              onClick={(event) => event.stopPropagation()}
+            >
+              <button
+                type="button"
+                className="profile-popup-close"
+                aria-label="Close profile"
+                onClick={() => setSelectedChatMember(null)}
+              >
+                &times;
+              </button>
+              <img
+                src={selectedChatMember.avatar_url}
+                alt=""
+                onError={(event) => {
+                  event.currentTarget.src = "/favicon.svg";
+                }}
+              />
+              <div>
+                <h2>{getChatMemberDisplayName(selectedChatMember)}</h2>
+                <p className="profile-username">
+                  @{selectedChatMember.username}
+                </p>
+                {selectedChatMember.bio ? (
+                  <p className="profile-bio">{selectedChatMember.bio}</p>
+                ) : null}
+                <span className="profile-status">
+                  {selectedChatMember.status}
+                </span>
+              </div>
+            </article>
+          </div>
         ) : null}
 
         {editingProfile ? (
