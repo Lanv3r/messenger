@@ -2308,10 +2308,30 @@ function ChatScreen({
           </button>
         </header>
 
-        {chatInfoOpen && activeChat && activeChat.type !== "self" ? (
-          <section className="chat-info-panel" aria-label="Chat details">
+        {chatInfoOpen && activeChat && activeChat.type === "group" ? (
+          <div
+            className="chat-info-backdrop"
+            role="presentation"
+            onClick={() => {
+              setChatInfoOpen(false);
+              setChatInfoError(null);
+            }}
+          >
+          <section
+            className="chat-info-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Group members"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="chat-info-header">
-              <strong>Group members</strong>
+              <div>
+                <strong>{getChatTitle(activeChat)}</strong>
+                <span>
+                  {activeChat.member_count}{" "}
+                  {activeChat.member_count === 1 ? "member" : "members"}
+                </span>
+              </div>
               <button
                 type="button"
                 onClick={() => {
@@ -2392,6 +2412,7 @@ function ChatScreen({
               </>
             ) : null}
           </section>
+          </div>
         ) : null}
 
         {selectedChatMember ? (
