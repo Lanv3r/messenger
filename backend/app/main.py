@@ -17,6 +17,7 @@ from app.models import (
     AddGroupMembers,
     Chat,
     ChatListItem,
+    ChatMemberPublic,
     ChatParticipant,
     ChatReadRequest,
     ChatSettingsUpdate,
@@ -833,6 +834,47 @@ async def chat_read(
         )
 
     return {"ok": True}
+
+
+@fastapi_app.get("/chats/{chat_id}/members", response_model=list[ChatMemberPublic])
+def get_chat_members(
+    chat_id: int,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    participant = get_active_participant(session, chat_id, user_id)
+
+    participants = session.exec(
+        select(ChatParticipant).where(
+            ChatParticipant.chat_id == chat_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).all()
+
+    members = []
+
+    for member in participants:
+        member_user = session.get(User, member.user_id)
+        if member_user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        chat_member = ChatMemberPublic(
+            user_id=member.user_id,
+            username=member_user.username,
+            first_name=member_user.first_name,
+            last_name=member_user.last_name,
+            avatar_url=member_user.avatar_url,
+            status=member_user.status,
+            role=member.role,
+            joined_at=member.joined_at,
+            added_by=member.added_by,
+        )
+        members.append(chat_member)
+
+    return members
 
 
 @fastapi_app.patch("/chats/{chat_id}/settings")

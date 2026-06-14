@@ -54,6 +54,18 @@ type UserProfile = AuthResponse & {
   status: string;
 };
 
+type ChatMember = {
+  user_id: number;
+  username: string;
+  first_name: string;
+  last_name: string | null;
+  avatar_url: string;
+  status: string;
+  role: string;
+  joined_at: string | null;
+  added_by: number | null;
+};
+
 type Chat = {
   id: number;
   type: "self" | "direct" | "group" | string;
@@ -375,6 +387,10 @@ function ChatScreen({
     null,
   );
   const [profileSaving, setProfileSaving] = useState(false);
+  const [chatInfoOpen, setChatInfoOpen] = useState(false);
+  const [chatInfoMembers, setChatInfoMembers] = useState<ChatMember[]>([]);
+  const [chatInfoLoading, setChatInfoLoading] = useState(false);
+  const [chatInfoError, setChatInfoError] = useState<string | null>(null);
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [groupTitle, setGroupTitle] = useState("");
   const [groupDescription, setGroupDescription] = useState("");
@@ -819,6 +835,9 @@ function ChatScreen({
     setMessageSearchError(null);
     setMessageSearchHasSearched(false);
     setActiveSearchResultId(null);
+    setChatInfoOpen(false);
+    setChatInfoMembers([]);
+    setChatInfoError(null);
     setAddMemberQuery("");
     setAddMemberError(null);
     setAddMemberMessage(null);
@@ -1368,6 +1387,49 @@ function ChatScreen({
     }`;
   };
 
+  const getChatMemberDisplayName = (member: ChatMember) => {
+    return `${member.first_name}${member.last_name ? ` ${member.last_name}` : ""}`;
+  };
+
+  const loadChatMembers = async (chat: Chat) => {
+    setChatInfoOpen(true);
+    setChatInfoLoading(true);
+    setChatInfoError(null);
+
+    try {
+      const members = await apiFetch<ChatMember[]>(
+        `/chats/${chat.id}/members`,
+      );
+      setChatInfoMembers(members);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to load chat members.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setChatInfoError(message);
+    } finally {
+      setChatInfoLoading(false);
+    }
+  };
+
+  const handleChatHeaderClick = () => {
+    if (!activeChat || activeChat.type === "self") {
+      return;
+    }
+
+    if (chatInfoOpen) {
+      setChatInfoOpen(false);
+      setChatInfoError(null);
+      return;
+    }
+
+    void loadChatMembers(activeChat);
+  };
+
   const handleAddSelectedGroupMember = async () => {
     const username = groupMemberQuery.trim();
 
@@ -1526,6 +1588,9 @@ function ChatScreen({
       });
       setAddMemberQuery("");
       setAddMemberMessage(`${profile.username} added to this chat.`);
+      if (chatInfoOpen) {
+        void loadChatMembers(updatedChat);
+      }
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to add member.";
@@ -1756,6 +1821,32 @@ function ChatScreen({
     : activeChat
       ? getChatTitle(activeChat)
       : "Chat";
+  const chatHeaderTitle = activeTitle;
+  const chatHeaderAvatar = draftRecipient
+    ? draftRecipient.avatar_url
+    : activeChat
+      ? activeChat.display_avatar_url || activeChat.avatar_url || "/favicon.svg"
+      : "/favicon.svg";
+  const chatHeaderSubtitle = draftRecipient
+    ? `@${draftRecipient.username}`
+    : activeChat?.type === "group"
+      ? `${activeChat.member_count} ${
+          activeChat.member_count === 1 ? "member" : "members"
+        }`
+      : activeChat?.type === "direct"
+        ? "Direct message"
+        : activeChat?.type === "self"
+          ? "Private notes"
+          : "Select a chat";
+  const chatHeaderClickable =
+    Boolean(activeChat) &&
+    activeChat?.type !== "self" &&
+    draftRecipient === null;
+  const directChatMember =
+    activeChat?.type === "direct"
+      ? (chatInfoMembers.find((member) => member.user_id !== user.userId) ??
+        chatInfoMembers[0])
+      : null;
 
   const openDraftChat = (profile: UserProfile) => {
     const existingDirectChat = chats.find(
@@ -2167,6 +2258,134 @@ function ChatScreen({
           </div>
         </aside>
         <section className="chat-card">
+        <header className="chat-window-header">
+          <button
+            type="button"
+            className="chat-window-header-button"
+            disabled={!chatHeaderClickable}
+            onClick={handleChatHeaderClick}
+          >
+            <img
+              src={chatHeaderAvatar}
+              alt=""
+              onError={(event) => {
+                event.currentTarget.src = "/favicon.svg";
+              }}
+            />
+            <span>
+              <strong>{chatHeaderTitle}</strong>
+              <small>{chatHeaderSubtitle}</small>
+            </span>
+          </button>
+        </header>
+
+        {chatInfoOpen && activeChat && activeChat.type !== "self" ? (
+          <section className="chat-info-panel" aria-label="Chat details">
+            <div className="chat-info-header">
+              <strong>
+                {activeChat.type === "group" ? "Group members" : "Profile"}
+              </strong>
+              <button
+                type="button"
+                onClick={() => {
+                  setChatInfoOpen(false);
+                  setChatInfoError(null);
+                }}
+              >
+                Close
+              </button>
+            </div>
+
+            {chatInfoLoading ? (
+              <p className="message-search-empty">Loading...</p>
+            ) : null}
+            {chatInfoError ? (
+              <p className="profile-error">{chatInfoError}</p>
+            ) : null}
+
+            {!chatInfoLoading &&
+            !chatInfoError &&
+            activeChat.type === "direct" &&
+            directChatMember ? (
+              <article className="chat-info-profile">
+                <img
+                  src={directChatMember.avatar_url}
+                  alt=""
+                  onError={(event) => {
+                    event.currentTarget.src = "/favicon.svg";
+                  }}
+                />
+                <div>
+                  <h2>{getChatMemberDisplayName(directChatMember)}</h2>
+                  <p className="profile-username">
+                    @{directChatMember.username}
+                  </p>
+                  <span className="profile-status">
+                    {directChatMember.status}
+                  </span>
+                </div>
+              </article>
+            ) : null}
+
+            {!chatInfoLoading &&
+            !chatInfoError &&
+            activeChat.type === "group" ? (
+              <>
+                <div className="chat-member-list">
+                  {chatInfoMembers.map((member) => (
+                    <article className="chat-member-row" key={member.user_id}>
+                      <img
+                        src={member.avatar_url}
+                        alt=""
+                        onError={(event) => {
+                          event.currentTarget.src = "/favicon.svg";
+                        }}
+                      />
+                      <div>
+                        <strong>
+                          {getChatMemberDisplayName(member)}
+                          {member.user_id === user.userId ? " (You)" : ""}
+                        </strong>
+                        <span>@{member.username}</span>
+                      </div>
+                      <small>{member.role}</small>
+                    </article>
+                  ))}
+                </div>
+
+                <div className="chat-members-panel">
+                  <div>
+                    <strong>Add member</strong>
+                    <span>Anyone in this group can add another user.</span>
+                  </div>
+                  <form onSubmit={handleAddMemberToActiveGroup}>
+                    <input
+                      type="search"
+                      value={addMemberQuery}
+                      placeholder="Add member by username"
+                      autoComplete="off"
+                      onChange={(event) => {
+                        setAddMemberQuery(event.target.value);
+                        setAddMemberError(null);
+                        setAddMemberMessage(null);
+                      }}
+                    />
+                    <Button type="submit" disabled={addMemberLoading}>
+                      {addMemberLoading ? "Adding..." : "Add member"}
+                    </Button>
+                  </form>
+                  {addMemberError ? (
+                    <p className="profile-error">{addMemberError}</p>
+                  ) : null}
+                  {addMemberMessage ? (
+                    <p className="profile-success">{addMemberMessage}</p>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
+          </section>
+        ) : null}
+
         {editingProfile ? (
           <section className="profile-editor" aria-label="Edit your profile">
             <div className="profile-editor-header">
@@ -2225,37 +2444,6 @@ function ChatScreen({
                 {profileSaving ? "Saving..." : "Save profile"}
               </Button>
             </form>
-          </section>
-        ) : null}
-
-        {activeChat?.type === "group" ? (
-          <section className="chat-members-panel" aria-label="Group members">
-            <div>
-              <strong>{activeChat.member_count} members</strong>
-              <span>Anyone in this group can add another user.</span>
-            </div>
-            <form onSubmit={handleAddMemberToActiveGroup}>
-              <input
-                type="search"
-                value={addMemberQuery}
-                placeholder="Add member by username"
-                autoComplete="off"
-                onChange={(event) => {
-                  setAddMemberQuery(event.target.value);
-                  setAddMemberError(null);
-                  setAddMemberMessage(null);
-                }}
-              />
-              <Button type="submit" disabled={addMemberLoading}>
-                {addMemberLoading ? "Adding..." : "Add member"}
-              </Button>
-            </form>
-            {addMemberError ? (
-              <p className="profile-error">{addMemberError}</p>
-            ) : null}
-            {addMemberMessage ? (
-              <p className="profile-success">{addMemberMessage}</p>
-            ) : null}
           </section>
         ) : null}
 
@@ -2424,7 +2612,7 @@ function ChatScreen({
             id="message"
             type="text"
             value={message}
-            placeholder={`Message ${activeTitle}`}
+            placeholder="Write a message..."
             onChange={(event) => setMessage(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") {

@@ -320,3 +320,15 @@ class GroupCreate(SQLModel):
 
 class AddGroupMembers(SQLModel):
     member_ids: list[int]
+
+
+class ChatMemberPublic(SQLModel):
+    user_id: int
+    username: str
+    first_name: str
+    last_name: str | None = None
+    avatar_url: str
+    status: str
+    role: str
+    joined_at: datetime | None = None
+    added_by: int | None = None
