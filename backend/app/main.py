@@ -153,7 +153,7 @@ def to_message_public(
     )
 
 
-def get_active_participant(
+def require_active_participant(
     session: Session,
     chat_id: int,
     user_id: int,
@@ -250,7 +250,7 @@ def get_chat_messages(
     current_user_id = current_user.id
     if current_user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
-    get_active_participant(session, chat_id, current_user_id)
+    require_active_participant(session, chat_id, current_user_id)
 
     messages = session.exec(select(Message).where(Message.chat_id == chat_id)).all()
     sender_ids = {
@@ -736,7 +736,7 @@ async def create_message(
     if sender_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
 
-    participant = get_active_participant(session, chat_id, sender_id)
+    require_active_participant(session, chat_id, sender_id)
 
     content = payload.content.strip()
     if not content:
@@ -802,7 +802,7 @@ async def chat_read(
     user_id = current_user.id
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
-    participant = get_active_participant(session, chat_id, user_id)
+    participant = require_active_participant(session, chat_id, user_id)
     participant.last_read_message_id = payload.last_read_message_id
     participant.last_read_at = datetime.now(timezone.utc)
 
@@ -845,7 +845,7 @@ def get_chat_members(
     user_id = current_user.id
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
-    participant = get_active_participant(session, chat_id, user_id)
+    require_active_participant(session, chat_id, user_id)
 
     participants = session.exec(
         select(ChatParticipant).where(
@@ -888,7 +888,7 @@ def pin_chat(
     user_id = current_user.id
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
-    participant = get_active_participant(session, chat_id, user_id)
+    participant = require_active_participant(session, chat_id, user_id)
 
     update_data = payload.model_dump(exclude_unset=True)
     for key, value in update_data.items():
@@ -999,7 +999,7 @@ async def add_group_members(
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
 
-    participant = get_active_participant(session, chat_id, user_id)
+    require_active_participant(session, chat_id, user_id)
 
     chat = session.get(Chat, chat_id)
     if chat is None:
@@ -1060,7 +1060,7 @@ async def add_group_members(
         display_title=chat.title if chat.title is not None else "New group chat",
         member_ids=all_member_ids,
         member_count=len(all_member_ids),
-        current_user_role=participant.role,
+        current_user_role="member",
         last_message_id=None,
         last_message_text=None,
         last_message_sender_id=None,
@@ -1114,7 +1114,7 @@ def search_chat_messages(
     user_id = current_user.id
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
-    participant = get_active_participant(session, chat_id, user_id)
+    require_active_participant(session, chat_id, user_id)
 
     normalized_query = query.strip()
     if not normalized_query:
