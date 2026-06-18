@@ -948,6 +948,115 @@
   gap: 10px;
 }
 
+.permissions-panel,
+.member-permissions-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(163, 88, 66, 0.14);
+  border-radius: 18px;
+  text-align: left;
+  background: rgba(255, 250, 246, 0.72);
+}
+
+.member-permissions-card {
+  width: min(100%, 300px);
+  margin-top: 10px;
+}
+
+.permissions-panel-header,
+.member-permissions-header,
+.member-permissions-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.permissions-panel-header > div,
+.member-permissions-header > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.permissions-panel-header strong,
+.member-permissions-header strong {
+  font-size: 14px;
+  color: #1f2937;
+}
+
+.permissions-panel-header span,
+.member-permissions-header span,
+.permissions-panel-header small,
+.member-permissions-header small,
+.permissions-note {
+  font-size: 12px;
+  line-height: 1.35;
+  color: #8b5e34;
+}
+
+.permissions-note {
+  margin: 0;
+}
+
+.permission-list {
+  display: grid;
+  gap: 6px;
+  max-height: 230px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.permission-list.compact {
+  max-height: 250px;
+}
+
+.permission-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 9px;
+  border: 1px solid rgba(163, 88, 66, 0.1);
+  border-radius: 13px;
+  font-size: 12px;
+  font-weight: 800;
+  color: #374151;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.permission-row span {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.permission-row small {
+  font-size: 11px;
+  font-weight: 700;
+  color: #b45b43;
+}
+
+.permission-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #f46f54;
+}
+
+.permission-row input[type="number"] {
+  width: 84px;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 1px solid rgba(163, 88, 66, 0.18);
+  border-radius: 10px;
+  font: inherit;
+  font-weight: 700;
+  color: #111827;
+  background: #fff;
+  box-sizing: border-box;
+}
+
 .message-search-form {
   display: grid;
   grid-template-columns: 1fr;

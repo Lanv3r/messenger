@@ -150,6 +150,16 @@ class ChatParticipant(ChatParticipantBase, table=True):
         sa_column_kwargs={"server_default": func.now(), "nullable": False},
     )
     left_at: datetime | None = Field(default=None, sa_type=DateTime)
+    admin_permissions: dict = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB, server_default=text("'{}'::jsonb"), nullable=False),
+    )
+    promoted_by: int | None = Field(
+        default=None,
+        foreign_key="users.id",
+        ondelete="SET NULL",
+    )
+    promoted_at: datetime | None = Field(default=None, sa_type=DateTime)
 
 
 class ChatParticipantPublic(ChatParticipantBase):
@@ -333,3 +343,16 @@ class ChatMemberPublic(SQLModel):
     role: str
     joined_at: datetime | None = None
     added_by: int | None = None
+
+
+class ChatMemberPermissions(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "chat_member_permissions"
+    chat_id: int = Field(
+        primary_key=True,
+        foreign_key="chats.id",
+        ondelete="CASCADE",
+    )
+    permissions: dict = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB, server_default=text("'{}'::jsonb"), nullable=False),
+    )

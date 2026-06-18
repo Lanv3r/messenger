@@ -67,6 +67,10 @@ type ChatMember = {
   added_by: number | null;
 };
 
+type MemberPermissionValue = boolean | number;
+type MemberPermissions = Record<string, MemberPermissionValue>;
+type AdminPermissions = Record<string, boolean>;
+
 type Chat = {
   id: number;
   type: "self" | "direct" | "group" | string;
@@ -123,6 +127,119 @@ type ChatSettingsResponse = {
   is_archived?: boolean;
   muted_until?: string | null;
 };
+
+const MEMBER_BOOLEAN_PERMISSION_KEYS = [
+  "send_messages",
+  "add_members",
+  "pin_messages",
+  "edit_own_tags",
+  "change_group_info",
+  "send_photos",
+  "send_video_files",
+  "send_video_messages",
+  "send_music",
+  "send_voice_messages",
+  "send_files",
+  "send_stickers_gifs",
+  "embed_links",
+  "send_polls",
+  "send_reactions",
+] as const;
+
+const MEMBER_NUMERIC_PERMISSION_KEYS = ["slowmode_seconds"] as const;
+
+const ADMIN_PERMISSION_KEYS = [
+  "change_group_info",
+  "delete_messages",
+  "ban_users",
+  "add_members",
+  "pin_messages",
+  "post_stories",
+  "edit_others_stories",
+  "delete_others_stories",
+  "manage_video_chats",
+  "edit_member_tags",
+  "remain_anonymous",
+  "manage_admins",
+] as const;
+
+const ADMIN_MEMBER_OVERLAP_PERMISSION_KEYS = [
+  "change_group_info",
+  "add_members",
+  "pin_messages",
+] as const;
+
+const DEFAULT_ADMIN_PERMISSIONS: AdminPermissions = {
+  change_group_info: true,
+  delete_messages: true,
+  ban_users: true,
+  add_members: true,
+  pin_messages: true,
+  post_stories: false,
+  edit_others_stories: false,
+  delete_others_stories: false,
+  manage_video_chats: true,
+  edit_member_tags: true,
+  remain_anonymous: false,
+  manage_admins: false,
+};
+
+const PERMISSION_LABELS: Record<string, string> = {
+  send_messages: "Send messages",
+  add_members: "Add members",
+  pin_messages: "Pin messages",
+  edit_own_tags: "Edit own tags",
+  change_group_info: "Change group info",
+  send_photos: "Send photos",
+  send_video_files: "Send video files",
+  send_video_messages: "Send video messages",
+  send_music: "Send music",
+  send_voice_messages: "Send voice messages",
+  send_files: "Send files",
+  send_stickers_gifs: "Send stickers and GIFs",
+  embed_links: "Embed links",
+  send_polls: "Send polls",
+  send_reactions: "Send reactions",
+  slowmode_seconds: "Slow mode, seconds",
+  delete_messages: "Delete others' messages",
+  ban_users: "Ban users / manage member defaults",
+  post_stories: "Post stories",
+  edit_others_stories: "Edit others' stories",
+  delete_others_stories: "Delete others' stories",
+  manage_video_chats: "Manage video chats",
+  edit_member_tags: "Edit member tags",
+  remain_anonymous: "Remain anonymous",
+  manage_admins: "Add or manage admins",
+};
+
+function buildDefaultAdminPermissions(
+  memberPermissions: MemberPermissions | null,
+): AdminPermissions {
+  const permissions = { ...DEFAULT_ADMIN_PERMISSIONS };
+
+  for (const key of ADMIN_MEMBER_OVERLAP_PERMISSION_KEYS) {
+    if (memberPermissions?.[key] === true) {
+      permissions[key] = true;
+    }
+  }
+
+  return permissions;
+}
+
+function enforceAdminMemberOverlaps(
+  adminPermissions: AdminPermissions,
+  memberPermissions: MemberPermissions | null,
+): AdminPermissions {
+  const permissions = { ...adminPermissions };
+
+  for (const key of ADMIN_MEMBER_OVERLAP_PERMISSION_KEYS) {
+    if (memberPermissions?.[key] === true) {
+      permissions[key] = true;
+    }
+  }
+
+  return permissions;
+}
 
 function getChatSortTime(chat: Chat) {
   const value = chat.last_message_created_at ?? chat.created_at;
@@ -410,6 +527,31 @@ function ChatScreen({
   const [addMemberLoading, setAddMemberLoading] = useState(false);
   const [addMemberError, setAddMemberError] = useState<string | null>(null);
   const [addMemberMessage, setAddMemberMessage] = useState<string | null>(null);
+  const [memberPermissions, setMemberPermissions] =
+    useState<MemberPermissions | null>(null);
+  const [memberPermissionsDraft, setMemberPermissionsDraft] =
+    useState<MemberPermissions | null>(null);
+  const [memberPermissionsLoading, setMemberPermissionsLoading] =
+    useState(false);
+  const [memberPermissionsSaving, setMemberPermissionsSaving] =
+    useState(false);
+  const [memberPermissionsError, setMemberPermissionsError] =
+    useState<string | null>(null);
+  const [memberPermissionsMessage, setMemberPermissionsMessage] =
+    useState<string | null>(null);
+  const [adminPermissionsByUserId, setAdminPermissionsByUserId] = useState<
+    Record<number, AdminPermissions>
+  >({});
+  const [adminPermissionsDraftByUserId, setAdminPermissionsDraftByUserId] =
+    useState<Record<number, AdminPermissions>>({});
+  const [adminPermissionsLoadingUserId, setAdminPermissionsLoadingUserId] =
+    useState<number | null>(null);
+  const [adminPermissionsSavingUserId, setAdminPermissionsSavingUserId] =
+    useState<number | null>(null);
+  const [adminPermissionsError, setAdminPermissionsError] =
+    useState<string | null>(null);
+  const [adminPermissionsMessage, setAdminPermissionsMessage] =
+    useState<string | null>(null);
   const [messageSearchQuery, setMessageSearchQuery] = useState("");
   const [messageSearchResults, setMessageSearchResults] = useState<
     ChatMessage[]
@@ -845,6 +987,14 @@ function ChatScreen({
     setAddMemberQuery("");
     setAddMemberError(null);
     setAddMemberMessage(null);
+    setMemberPermissions(null);
+    setMemberPermissionsDraft(null);
+    setMemberPermissionsError(null);
+    setMemberPermissionsMessage(null);
+    setAdminPermissionsByUserId({});
+    setAdminPermissionsDraftByUserId({});
+    setAdminPermissionsError(null);
+    setAdminPermissionsMessage(null);
   }, [activeChatId, draftRecipient?.id]);
 
   useEffect(() => {
@@ -1395,6 +1545,68 @@ function ChatScreen({
     return `${member.first_name}${member.last_name ? ` ${member.last_name}` : ""}`;
   };
 
+  const loadMemberDefaultPermissions = async (chatId: number) => {
+    setMemberPermissionsLoading(true);
+    setMemberPermissionsError(null);
+    setMemberPermissionsMessage(null);
+
+    try {
+      const permissions = await apiFetch<MemberPermissions>(
+        `/chats/${chatId}/member-default-permissions`,
+      );
+      setMemberPermissions(permissions);
+      setMemberPermissionsDraft({ ...permissions });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to load member permissions.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setMemberPermissionsError(message);
+    } finally {
+      setMemberPermissionsLoading(false);
+    }
+  };
+
+  const loadAdminPermissions = async (chatId: number, memberId: number) => {
+    setAdminPermissionsLoadingUserId(memberId);
+    setAdminPermissionsError(null);
+    setAdminPermissionsMessage(null);
+
+    try {
+      const permissions = await apiFetch<AdminPermissions>(
+        `/chats/${chatId}/admins/${memberId}/permissions`,
+      );
+      setAdminPermissionsByUserId((current) => ({
+        ...current,
+        [memberId]: permissions,
+      }));
+      setAdminPermissionsDraftByUserId((current) => ({
+        ...current,
+        [memberId]: permissions,
+      }));
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to load admin permissions.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setAdminPermissionsError(message);
+    } finally {
+      setAdminPermissionsLoadingUserId(null);
+    }
+  };
+
   const loadChatMembers = async (
     chat: Chat,
     options: { showPanel?: boolean; openOtherProfile?: boolean } = {},
@@ -1411,6 +1623,10 @@ function ChatScreen({
         `/chats/${chat.id}/members`,
       );
       setChatInfoMembers(members);
+
+      if (chat.type === "group") {
+        void loadMemberDefaultPermissions(chat.id);
+      }
 
       if (options.openOtherProfile) {
         setSelectedChatMember(
@@ -1637,6 +1853,289 @@ function ChatScreen({
       setAddMemberError(message);
     } finally {
       setAddMemberLoading(false);
+    }
+  };
+
+  const openChatMemberProfile = (member: ChatMember) => {
+    setSelectedChatMember(member);
+    setAdminPermissionsError(null);
+    setAdminPermissionsMessage(null);
+
+    if (activeChat?.type === "group" && member.role === "admin") {
+      void loadAdminPermissions(activeChat.id, member.user_id);
+    }
+
+    if (member.role === "member") {
+      const defaultPermissions = buildDefaultAdminPermissions(
+        memberPermissionsDraft ?? memberPermissions,
+      );
+
+      setAdminPermissionsDraftByUserId((current) => ({
+        ...current,
+        [member.user_id]: current[member.user_id] ?? defaultPermissions,
+      }));
+    }
+  };
+
+  const updateMemberBooleanPermission = (key: string, value: boolean) => {
+    setMemberPermissionsDraft((current) =>
+      current ? { ...current, [key]: value } : current,
+    );
+    setMemberPermissionsMessage(null);
+    setMemberPermissionsError(null);
+  };
+
+  const updateMemberNumericPermission = (key: string, value: number) => {
+    setMemberPermissionsDraft((current) =>
+      current
+        ? {
+            ...current,
+            [key]: Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0,
+          }
+        : current,
+    );
+    setMemberPermissionsMessage(null);
+    setMemberPermissionsError(null);
+  };
+
+  const updateAdminPermission = (
+    memberId: number,
+    key: string,
+    value: boolean,
+  ) => {
+    setAdminPermissionsDraftByUserId((current) => {
+      const currentDraft =
+        current[memberId] ??
+        adminPermissionsByUserId[memberId] ??
+        buildDefaultAdminPermissions(memberPermissionsDraft ?? memberPermissions);
+
+      return {
+        ...current,
+        [memberId]: {
+          ...currentDraft,
+          [key]: value,
+        },
+      };
+    });
+    setAdminPermissionsMessage(null);
+    setAdminPermissionsError(null);
+  };
+
+  const saveMemberDefaultPermissions = async () => {
+    if (!activeChat || activeChat.type !== "group" || !memberPermissionsDraft) {
+      return;
+    }
+
+    setMemberPermissionsSaving(true);
+    setMemberPermissionsError(null);
+    setMemberPermissionsMessage(null);
+
+    try {
+      await apiFetch<null>(
+        `/chats/${activeChat.id}/member-default-permissions`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(memberPermissionsDraft),
+        },
+      );
+      setMemberPermissions(memberPermissionsDraft);
+      setMemberPermissionsMessage("Member defaults updated.");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to update member permissions.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setMemberPermissionsError(message);
+    } finally {
+      setMemberPermissionsSaving(false);
+    }
+  };
+
+  const promoteSelectedMember = async () => {
+    if (
+      !activeChat ||
+      activeChat.type !== "group" ||
+      !selectedChatMember ||
+      selectedChatMember.role !== "member"
+    ) {
+      return;
+    }
+
+    const permissions = enforceAdminMemberOverlaps(
+      adminPermissionsDraftByUserId[selectedChatMember.user_id] ??
+        buildDefaultAdminPermissions(memberPermissionsDraft ?? memberPermissions),
+      memberPermissionsDraft ?? memberPermissions,
+    );
+
+    setAdminPermissionsSavingUserId(selectedChatMember.user_id);
+    setAdminPermissionsError(null);
+    setAdminPermissionsMessage(null);
+
+    try {
+      await apiFetch<{ ok: boolean }>(
+        `/chats/${activeChat.id}/admins/${selectedChatMember.user_id}/promote`,
+        {
+          method: "POST",
+          body: JSON.stringify(permissions),
+        },
+      );
+
+      setAdminPermissionsByUserId((current) => ({
+        ...current,
+        [selectedChatMember.user_id]: permissions,
+      }));
+      setAdminPermissionsDraftByUserId((current) => ({
+        ...current,
+        [selectedChatMember.user_id]: permissions,
+      }));
+      setChatInfoMembers((current) =>
+        current.map((member) =>
+          member.user_id === selectedChatMember.user_id
+            ? { ...member, role: "admin" }
+            : member,
+        ),
+      );
+      setSelectedChatMember((current) =>
+        current && current.user_id === selectedChatMember.user_id
+          ? { ...current, role: "admin" }
+          : current,
+      );
+      setAdminPermissionsMessage("Admin promoted.");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to promote admin.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setAdminPermissionsError(message);
+    } finally {
+      setAdminPermissionsSavingUserId(null);
+    }
+  };
+
+  const saveSelectedAdminPermissions = async () => {
+    if (
+      !activeChat ||
+      activeChat.type !== "group" ||
+      !selectedChatMember ||
+      selectedChatMember.role !== "admin"
+    ) {
+      return;
+    }
+
+    const rawPermissions =
+      adminPermissionsDraftByUserId[selectedChatMember.user_id] ??
+      adminPermissionsByUserId[selectedChatMember.user_id];
+
+    if (!rawPermissions) {
+      setAdminPermissionsError("Load admin permissions first.");
+      return;
+    }
+
+    const permissions = enforceAdminMemberOverlaps(
+      rawPermissions,
+      memberPermissionsDraft ?? memberPermissions,
+    );
+
+    setAdminPermissionsSavingUserId(selectedChatMember.user_id);
+    setAdminPermissionsError(null);
+    setAdminPermissionsMessage(null);
+
+    try {
+      await apiFetch<null>(
+        `/chats/${activeChat.id}/admins/${selectedChatMember.user_id}/permissions`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(permissions),
+        },
+      );
+      setAdminPermissionsByUserId((current) => ({
+        ...current,
+        [selectedChatMember.user_id]: permissions,
+      }));
+      setAdminPermissionsMessage("Admin permissions updated.");
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to update admin permissions.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setAdminPermissionsError(message);
+    } finally {
+      setAdminPermissionsSavingUserId(null);
+    }
+  };
+
+  const dismissSelectedAdmin = async () => {
+    if (
+      !activeChat ||
+      activeChat.type !== "group" ||
+      !selectedChatMember ||
+      selectedChatMember.role !== "admin"
+    ) {
+      return;
+    }
+
+    setAdminPermissionsSavingUserId(selectedChatMember.user_id);
+    setAdminPermissionsError(null);
+    setAdminPermissionsMessage(null);
+
+    try {
+      await apiFetch<{ ok: boolean }>(
+        `/chats/${activeChat.id}/admins/${selectedChatMember.user_id}/dismiss`,
+        {
+          method: "POST",
+        },
+      );
+      setAdminPermissionsByUserId((current) => {
+        const next = { ...current };
+        delete next[selectedChatMember.user_id];
+        return next;
+      });
+      setAdminPermissionsDraftByUserId((current) => {
+        const next = { ...current };
+        delete next[selectedChatMember.user_id];
+        return next;
+      });
+      setChatInfoMembers((current) =>
+        current.map((member) =>
+          member.user_id === selectedChatMember.user_id
+            ? { ...member, role: "member" }
+            : member,
+        ),
+      );
+      setSelectedChatMember((current) =>
+        current && current.user_id === selectedChatMember.user_id
+          ? { ...current, role: "member" }
+          : current,
+      );
+      setAdminPermissionsMessage("Admin dismissed.");
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to dismiss admin.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setAdminPermissionsError(message);
+    } finally {
+      setAdminPermissionsSavingUserId(null);
     }
   };
 
@@ -1979,6 +2478,37 @@ function ChatScreen({
     }
 
     return { kind: "sent", label: "Sent" };
+  };
+
+  const canAttemptManageGroup =
+    activeChat?.type === "group" &&
+    (activeChat.current_user_role === "owner" ||
+      activeChat.current_user_role === "admin");
+  const selectedAdminPermissions = selectedChatMember
+    ? (adminPermissionsDraftByUserId[selectedChatMember.user_id] ??
+      adminPermissionsByUserId[selectedChatMember.user_id] ??
+      (selectedChatMember.role === "member"
+        ? buildDefaultAdminPermissions(memberPermissionsDraft ?? memberPermissions)
+        : null))
+    : null;
+  const canEditSelectedAdmin =
+    canAttemptManageGroup &&
+    selectedChatMember?.role === "admin" &&
+    selectedChatMember.user_id !== user.userId;
+  const canPromoteSelectedMember =
+    canAttemptManageGroup &&
+    selectedChatMember?.role === "member" &&
+    selectedChatMember.user_id !== user.userId;
+  const selectedMemberPermissionIsSaving =
+    selectedChatMember !== null &&
+    adminPermissionsSavingUserId === selectedChatMember.user_id;
+
+  const adminPermissionIsForcedByMemberDefault = (key: string) => {
+    return (
+      (ADMIN_MEMBER_OVERLAP_PERMISSION_KEYS as readonly string[]).includes(
+        key,
+      ) && (memberPermissionsDraft ?? memberPermissions)?.[key] === true
+    );
   };
 
   return (
@@ -2360,7 +2890,7 @@ function ChatScreen({
                       type="button"
                       className="chat-member-row"
                       key={member.user_id}
-                      onClick={() => setSelectedChatMember(member)}
+                      onClick={() => openChatMemberProfile(member)}
                     >
                       <img
                         src={member.avatar_url}
@@ -2409,6 +2939,91 @@ function ChatScreen({
                     <p className="profile-success">{addMemberMessage}</p>
                   ) : null}
                 </div>
+
+                <div className="permissions-panel">
+                  <div className="permissions-panel-header">
+                    <div>
+                      <strong>Default member permissions</strong>
+                      <span>
+                        Applies to all members. Editing this requires the
+                        ban-users permission.
+                      </span>
+                    </div>
+                    {memberPermissionsLoading ? (
+                      <small>Loading...</small>
+                    ) : null}
+                  </div>
+
+                  {memberPermissionsDraft ? (
+                    <div className="permission-list">
+                      {MEMBER_BOOLEAN_PERMISSION_KEYS.map((key) => (
+                        <label className="permission-row" key={key}>
+                          <span>{PERMISSION_LABELS[key]}</span>
+                          <input
+                            type="checkbox"
+                            checked={memberPermissionsDraft[key] === true}
+                            disabled={!canAttemptManageGroup}
+                            onChange={(event) =>
+                              updateMemberBooleanPermission(
+                                key,
+                                event.target.checked,
+                              )
+                            }
+                          />
+                        </label>
+                      ))}
+                      {MEMBER_NUMERIC_PERMISSION_KEYS.map((key) => (
+                        <label className="permission-row" key={key}>
+                          <span>{PERMISSION_LABELS[key]}</span>
+                          <input
+                            type="number"
+                            min="0"
+                            step="1"
+                            value={Number(memberPermissionsDraft[key] ?? 0)}
+                            disabled={!canAttemptManageGroup}
+                            onChange={(event) =>
+                              updateMemberNumericPermission(
+                                key,
+                                Number(event.target.value),
+                              )
+                            }
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  ) : memberPermissionsLoading ? null : (
+                    <p className="message-search-empty">
+                      Permission defaults are not loaded.
+                    </p>
+                  )}
+
+                  {memberPermissionsError ? (
+                    <p className="profile-error">{memberPermissionsError}</p>
+                  ) : null}
+                  {memberPermissionsMessage ? (
+                    <p className="profile-success">
+                      {memberPermissionsMessage}
+                    </p>
+                  ) : null}
+                  {canAttemptManageGroup ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={
+                        memberPermissionsSaving || !memberPermissionsDraft
+                      }
+                      onClick={() => {
+                        void saveMemberDefaultPermissions();
+                      }}
+                    >
+                      {memberPermissionsSaving
+                        ? "Saving..."
+                        : "Save member defaults"}
+                    </Button>
+                  ) : (
+                    <p className="permissions-note">View only.</p>
+                  )}
+                </div>
               </>
             ) : null}
           </section>
@@ -2454,6 +3069,136 @@ function ChatScreen({
                 <span className="profile-status">
                   {selectedChatMember.status}
                 </span>
+                {activeChat?.type === "group" ? (
+                  <section className="member-permissions-card">
+                    <div className="member-permissions-header">
+                      <div>
+                        <strong>{selectedChatMember.role}</strong>
+                        <span>Group role</span>
+                      </div>
+                      {adminPermissionsLoadingUserId ===
+                      selectedChatMember.user_id ? (
+                        <small>Loading rights...</small>
+                      ) : null}
+                    </div>
+
+                    {selectedChatMember.role === "owner" ? (
+                      <p className="permissions-note">
+                        Owners have all rights and cannot be managed here.
+                      </p>
+                    ) : null}
+
+                    {selectedChatMember.role === "admin" ||
+                    selectedChatMember.role === "member" ? (
+                      <div className="permission-list compact">
+                        {ADMIN_PERMISSION_KEYS.map((key) => {
+                          const forcedByMemberDefault =
+                            adminPermissionIsForcedByMemberDefault(key);
+                          const canChangePermission =
+                            selectedChatMember.role === "member"
+                              ? canPromoteSelectedMember
+                              : canEditSelectedAdmin;
+
+                          return (
+                            <label className="permission-row" key={key}>
+                              <span>
+                                {PERMISSION_LABELS[key]}
+                                {forcedByMemberDefault ? (
+                                  <small>Enabled for all members</small>
+                                ) : null}
+                              </span>
+                              <input
+                                type="checkbox"
+                                checked={
+                                  forcedByMemberDefault ||
+                                  selectedAdminPermissions?.[key] === true
+                                }
+                                disabled={
+                                  forcedByMemberDefault ||
+                                  !canChangePermission ||
+                                  selectedMemberPermissionIsSaving
+                                }
+                                onChange={(event) =>
+                                  updateAdminPermission(
+                                    selectedChatMember.user_id,
+                                    key,
+                                    event.target.checked,
+                                  )
+                                }
+                              />
+                            </label>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+
+                    {adminPermissionsError ? (
+                      <p className="profile-error">{adminPermissionsError}</p>
+                    ) : null}
+                    {adminPermissionsMessage ? (
+                      <p className="profile-success">
+                        {adminPermissionsMessage}
+                      </p>
+                    ) : null}
+
+                    {selectedChatMember.role === "member" &&
+                    canPromoteSelectedMember ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={selectedMemberPermissionIsSaving}
+                        onClick={() => {
+                          void promoteSelectedMember();
+                        }}
+                      >
+                        {selectedMemberPermissionIsSaving
+                          ? "Promoting..."
+                          : "Promote to admin"}
+                      </Button>
+                    ) : null}
+
+                    {selectedChatMember.role === "admin" ? (
+                      <div className="member-permissions-actions">
+                        {canEditSelectedAdmin ? (
+                          <>
+                            <Button
+                              type="button"
+                              size="sm"
+                              disabled={selectedMemberPermissionIsSaving}
+                              onClick={() => {
+                                void saveSelectedAdminPermissions();
+                              }}
+                            >
+                              {selectedMemberPermissionIsSaving
+                                ? "Saving..."
+                                : "Save admin rights"}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              disabled={selectedMemberPermissionIsSaving}
+                              onClick={() => {
+                                void dismissSelectedAdmin();
+                              }}
+                            >
+                              Dismiss admin
+                            </Button>
+                          </>
+                        ) : selectedChatMember.user_id === user.userId ? (
+                          <p className="permissions-note">
+                            You can view your admin rights, but not edit them.
+                          </p>
+                        ) : (
+                          <p className="permissions-note">
+                            Backend permission checks decide whether you can
+                            manage this admin.
+                          </p>
+                        )}
+                      </div>
+                    ) : null}
+                  </section>
+                ) : null}
               </div>
             </article>
           </div>

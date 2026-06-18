@@ -17,6 +17,7 @@ from app.models import (
     AddGroupMembers,
     Chat,
     ChatListItem,
+    ChatMemberPermissions,
     ChatMemberPublic,
     ChatParticipant,
     ChatReadRequest,
@@ -33,6 +34,14 @@ from app.models import (
     UserCreate,
     UserProfileUpdate,
     UserPublic,
+)
+from app.permissions import (
+    ADMIN_MEMBER_OVERLAP_PERMISSIONS,
+    ADMIN_PERMISSIONS,
+    MEMBER_BOOLEAN_PERMISSIONS,
+    MEMBER_NUMERIC_PERMISSIONS,
+    OWNER_PERMISSIONS,
+    SYSTEM_ROLE_DEFAULTS,
 )
 
 # FastAPI app
@@ -62,6 +71,162 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None):
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
+
+
+def get_effective_permissions(
+    participant: ChatParticipant,
+    session: SessionDep,
+) -> dict:
+    if participant.role == "owner":
+        return OWNER_PERMISSIONS.copy()
+    member_permissions = session.get(
+        ChatMemberPermissions,
+        participant.chat_id,
+    )
+    if member_permissions is None:
+        raise HTTPException(status_code=404, detail="Chat permissions not found")
+    if participant.role == "member":
+        return member_permissions.permissions
+    else:
+        permissions = SYSTEM_ROLE_DEFAULTS["admin"].copy()
+        permissions.update(member_permissions.permissions)
+        permissions.update(participant.admin_permissions or {})
+
+        for key in ADMIN_MEMBER_OVERLAP_PERMISSIONS:
+            if member_permissions.permissions.get(key) is True:
+                permissions[key] = True
+
+        return permissions
+
+
+def assert_admin_permissions_do_not_restrict_enabled_member_permissions(
+    admin_permissions: dict,
+    member_permissions: dict,
+):
+    for key in ADMIN_MEMBER_OVERLAP_PERMISSIONS:
+        if member_permissions.get(key) is True and admin_permissions.get(key) is False:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{key} is enabled for all members and cannot be disabled for admins",
+            )
+
+
+def normalize_overrides(submitted: dict, role_defaults: dict) -> dict:
+    return {
+        key: value
+        for key, value in submitted.items()
+        if role_defaults.get(key) != value
+    }
+
+
+def require_chat_permission(
+    session: Session,
+    chat_id: int,
+    user_id: int,
+    chat_role_permissions: dict | None,
+    permission: str,
+):
+    participant = require_active_participant(session, chat_id, user_id)
+
+    if participant.role == "owner":
+        return participant
+
+    permissions = get_effective_permissions(participant, session)
+
+    if not permissions.get(permission):
+        raise HTTPException(status_code=403, detail="Missing permission")
+
+    return participant
+
+
+def require_owner(participant: ChatParticipant):
+    if participant.role != "owner":
+        raise HTTPException(status_code=403, detail="Owner only")
+
+
+def assert_valid_permission_list(permissions: dict):
+    expected_keys = MEMBER_BOOLEAN_PERMISSIONS | MEMBER_NUMERIC_PERMISSIONS
+
+    if set(permissions.keys()) != expected_keys:
+        raise HTTPException(
+            status_code=403, detail="New permissions are not standardized"
+        )
+
+    for key in MEMBER_BOOLEAN_PERMISSIONS:
+        if type(permissions[key]) is not bool:
+            raise HTTPException(
+                status_code=403, detail="New permissions are not standardized"
+            )
+
+    for key in MEMBER_NUMERIC_PERMISSIONS:
+        if type(permissions[key]) is not int:
+            raise HTTPException(
+                status_code=403, detail="New permissions are not standardized"
+            )
+
+
+def assert_valid_admin_permission_list(permissions: dict):
+    if set(permissions.keys()) != ADMIN_PERMISSIONS:
+        raise HTTPException(status_code=403, detail="Permission list is not valid")
+
+    for key in ADMIN_PERMISSIONS:
+        if type(permissions[key]) is not bool:
+            raise HTTPException(status_code=403, detail="Permission list is not valid")
+
+
+def assert_actor_strictly_outranks_target(
+    actor: ChatParticipant,
+    target: ChatParticipant,
+    actor_permissions: dict,
+    target_permissions: dict,
+):
+    if actor.role == "owner":
+        return
+    if target.role == "owner":
+        raise HTTPException(status_code=403, detail="Cannot manage owner")
+    if actor.role != "admin":
+        raise HTTPException(
+            status_code=403,
+            detail="Admin only",
+        )
+    if target.role == "member":
+        return
+
+    actor_enabled = {key for key, value in actor_permissions.items() if value is True}
+    target_enabled = {key for key, value in target_permissions.items() if value is True}
+
+    has_all_target_rights = target_enabled.issubset(actor_enabled)
+    has_extra_right = len(actor_enabled - target_enabled) > 0
+
+    if not has_all_target_rights or not has_extra_right:
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot manage an admin with equal or higher permissions",
+        )
+
+
+def assert_can_manage_admins(
+    actor_participant: ChatParticipant,
+    session: SessionDep,
+):
+    if actor_participant.role == "owner":
+        return
+    actor_permissions = get_effective_permissions(actor_participant, session)
+    if actor_permissions.get("manage_admins") is not True:
+        raise HTTPException(status_code=403, detail="Missing manage_admins")
+
+
+def assert_permissions_are_subset_or_equal(
+    candidate_permissions: dict,
+    allowed_permissions: dict,
+):
+    for permission, enabled in candidate_permissions.items():
+        if enabled is True and allowed_permissions.get(permission) is not True:
+            raise HTTPException(
+                status_code=403,
+                detail=f"{permission} is outside allowed permissions",
+            )
+    return True
 
 
 async def get_current_user(
@@ -929,6 +1094,13 @@ async def create_group_chat(
         raise HTTPException(status_code=500, detail="Chat was not created")
 
     session.add(
+        ChatMemberPermissions(
+            chat_id=chat.id,
+            permissions=SYSTEM_ROLE_DEFAULTS["member"].copy(),
+        )
+    )
+
+    session.add(
         ChatParticipant(
             chat_id=chat.id,
             user_id=user_id,
@@ -941,6 +1113,10 @@ async def create_group_chat(
     for member_id in set(payload.member_ids):
         if member_id == user_id:
             continue
+
+        member = session.get(User, member_id)
+        if member is None:
+            raise HTTPException(status_code=404, detail=f"User {member_id} not found")
 
         member_ids.append(member_id)
         session.add(
@@ -1143,6 +1319,190 @@ def search_chat_messages(
         public_messages.append(to_message_public(message, sender))
 
     return public_messages
+
+
+@fastapi_app.get("/chats/{chat_id}/member-default-permissions")
+def get_chat_default_permissions(
+    chat_id: int,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    require_active_participant(session, chat_id, user_id)
+    chat = session.get(Chat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    chat_member_permissions = session.get(ChatMemberPermissions, chat_id)
+    if chat_member_permissions is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    return chat_member_permissions.permissions
+
+
+@fastapi_app.patch("/chats/{chat_id}/member-default-permissions")
+def patch_chat_default_permissions(
+    chat_id: int,
+    new_permissions: dict,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    if current_user.id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    actor_participant = require_active_participant(session, chat_id, current_user.id)
+    if actor_participant.role == "member":
+        raise HTTPException(
+            status_code=403, detail="Members can't patch default member permissions"
+        )
+    # ban_users right is required to change default member permissions
+    actor_permissions = get_effective_permissions(actor_participant, session)
+    if actor_permissions.get("ban_users") is not True:
+        raise HTTPException(status_code=403, detail="Missing ban_users")
+
+    chat_member_permissions = session.get(ChatMemberPermissions, chat_id)
+    if chat_member_permissions is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    assert_valid_permission_list(new_permissions)
+    chat_member_permissions.permissions = new_permissions
+    session.add(chat_member_permissions)
+    session.commit()
+
+
+@fastapi_app.get("/chats/{chat_id}/admins/{user_id}/permissions")
+def get_admin_permissions(
+    chat_id: int,
+    user_id: int,
+    session: SessionDep,
+    actor_user: Annotated[User, Depends(get_current_user)],
+):
+    if actor_user.id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    if user_id is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    actor_participant = require_active_participant(session, chat_id, actor_user.id)
+    target_participant = require_active_participant(session, chat_id, user_id)
+    actor_permissions = get_effective_permissions(actor_participant, session)
+    target_permissions = get_effective_permissions(target_participant, session)
+    if target_participant.role != "admin":
+        raise HTTPException(
+            status_code=404,
+            detail="Target is not an admin",
+        )
+    if actor_participant == target_participant:
+        return get_effective_permissions(target_participant, session)
+
+    assert_actor_strictly_outranks_target(
+        actor_participant, target_participant, actor_permissions, target_permissions
+    )
+    assert_can_manage_admins(actor_participant, session)
+    return get_effective_permissions(target_participant, session)
+
+
+@fastapi_app.patch("/chats/{chat_id}/admins/{user_id}/permissions")
+def patch_admin_permissions(
+    chat_id: int,
+    user_id: int,
+    new_permissions: dict,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    if current_user.id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    if user_id is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    actor_participant = require_active_participant(session, chat_id, current_user.id)
+    target_participant = require_active_participant(session, chat_id, user_id)
+    actor_permissions = get_effective_permissions(actor_participant, session)
+    target_permissions = get_effective_permissions(target_participant, session)
+    chat_member_permissions = session.get(ChatMemberPermissions, chat_id)
+    if chat_member_permissions is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if target_participant.role != "admin":
+        raise HTTPException(status_code=400, detail="Target is not an admin")
+
+    assert_actor_strictly_outranks_target(
+        actor_participant, target_participant, actor_permissions, target_permissions
+    )
+    assert_can_manage_admins(actor_participant, session)
+    assert_valid_admin_permission_list(new_permissions)
+    assert_admin_permissions_do_not_restrict_enabled_member_permissions(
+        new_permissions, chat_member_permissions.permissions
+    )
+    assert_permissions_are_subset_or_equal(new_permissions, actor_permissions)
+
+    target_participant.admin_permissions = new_permissions
+    session.add(target_participant)
+    session.commit()
+
+
+@fastapi_app.post("/chats/{chat_id}/admins/{user_id}/promote")
+def promote_admin(
+    chat_id: int,
+    user_id: int,
+    new_permissions: dict,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    if current_user.id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    if user_id is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    actor_participant = require_active_participant(session, chat_id, current_user.id)
+    target_participant = require_active_participant(session, chat_id, user_id)
+    actor_permissions = get_effective_permissions(actor_participant, session)
+    chat_member_permissions = session.get(ChatMemberPermissions, chat_id)
+    if chat_member_permissions is None:
+        raise HTTPException(status_code=404, detail="Chat permissions not found")
+
+    if target_participant.role != "member":
+        raise HTTPException(status_code=403, detail="User is not a member")
+    assert_can_manage_admins(actor_participant, session)
+    assert_valid_admin_permission_list(new_permissions)
+    assert_admin_permissions_do_not_restrict_enabled_member_permissions(
+        new_permissions, chat_member_permissions.permissions
+    )
+    assert_permissions_are_subset_or_equal(new_permissions, actor_permissions)
+
+    target_participant.role = "admin"
+    target_participant.admin_permissions = new_permissions
+    target_participant.promoted_by = actor_participant.user_id
+    target_participant.promoted_at = datetime.now(timezone.utc)
+
+    session.add(target_participant)
+    session.commit()
+    return {"ok": True}
+
+
+@fastapi_app.post("/chats/{chat_id}/admins/{user_id}/dismiss")
+def dismiss_admin(
+    chat_id: int,
+    user_id: int,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    if current_user.id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    if user_id is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    actor_participant = require_active_participant(session, chat_id, current_user.id)
+    target_participant = require_active_participant(session, chat_id, user_id)
+    actor_permissions = get_effective_permissions(actor_participant, session)
+    target_permissions = get_effective_permissions(target_participant, session)
+    if target_participant.role != "admin":
+        raise HTTPException(status_code=400, detail="Target is not an admin")
+    assert_can_manage_admins(actor_participant, session)
+    assert_actor_strictly_outranks_target(
+        actor_participant, target_participant, actor_permissions, target_permissions
+    )
+
+    target_participant.role = "member"
+    target_participant.admin_permissions = {}
+    target_participant.promoted_by = None
+    target_participant.promoted_at = None
+
+    session.add(target_participant)
+    session.commit()
+    return {"ok": True}
 
 
 # Socket.IO server
