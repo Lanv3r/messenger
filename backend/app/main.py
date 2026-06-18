@@ -123,10 +123,17 @@ def require_chat_permission(
     session: Session,
     chat_id: int,
     user_id: int,
-    chat_role_permissions: dict | None,
     permission: str,
 ):
     participant = require_active_participant(session, chat_id, user_id)
+
+    chat = session.get(Chat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    # Direct/self chats only need membership.
+    if chat.type != "group":
+        return participant
 
     if participant.role == "owner":
         return participant
@@ -897,11 +904,11 @@ async def create_message(
     session: SessionDep,
     current_user: Annotated[User, Depends(get_current_user)],
 ):
-    sender_id = current_user.id
-    if sender_id is None:
+    user_id = current_user.id
+    if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
 
-    require_active_participant(session, chat_id, sender_id)
+    require_chat_permission(session, chat_id, user_id, "send_messages")
 
     content = payload.content.strip()
     if not content:
@@ -916,7 +923,7 @@ async def create_message(
 
     message = Message(
         chat_id=chat_id,
-        sender_id=sender_id,
+        sender_id=user_id,
         content=content,
         message_type="text",
     )
@@ -1175,7 +1182,7 @@ async def add_group_members(
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
 
-    require_active_participant(session, chat_id, user_id)
+    require_chat_permission(session, chat_id, user_id, "add_members")
 
     chat = session.get(Chat, chat_id)
     if chat is None:
@@ -1236,7 +1243,7 @@ async def add_group_members(
         display_title=chat.title if chat.title is not None else "New group chat",
         member_ids=all_member_ids,
         member_count=len(all_member_ids),
-        current_user_role="member",
+        current_user_role=roles_by_user_id[user_id],
         last_message_id=None,
         last_message_text=None,
         last_message_sender_id=None,
@@ -1330,7 +1337,7 @@ def get_chat_default_permissions(
     user_id = current_user.id
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
-    require_active_participant(session, chat_id, user_id)
+    require_chat_permission(session, chat_id, user_id, "ban_users")
     chat = session.get(Chat, chat_id)
     if chat is None:
         raise HTTPException(status_code=404, detail="Chat not found")
@@ -1345,19 +1352,11 @@ def patch_chat_default_permissions(
     chat_id: int,
     new_permissions: dict,
     session: SessionDep,
-    current_user: Annotated[User, Depends(get_current_user)],
+    actor_user: Annotated[User, Depends(get_current_user)],
 ):
-    if current_user.id is None:
+    if actor_user.id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
-    actor_participant = require_active_participant(session, chat_id, current_user.id)
-    if actor_participant.role == "member":
-        raise HTTPException(
-            status_code=403, detail="Members can't patch default member permissions"
-        )
-    # ban_users right is required to change default member permissions
-    actor_permissions = get_effective_permissions(actor_participant, session)
-    if actor_permissions.get("ban_users") is not True:
-        raise HTTPException(status_code=403, detail="Missing ban_users")
+    require_chat_permission(session, chat_id, actor_user.id, "ban_users")
 
     chat_member_permissions = session.get(ChatMemberPermissions, chat_id)
     if chat_member_permissions is None:
@@ -1381,6 +1380,9 @@ def get_admin_permissions(
         raise HTTPException(status_code=404, detail="User not found")
     actor_participant = require_active_participant(session, chat_id, actor_user.id)
     target_participant = require_active_participant(session, chat_id, user_id)
+    if actor_participant == target_participant:
+        return get_effective_permissions(target_participant, session)
+    require_chat_permission(session, chat_id, actor_user.id, "manage_admins")
     actor_permissions = get_effective_permissions(actor_participant, session)
     target_permissions = get_effective_permissions(target_participant, session)
     if target_participant.role != "admin":
@@ -1388,13 +1390,10 @@ def get_admin_permissions(
             status_code=404,
             detail="Target is not an admin",
         )
-    if actor_participant == target_participant:
-        return get_effective_permissions(target_participant, session)
 
     assert_actor_strictly_outranks_target(
         actor_participant, target_participant, actor_permissions, target_permissions
     )
-    assert_can_manage_admins(actor_participant, session)
     return get_effective_permissions(target_participant, session)
 
 
@@ -1404,13 +1403,15 @@ def patch_admin_permissions(
     user_id: int,
     new_permissions: dict,
     session: SessionDep,
-    current_user: Annotated[User, Depends(get_current_user)],
+    actor_user: Annotated[User, Depends(get_current_user)],
 ):
-    if current_user.id is None:
+    if actor_user.id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
     if user_id is None:
         raise HTTPException(status_code=404, detail="User not found")
-    actor_participant = require_active_participant(session, chat_id, current_user.id)
+    actor_participant = require_chat_permission(
+        session, chat_id, actor_user.id, "manage_admins"
+    )
     target_participant = require_active_participant(session, chat_id, user_id)
     actor_permissions = get_effective_permissions(actor_participant, session)
     target_permissions = get_effective_permissions(target_participant, session)
@@ -1423,7 +1424,6 @@ def patch_admin_permissions(
     assert_actor_strictly_outranks_target(
         actor_participant, target_participant, actor_permissions, target_permissions
     )
-    assert_can_manage_admins(actor_participant, session)
     assert_valid_admin_permission_list(new_permissions)
     assert_admin_permissions_do_not_restrict_enabled_member_permissions(
         new_permissions, chat_member_permissions.permissions
@@ -1441,13 +1441,15 @@ def promote_admin(
     user_id: int,
     new_permissions: dict,
     session: SessionDep,
-    current_user: Annotated[User, Depends(get_current_user)],
+    actor_user: Annotated[User, Depends(get_current_user)],
 ):
-    if current_user.id is None:
+    if actor_user.id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
     if user_id is None:
         raise HTTPException(status_code=404, detail="User not found")
-    actor_participant = require_active_participant(session, chat_id, current_user.id)
+    actor_participant = require_chat_permission(
+        session, chat_id, actor_user.id, "manage_admins"
+    )
     target_participant = require_active_participant(session, chat_id, user_id)
     actor_permissions = get_effective_permissions(actor_participant, session)
     chat_member_permissions = session.get(ChatMemberPermissions, chat_id)
@@ -1456,7 +1458,6 @@ def promote_admin(
 
     if target_participant.role != "member":
         raise HTTPException(status_code=403, detail="User is not a member")
-    assert_can_manage_admins(actor_participant, session)
     assert_valid_admin_permission_list(new_permissions)
     assert_admin_permissions_do_not_restrict_enabled_member_permissions(
         new_permissions, chat_member_permissions.permissions
@@ -1478,19 +1479,20 @@ def dismiss_admin(
     chat_id: int,
     user_id: int,
     session: SessionDep,
-    current_user: Annotated[User, Depends(get_current_user)],
+    actor_user: Annotated[User, Depends(get_current_user)],
 ):
-    if current_user.id is None:
+    if actor_user.id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
     if user_id is None:
         raise HTTPException(status_code=404, detail="User not found")
-    actor_participant = require_active_participant(session, chat_id, current_user.id)
+    actor_participant = require_chat_permission(
+        session, chat_id, actor_user.id, "manage_admins"
+    )
     target_participant = require_active_participant(session, chat_id, user_id)
     actor_permissions = get_effective_permissions(actor_participant, session)
     target_permissions = get_effective_permissions(target_participant, session)
     if target_participant.role != "admin":
         raise HTTPException(status_code=400, detail="Target is not an admin")
-    assert_can_manage_admins(actor_participant, session)
     assert_actor_strictly_outranks_target(
         actor_participant, target_participant, actor_permissions, target_permissions
     )
@@ -1621,13 +1623,12 @@ async def message(sid, data):
         return {"ok": False, "error": "Invalid chat"}
 
     with Session(engine) as db:
-        participant = db.exec(
-            select(ChatParticipant).where(
-                ChatParticipant.chat_id == chat_id,
-                ChatParticipant.user_id == sender_id,
-                col(ChatParticipant.left_at).is_(None),
+        try:
+            participant = require_chat_permission(
+                db, chat_id, sender_id, "send_messages"
             )
-        ).first()
+        except HTTPException as exc:
+            return {"ok": False, "error": exc.detail}
 
         if participant is None:
             return {"ok": False, "error": "Not a participant"}
