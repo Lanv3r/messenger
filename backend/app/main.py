@@ -28,8 +28,9 @@ from app.models import (
     LoginRequest,
     Message,
     MessageCreate,
-    MessageDeletion,
+    MessagePinRequest,
     MessagePublic,
+    MessageUserState,
     User,
     UserCreate,
     UserProfileUpdate,
@@ -300,6 +301,7 @@ def to_message_public(
     sender: User | None = None,
     sender_username: str | None = None,
     sender_avatar_url: str | None = None,
+    message_user_state: MessageUserState | None = None,
 ) -> MessagePublic:
     if message.id is None or message.created_at is None:
         raise HTTPException(
@@ -321,7 +323,10 @@ def to_message_public(
         updated_at=message.updated_at,
         edited_at=message.edited_at,
         deleted_at=message.deleted_at,
-        is_pinned=message.is_pinned,
+        pinned_at=message.pinned_at,
+        pinned_by=message.pinned_by,
+        is_pinned_for_me=message_user_state is not None
+        and message_user_state.pinned_at is not None,
     )
 
 
@@ -439,7 +444,12 @@ def get_chat_messages(
 
     for message in messages:
         sender = users_by_id.get(message.sender_id)
-        public_messages.append(to_message_public(message, sender))
+        message_user_state = session.get(
+            MessageUserState, (message.id, current_user_id)
+        )
+        public_messages.append(
+            to_message_public(message, sender, message_user_state=message_user_state)
+        )
 
     return public_messages
 
@@ -1310,8 +1320,9 @@ def search_chat_messages(
             col(Message.deleted_at).is_(None),
             col(Message.content).ilike(f"%{normalized_query}%"),
             ~exists().where(
-                col(MessageDeletion.message_id) == col(Message.id),
-                col(MessageDeletion.user_id) == user_id,
+                col(MessageUserState.message_id) == col(Message.id),
+                col(MessageUserState.user_id) == user_id,
+                col(MessageUserState.deleted_at).is_not(None),
             ),
         )
         .order_by(col(Message.created_at).desc())
@@ -1505,6 +1516,161 @@ def dismiss_admin(
     session.add(target_participant)
     session.commit()
     return {"ok": True}
+
+
+@fastapi_app.post("/messages/{message_id}/pin")
+async def pin_message(
+    message_id: int,
+    payload: MessagePinRequest,
+    session: SessionDep,
+    user: Annotated[User, Depends(get_current_user)],
+):
+    if user.id is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    message = session.get(Message, message_id)
+    message_user_state = session.get(MessageUserState, (message_id, user.id))
+    if message is None or message.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Message not found")
+    if message_user_state is not None and message_user_state.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    chat = session.get(Chat, message.chat_id)
+    if chat is None or chat.id is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    require_active_participant(session, chat.id, user.id)
+
+    if payload.scope == "me":
+        if chat.type == "group":
+            raise HTTPException(
+                status_code=400,
+                detail="Personal pins are not supported in group chats",
+            )
+        if message_user_state is None:
+            message_user_state = MessageUserState(
+                message_id=message_id, user_id=user.id
+            )
+        message_user_state.pinned_at = datetime.now(timezone.utc)
+        session.add(message_user_state)
+        session.commit()
+        return {"ok": True}
+
+    if payload.scope == "chat":
+        if chat.type == "group":
+            require_chat_permission(session, chat.id, user.id, "pin_messages")
+
+        message.pinned_at = datetime.now(timezone.utc)
+        message.pinned_by = user.id
+        session.add(message)
+        session.commit()
+
+        participant_ids = session.exec(
+            select(ChatParticipant.user_id).where(
+                ChatParticipant.chat_id == chat.id,
+                col(ChatParticipant.left_at).is_(None),
+            )
+        ).all()
+
+        pin_update = {
+            "message_id": message.id,
+            "chat_id": chat.id,
+            "pinned_at": message.pinned_at.isoformat()
+            if message.pinned_at
+            else None,
+            "pinned_by": message.pinned_by,
+        }
+
+        for participant_id in participant_ids:
+            await sio.emit(
+                "message_pin_updated",
+                pin_update,
+                room=f"user:{participant_id}",
+            )
+
+        return {"ok": True}
+
+    raise HTTPException(status_code=400, detail="Invalid pin scope")
+
+
+@fastapi_app.delete("/messages/{message_id}/unpin")
+async def unpin_message(
+    message_id: int,
+    session: SessionDep,
+    user: Annotated[User, Depends(get_current_user)],
+):
+    if user.id is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    message = session.get(Message, message_id)
+    message_user_state = session.get(MessageUserState, (message_id, user.id))
+    if message is None or message.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Message not found")
+    if message_user_state is not None and message_user_state.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    chat = session.get(Chat, message.chat_id)
+    if chat is None or chat.id is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    require_active_participant(session, chat.id, user.id)
+
+    if chat.type == "group":
+        require_chat_permission(session, chat.id, user.id, "pin_messages")
+
+        message.pinned_at = None
+        message.pinned_by = None
+        session.add(message)
+        session.commit()
+        participant_ids = session.exec(
+            select(ChatParticipant.user_id).where(
+                ChatParticipant.chat_id == chat.id,
+                col(ChatParticipant.left_at).is_(None),
+            )
+        ).all()
+
+        for participant_id in participant_ids:
+            await sio.emit(
+                "message_pin_updated",
+                {
+                    "message_id": message.id,
+                    "chat_id": chat.id,
+                    "pinned_at": None,
+                    "pinned_by": None,
+                },
+                room=f"user:{participant_id}",
+            )
+        return {"ok": True}
+
+    else:
+        if message_user_state is not None:
+            message_user_state.pinned_at = None
+            session.add(message_user_state)
+        message.pinned_at = None
+        message.pinned_by = None
+        session.add(message)
+        session.commit()
+
+        participant_ids = session.exec(
+            select(ChatParticipant.user_id).where(
+                ChatParticipant.chat_id == chat.id,
+                col(ChatParticipant.left_at).is_(None),
+            )
+        ).all()
+
+        for participant_id in participant_ids:
+            await sio.emit(
+                "message_pin_updated",
+                {
+                    "message_id": message.id,
+                    "chat_id": chat.id,
+                    "pinned_at": None,
+                    "pinned_by": None,
+                },
+                room=f"user:{participant_id}",
+            )
+
+        return {"ok": True}
 
 
 # Socket.IO server

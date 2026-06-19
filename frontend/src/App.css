@@ -1241,6 +1241,65 @@
   gap: 5px;
 }
 
+.message-pin-state,
+.message-actions {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.message-pin-state {
+  width: fit-content;
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #9a4f36;
+  background: rgba(244, 111, 84, 0.12);
+}
+
+#messages li.you .message-pin-state {
+  color: #ffe8de;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.message-actions {
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+#messages li:hover .message-actions,
+#messages li:focus-within .message-actions {
+  opacity: 1;
+}
+
+.message-actions button {
+  border: 0;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  color: #9a4f36;
+  background: rgba(244, 111, 84, 0.12);
+  cursor: pointer;
+}
+
+.message-actions button:hover {
+  background: rgba(244, 111, 84, 0.2);
+}
+
+#messages li.you .message-actions button {
+  color: #fff;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+#messages li.you .message-actions button:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
 .message-meta {
   justify-self: end;
   display: inline-flex;

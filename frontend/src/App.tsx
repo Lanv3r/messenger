@@ -21,7 +21,9 @@ type ChatMessage = {
   updated_at: string | null;
   edited_at: string | null;
   deleted_at: string | null;
-  is_pinned: boolean;
+  pinned_at: string | null;
+  pinned_by: number | null;
+  is_pinned_for_me: boolean;
   metadata?: Record<string, unknown>;
   isOwn?: boolean;
   delivery_status?: "sending" | "sent" | "read" | "failed";
@@ -118,6 +120,13 @@ type ChatMembersUpdatedEvent = {
   chat: Chat;
   added_member_ids: number[];
   added_by: number;
+};
+
+type MessagePinUpdatedEvent = {
+  message_id: number;
+  chat_id: number;
+  pinned_at: string | null;
+  pinned_by: number | null;
 };
 
 type ChatSettingsResponse = {
@@ -823,6 +832,20 @@ function ChatScreen({
       });
     });
 
+    socket.on("message_pin_updated", (data: MessagePinUpdatedEvent) => {
+      const updateMessage = (entry: ChatMessage) =>
+        entry.id === data.message_id && entry.chat_id === data.chat_id
+          ? {
+              ...entry,
+              pinned_at: data.pinned_at,
+              pinned_by: data.pinned_by,
+            }
+          : entry;
+
+      setMessages((current) => current.map(updateMessage));
+      setMessageSearchResults((current) => current.map(updateMessage));
+    });
+
     socket.on("chat_read", (data: ChatReadEvent) => {
       if (data.user_id === user.userId) {
         return;
@@ -1293,7 +1316,9 @@ function ChatScreen({
       updated_at: new Date().toISOString(),
       edited_at: null,
       deleted_at: null,
-      is_pinned: false,
+      pinned_at: null,
+      pinned_by: null,
+      is_pinned_for_me: false,
       metadata: {},
       isOwn: true,
       delivery_status: "sending",
@@ -1488,6 +1513,101 @@ function ChatScreen({
         error instanceof Error
           ? error.message
           : "Unable to update chat settings.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setChatError(message);
+    }
+  };
+
+  const updateMessagePinState = (
+    messageId: number,
+    updates: Partial<Pick<ChatMessage, "pinned_at" | "pinned_by" | "is_pinned_for_me">>,
+  ) => {
+    setMessages((current) =>
+      current.map((entry) =>
+        entry.id === messageId ? { ...entry, ...updates } : entry,
+      ),
+    );
+    setMessageSearchResults((current) =>
+      current.map((entry) =>
+        entry.id === messageId ? { ...entry, ...updates } : entry,
+      ),
+    );
+  };
+
+  const pinMessage = async (entry: ChatMessage, scope: "me" | "chat") => {
+    if (entry.temp_id || entry.delivery_status === "sending") {
+      return;
+    }
+
+    const previousPinState = {
+      pinned_at: entry.pinned_at,
+      pinned_by: entry.pinned_by,
+      is_pinned_for_me: entry.is_pinned_for_me,
+    };
+
+    updateMessagePinState(
+      entry.id,
+      scope === "me"
+        ? { is_pinned_for_me: true }
+        : {
+            pinned_at: new Date().toISOString(),
+            pinned_by: user.userId,
+          },
+    );
+
+    try {
+      await apiFetch<{ ok: boolean }>(`/messages/${entry.id}/pin`, {
+        method: "POST",
+        body: JSON.stringify({ scope }),
+      });
+      setChatError(null);
+    } catch (error) {
+      updateMessagePinState(entry.id, previousPinState);
+
+      const message =
+        error instanceof Error ? error.message : "Unable to pin message.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setChatError(message);
+    }
+  };
+
+  const unpinMessage = async (entry: ChatMessage) => {
+    if (entry.temp_id || entry.delivery_status === "sending") {
+      return;
+    }
+
+    const previousPinState = {
+      pinned_at: entry.pinned_at,
+      pinned_by: entry.pinned_by,
+      is_pinned_for_me: entry.is_pinned_for_me,
+    };
+
+    updateMessagePinState(entry.id, {
+      pinned_at: null,
+      pinned_by: null,
+      is_pinned_for_me: false,
+    });
+
+    try {
+      await apiFetch<{ ok: boolean }>(`/messages/${entry.id}/unpin`, {
+        method: "DELETE",
+      });
+      setChatError(null);
+    } catch (error) {
+      updateMessagePinState(entry.id, previousPinState);
+
+      const message =
+        error instanceof Error ? error.message : "Unable to unpin message.";
 
       if (message === "Could not validate credentials") {
         onSessionExpired();
@@ -3358,6 +3478,13 @@ function ChatScreen({
                 !previousEntry ||
                 !isSameMessageDay(previousEntry.created_at, entry.created_at);
               const deliveryStatus = getMessageDeliveryStatus(entry);
+              const hasSharedPin = Boolean(entry.pinned_at);
+              const hasPersonalPin = entry.is_pinned_for_me;
+              const canUseMessagePinActions =
+                Boolean(activeChat) &&
+                !entry.temp_id &&
+                entry.delivery_status !== "sending" &&
+                entry.delivery_status !== "failed";
               const messageKey = `${entry.sender_id ?? "system"}-${
                 entry.id ?? index
               }`;
@@ -3392,6 +3519,72 @@ function ChatScreen({
                     <div className="message-copy">
                       <span className="sender">{getSenderName(entry)}</span>
                       <span>{renderMessageContent(entry)}</span>
+                      {hasSharedPin || hasPersonalPin ? (
+                        <span className="message-pin-state">
+                          <Pin size={12} aria-hidden="true" />
+                          {hasSharedPin ? "Pinned in chat" : null}
+                          {hasSharedPin && hasPersonalPin ? " · " : null}
+                          {hasPersonalPin ? "Pinned for me" : null}
+                        </span>
+                      ) : null}
+                      {canUseMessagePinActions ? (
+                        <span className="message-actions">
+                          {activeChat?.type === "group" ? (
+                            hasSharedPin ? (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void unpinMessage(entry);
+                                }}
+                              >
+                                Unpin
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void pinMessage(entry, "chat");
+                                }}
+                              >
+                                Pin
+                              </button>
+                            )
+                          ) : (
+                            <>
+                              {!hasPersonalPin ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void pinMessage(entry, "me");
+                                  }}
+                                >
+                                  Pin me
+                                </button>
+                              ) : null}
+                              {!hasSharedPin ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void pinMessage(entry, "chat");
+                                  }}
+                                >
+                                  Pin chat
+                                </button>
+                              ) : null}
+                              {hasPersonalPin || hasSharedPin ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void unpinMessage(entry);
+                                  }}
+                                >
+                                  Unpin
+                                </button>
+                              ) : null}
+                            </>
+                          )}
+                        </span>
+                      ) : null}
                       <span className="message-meta">
                         {sentAt && entry.created_at ? (
                           <time dateTime={entry.created_at}>{sentAt}</time>

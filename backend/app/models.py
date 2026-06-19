@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import ClassVar
+from typing import ClassVar, Literal
 
 from sqlalchemy import Column, DateTime, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB
@@ -232,7 +232,10 @@ class Message(MessageBase, table=True):
     )
     edited_at: datetime | None = Field(default=None, sa_type=DateTime)
     deleted_at: datetime | None = Field(default=None, sa_type=DateTime)
-    is_pinned: bool = False
+    pinned_at: datetime | None = Field(default=None, sa_type=DateTime)
+    pinned_by: int | None = Field(
+        default=None, foreign_key="users.id", ondelete="SET NULL"
+    )
 
 
 class MessagePublic(MessageBase):
@@ -244,18 +247,11 @@ class MessagePublic(MessageBase):
     updated_at: datetime | None = None
     edited_at: datetime | None = None
     deleted_at: datetime | None = None
-    is_pinned: bool = False
-
-
-class MessageUpdate(MessageBase):
-    chat_id: int | None = None
-    content: str | None = None
-    message_type: str | None = None
-    reply_to_message_id: int | None = None
-    metadata_: dict | None = None
-    edited_at: datetime | None = None
-    deleted_at: datetime | None = None
-    is_pinned: bool | None = None
+    # Shared/chat-level pin
+    pinned_at: datetime | None = None
+    pinned_by: int | None = None
+    # Current-user personal pin
+    is_pinned_for_me: bool = False
 
 
 class ChatListItem(SQLModel):
@@ -311,16 +307,6 @@ class ChatSettingsUpdate(SQLModel):
     muted_until: datetime | None = None
 
 
-class MessageDeletion(SQLModel, table=True):
-    __tablename__: ClassVar[str] = "message_deletions"
-    __table_args__ = (UniqueConstraint("message_id", "user_id"),)
-
-    id: int | None = Field(default=None, primary_key=True)
-    message_id: int = Field(foreign_key="messages.id", ondelete="CASCADE")
-    user_id: int = Field(foreign_key="users.id", ondelete="CASCADE")
-    deleted_at: datetime | None = None
-
-
 class GroupCreate(SQLModel):
     title: str
     description: str | None = None
@@ -356,3 +342,19 @@ class ChatMemberPermissions(SQLModel, table=True):
         default_factory=dict,
         sa_column=Column(JSONB, server_default=text("'{}'::jsonb"), nullable=False),
     )
+
+
+class MessageUserState(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "message_user_states"
+
+    message_id: int = Field(
+        foreign_key="messages.id", primary_key=True, ondelete="CASCADE"
+    )
+    user_id: int = Field(foreign_key="users.id", primary_key=True, ondelete="CASCADE")
+
+    deleted_at: datetime | None = None
+    pinned_at: datetime | None = None
+
+
+class MessagePinRequest(SQLModel):
+    scope: Literal["me", "chat"]
