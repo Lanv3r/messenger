@@ -129,6 +129,11 @@ type MessagePinUpdatedEvent = {
   pinned_by: number | null;
 };
 
+type MessageDeletedEvent = {
+  message_id: number;
+  chat_id: number;
+};
+
 type ChatSettingsResponse = {
   ok: boolean;
   chat_id: number;
@@ -656,6 +661,26 @@ function ChatScreen({
     setChats(sortChats(loadedChats.map(applyLocalReadState)));
   }
 
+  async function refreshChats(
+    fallbackMessage = "Unable to load chats.",
+  ) {
+    try {
+      const loadedChats = await apiFetch<Chat[]>("/chats");
+      setLoadedChats(loadedChats);
+      setChatError(null);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : fallbackMessage;
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setChatError(message);
+    }
+  }
+
   function markChatReadThrough(
     chatId: number,
     messageId: number,
@@ -844,6 +869,25 @@ function ChatScreen({
 
       setMessages((current) => current.map(updateMessage));
       setMessageSearchResults((current) => current.map(updateMessage));
+    });
+
+    socket.on("message_deleted", (data: MessageDeletedEvent) => {
+      setMessages((current) =>
+        current.filter(
+          (entry) =>
+            entry.id !== data.message_id || entry.chat_id !== data.chat_id,
+        ),
+      );
+      setMessageSearchResults((current) =>
+        current.filter(
+          (entry) =>
+            entry.id !== data.message_id || entry.chat_id !== data.chat_id,
+        ),
+      );
+      setActiveSearchResultId((current) =>
+        current === data.message_id ? null : current,
+      );
+      void refreshChats();
     });
 
     socket.on("chat_read", (data: ChatReadEvent) => {
@@ -1618,6 +1662,79 @@ function ChatScreen({
     }
   };
 
+  const removeMessageLocally = (messageId: number, chatId: number) => {
+    setMessages((current) =>
+      current.filter(
+        (entry) => entry.id !== messageId || entry.chat_id !== chatId,
+      ),
+    );
+    setMessageSearchResults((current) =>
+      current.filter(
+        (entry) => entry.id !== messageId || entry.chat_id !== chatId,
+      ),
+    );
+    setActiveSearchResultId((current) =>
+      current === messageId ? null : current,
+    );
+  };
+
+  const deleteMessage = async (
+    entry: ChatMessage,
+    scope: "me" | "chat",
+  ) => {
+    if (entry.temp_id || entry.delivery_status === "sending") {
+      return;
+    }
+
+    const remainingVisibleMessages = getVisibleMessages(
+      messages,
+      entry.chat_id,
+    ).filter((message) => message.id !== entry.id);
+    const replacementLastMessage =
+      remainingVisibleMessages[remainingVisibleMessages.length - 1] ?? null;
+
+    try {
+      await apiFetch<{ ok: boolean }>(`/messages/${entry.id}`, {
+        method: "DELETE",
+        body: JSON.stringify({ scope }),
+      });
+
+      removeMessageLocally(entry.id, entry.chat_id);
+
+      if (scope === "chat") {
+        void refreshChats();
+      } else if (activeChat?.last_message_id === entry.id) {
+        setChats((current) =>
+          current.map((chat) =>
+            chat.id === entry.chat_id
+              ? {
+                  ...chat,
+                  last_message_id: replacementLastMessage?.id ?? null,
+                  last_message_text: replacementLastMessage?.content ?? null,
+                  last_message_sender_id:
+                    replacementLastMessage?.sender_id ?? null,
+                  last_message_created_at:
+                    replacementLastMessage?.created_at ?? null,
+                }
+              : chat,
+          ),
+        );
+      }
+
+      setChatError(null);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to delete message.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setChatError(message);
+    }
+  };
+
   const handleProfileSearch = async (event: React.FormEvent) => {
     event.preventDefault();
 
@@ -1726,6 +1843,24 @@ function ChatScreen({
       setAdminPermissionsLoadingUserId(null);
     }
   };
+
+  useEffect(() => {
+    if (
+      activeChat?.type !== "group" ||
+      activeChat.current_user_role !== "admin" ||
+      adminPermissionsByUserId[user.userId]
+    ) {
+      return;
+    }
+
+    void loadAdminPermissions(activeChat.id, user.userId);
+  }, [
+    activeChat?.id,
+    activeChat?.type,
+    activeChat?.current_user_role,
+    adminPermissionsByUserId,
+    user.userId,
+  ]);
 
   const loadChatMembers = async (
     chat: Chat,
@@ -2543,6 +2678,15 @@ function ChatScreen({
   };
 
   const visibleMessages = getVisibleMessages(messages, activeChatId);
+  const currentUserAdminPermissions =
+    activeChat?.type === "group" &&
+    activeChat.current_user_role === "admin"
+      ? adminPermissionsByUserId[user.userId]
+      : null;
+  const currentUserCanDeleteGroupMessages =
+    activeChat?.type === "group" &&
+    (activeChat.current_user_role === "owner" ||
+      currentUserAdminPermissions?.delete_messages === true);
   const otherLastReadMessageId =
     activeChat?.other_last_read_message_id;
   const latestOwnReadMessageId =
@@ -3480,11 +3624,15 @@ function ChatScreen({
               const deliveryStatus = getMessageDeliveryStatus(entry);
               const hasSharedPin = Boolean(entry.pinned_at);
               const hasPersonalPin = entry.is_pinned_for_me;
-              const canUseMessagePinActions =
+              const canUseMessageActions =
                 Boolean(activeChat) &&
                 !entry.temp_id &&
                 entry.delivery_status !== "sending" &&
                 entry.delivery_status !== "failed";
+              const canDeleteGroupMessage =
+                activeChat?.type === "group" &&
+                (entry.sender_id === user.userId ||
+                  currentUserCanDeleteGroupMessages);
               const messageKey = `${entry.sender_id ?? "system"}-${
                 entry.id ?? index
               }`;
@@ -3527,28 +3675,49 @@ function ChatScreen({
                           {hasPersonalPin ? "Pinned for me" : null}
                         </span>
                       ) : null}
-                      {canUseMessagePinActions ? (
+                      {canUseMessageActions ? (
                         <span className="message-actions">
                           {activeChat?.type === "group" ? (
-                            hasSharedPin ? (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  void unpinMessage(entry);
-                                }}
-                              >
-                                Unpin
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  void pinMessage(entry, "chat");
-                                }}
-                              >
-                                Pin
-                              </button>
-                            )
+                            <>
+                              {hasSharedPin ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void unpinMessage(entry);
+                                  }}
+                                >
+                                  Unpin
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void pinMessage(entry, "chat");
+                                  }}
+                                >
+                                  Pin
+                                </button>
+                              )}
+                              {canDeleteGroupMessage ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void deleteMessage(entry, "chat");
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              ) : null}
+                            </>
+                          ) : activeChat?.type === "self" ? (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                void deleteMessage(entry, "chat");
+                              }}
+                            >
+                              Delete
+                            </button>
                           ) : (
                             <>
                               {!hasPersonalPin ? (
@@ -3579,6 +3748,24 @@ function ChatScreen({
                                   }}
                                 >
                                   Unpin
+                                </button>
+                              ) : null}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void deleteMessage(entry, "me");
+                                }}
+                              >
+                                Delete me
+                              </button>
+                              {entry.sender_id === user.userId ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    void deleteMessage(entry, "chat");
+                                  }}
+                                >
+                                  Delete both
                                 </button>
                               ) : null}
                             </>

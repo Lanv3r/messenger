@@ -232,6 +232,9 @@ class Message(MessageBase, table=True):
     )
     edited_at: datetime | None = Field(default=None, sa_type=DateTime)
     deleted_at: datetime | None = Field(default=None, sa_type=DateTime)
+    deleted_by: int | None = Field(
+        default=None, foreign_key="users.id", ondelete="SET NULL"
+    )
     pinned_at: datetime | None = Field(default=None, sa_type=DateTime)
     pinned_by: int | None = Field(
         default=None, foreign_key="users.id", ondelete="SET NULL"
@@ -357,4 +360,8 @@ class MessageUserState(SQLModel, table=True):
 
 
 class MessagePinRequest(SQLModel):
+    scope: Literal["me", "chat"]
+
+
+class MessageDeleteRequest(SQLModel):
     scope: Literal["me", "chat"]

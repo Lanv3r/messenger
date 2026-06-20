@@ -28,6 +28,7 @@ from app.models import (
     LoginRequest,
     Message,
     MessageCreate,
+    MessageDeleteRequest,
     MessagePinRequest,
     MessagePublic,
     MessageUserState,
@@ -429,7 +430,19 @@ def get_chat_messages(
         raise HTTPException(status_code=401, detail="Invalid user")
     require_active_participant(session, chat_id, current_user_id)
 
-    messages = session.exec(select(Message).where(Message.chat_id == chat_id)).all()
+    messages = session.exec(
+        select(Message)
+        .where(
+            Message.chat_id == chat_id,
+            col(Message.deleted_at).is_(None),
+            ~exists().where(
+                col(MessageUserState.message_id) == col(Message.id),
+                col(MessageUserState.user_id) == current_user_id,
+                col(MessageUserState.deleted_at).is_not(None),
+            ),
+        )
+        .order_by(col(Message.created_at))
+    ).all()
     sender_ids = {
         message.sender_id for message in messages if message.sender_id is not None
     }
@@ -1575,9 +1588,7 @@ async def pin_message(
         pin_update = {
             "message_id": message.id,
             "chat_id": chat.id,
-            "pinned_at": message.pinned_at.isoformat()
-            if message.pinned_at
-            else None,
+            "pinned_at": message.pinned_at.isoformat() if message.pinned_at else None,
             "pinned_by": message.pinned_by,
         }
 
@@ -1671,6 +1682,108 @@ async def unpin_message(
             )
 
         return {"ok": True}
+
+
+@fastapi_app.delete("/messages/{message_id}")
+async def delete_message(
+    message_id: int,
+    payload: MessageDeleteRequest,
+    session: SessionDep,
+    user: Annotated[User, Depends(get_current_user)],
+):
+    if user.id is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    message = session.get(Message, message_id)
+    message_user_state = session.get(MessageUserState, (message_id, user.id))
+    if message is None or message.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Message not found")
+    if message_user_state is not None and message_user_state.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    chat = session.get(Chat, message.chat_id)
+    if chat is None or chat.id is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    require_active_participant(session, chat.id, user.id)
+
+    if chat.type == "direct":
+        if payload.scope == "me":
+            if message_user_state is None:
+                message_user_state = MessageUserState(
+                    message_id=message_id, user_id=user.id
+                )
+            message_user_state.deleted_at = datetime.now(timezone.utc)
+            session.add(message_user_state)
+            session.commit()
+        elif payload.scope == "chat":
+            if message.sender_id != user.id:
+                raise HTTPException(
+                    status_code=403, detail="Can't delete other's messages for everyone"
+                )
+            message.deleted_at = datetime.now(timezone.utc)
+            message.deleted_by = user.id
+            session.add(message)
+            session.commit()
+
+            participant_ids = session.exec(
+                select(ChatParticipant.user_id).where(
+                    ChatParticipant.chat_id == chat.id,
+                    col(ChatParticipant.left_at).is_(None),
+                )
+            ).all()
+
+            for participant_id in participant_ids:
+                await sio.emit(
+                    "message_deleted",
+                    {
+                        "message_id": message.id,
+                        "chat_id": chat.id,
+                    },
+                    room=f"user:{participant_id}",
+                )
+    # self and group chats don't support deletes for one user
+    elif chat.type == "self":
+        if payload.scope == "me":
+            raise HTTPException(
+                status_code=403, detail="Can't delete message for one user"
+            )
+        if payload.scope == "chat":
+            message.deleted_at = datetime.now(timezone.utc)
+            message.deleted_by = user.id
+            session.add(message)
+            session.commit()
+    elif chat.type == "group":
+        if payload.scope == "me":
+            raise HTTPException(
+                status_code=403, detail="Can't delete message for one user"
+            )
+        if payload.scope == "chat":
+            if message.sender_id != user.id:
+                require_chat_permission(session, chat.id, user.id, "delete_messages")
+            message.deleted_at = datetime.now(timezone.utc)
+            message.deleted_by = user.id
+            session.add(message)
+            session.commit()
+
+            participant_ids = session.exec(
+                select(ChatParticipant.user_id).where(
+                    ChatParticipant.chat_id == chat.id,
+                    col(ChatParticipant.left_at).is_(None),
+                )
+            ).all()
+
+            for participant_id in participant_ids:
+                await sio.emit(
+                    "message_deleted",
+                    {
+                        "message_id": message.id,
+                        "chat_id": chat.id,
+                    },
+                    room=f"user:{participant_id}",
+                )
+
+    return {"ok": True}
 
 
 # Socket.IO server
