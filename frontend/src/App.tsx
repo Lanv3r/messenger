@@ -579,6 +579,11 @@ function ChatScreen({
   const [activeSearchResultId, setActiveSearchResultId] = useState<
     number | null
   >(null);
+  const [editingMessageId, setEditingMessageId] = useState<number | null>(
+    null,
+  );
+  const [editingMessageText, setEditingMessageText] = useState("");
+  const [editingMessageSaving, setEditingMessageSaving] = useState(false);
   const messagesRef = useRef<HTMLUListElement | null>(null);
   const pendingMessageScrollRef = useRef<{
     chatId: number;
@@ -679,6 +684,41 @@ function ChatScreen({
 
       setChatError(message);
     }
+  }
+
+  function applyMessageUpdate(updatedMessage: ChatMessage) {
+    const nextMessage = {
+      ...updatedMessage,
+      isOwn: updatedMessage.sender_id === user.userId,
+    };
+
+    const updateMessage = (entry: ChatMessage) =>
+      entry.id === updatedMessage.id &&
+      entry.chat_id === updatedMessage.chat_id
+        ? {
+            ...entry,
+            ...nextMessage,
+            delivery_status: entry.delivery_status,
+            temp_id: entry.temp_id,
+          }
+        : entry;
+
+    setMessages((current) => current.map(updateMessage));
+    setMessageSearchResults((current) => current.map(updateMessage));
+    setChats((current) =>
+      current.map((chat) =>
+        chat.id === updatedMessage.chat_id &&
+        chat.last_message_id === updatedMessage.id
+          ? {
+              ...chat,
+              last_message_text: updatedMessage.content,
+              last_message_sender_id: updatedMessage.sender_id,
+              last_message_created_at: updatedMessage.created_at,
+              updated_at: updatedMessage.updated_at ?? chat.updated_at,
+            }
+          : chat,
+      ),
+    );
   }
 
   function markChatReadThrough(
@@ -871,6 +911,10 @@ function ChatScreen({
       setMessageSearchResults((current) => current.map(updateMessage));
     });
 
+    socket.on("message_updated", (data: ChatMessage) => {
+      applyMessageUpdate(data);
+    });
+
     socket.on("message_deleted", (data: MessageDeletedEvent) => {
       setMessages((current) =>
         current.filter(
@@ -885,6 +929,9 @@ function ChatScreen({
         ),
       );
       setActiveSearchResultId((current) =>
+        current === data.message_id ? null : current,
+      );
+      setEditingMessageId((current) =>
         current === data.message_id ? null : current,
       );
       void refreshChats();
@@ -1062,6 +1109,9 @@ function ChatScreen({
     setAdminPermissionsDraftByUserId({});
     setAdminPermissionsError(null);
     setAdminPermissionsMessage(null);
+    setEditingMessageId(null);
+    setEditingMessageText("");
+    setEditingMessageSaving(false);
   }, [activeChatId, draftRecipient?.id]);
 
   useEffect(() => {
@@ -1676,6 +1726,63 @@ function ChatScreen({
     setActiveSearchResultId((current) =>
       current === messageId ? null : current,
     );
+    setEditingMessageId((current) =>
+      current === messageId ? null : current,
+    );
+  };
+
+  const startEditingMessage = (entry: ChatMessage) => {
+    setEditingMessageId(entry.id);
+    setEditingMessageText(entry.content ?? "");
+    setChatError(null);
+  };
+
+  const cancelEditingMessage = () => {
+    setEditingMessageId(null);
+    setEditingMessageText("");
+    setEditingMessageSaving(false);
+  };
+
+  const saveMessageEdit = async (entry: ChatMessage) => {
+    const content = editingMessageText.trim();
+
+    if (!content) {
+      setChatError("Message cannot be empty.");
+      return;
+    }
+
+    if (content === (entry.content ?? "")) {
+      cancelEditingMessage();
+      return;
+    }
+
+    setEditingMessageSaving(true);
+    setChatError(null);
+
+    try {
+      const updatedMessage = await apiFetch<ChatMessage>(
+        `/messages/${entry.id}`,
+        {
+          method: "PATCH",
+          body: JSON.stringify({ content }),
+        },
+      );
+
+      applyMessageUpdate(updatedMessage);
+      cancelEditingMessage();
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to edit message.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setChatError(message);
+    } finally {
+      setEditingMessageSaving(false);
+    }
   };
 
   const deleteMessage = async (
@@ -3629,6 +3736,12 @@ function ChatScreen({
                 !entry.temp_id &&
                 entry.delivery_status !== "sending" &&
                 entry.delivery_status !== "failed";
+              const canEditMessage =
+                canUseMessageActions &&
+                entry.sender_id === user.userId &&
+                entry.content !== null &&
+                entry.message_type === "text";
+              const isEditingMessage = editingMessageId === entry.id;
               const canDeleteGroupMessage =
                 activeChat?.type === "group" &&
                 (entry.sender_id === user.userId ||
@@ -3666,7 +3779,56 @@ function ChatScreen({
                     />
                     <div className="message-copy">
                       <span className="sender">{getSenderName(entry)}</span>
-                      <span>{renderMessageContent(entry)}</span>
+                      {isEditingMessage ? (
+                        <form
+                          className="message-edit-form"
+                          onSubmit={(event) => {
+                            event.preventDefault();
+                            void saveMessageEdit(entry);
+                          }}
+                        >
+                          <textarea
+                            value={editingMessageText}
+                            maxLength={4000}
+                            rows={3}
+                            autoFocus
+                            onChange={(event) =>
+                              setEditingMessageText(event.target.value)
+                            }
+                            onKeyDown={(event) => {
+                              if (
+                                event.key === "Enter" &&
+                                (event.metaKey || event.ctrlKey)
+                              ) {
+                                event.preventDefault();
+                                void saveMessageEdit(entry);
+                              }
+
+                              if (event.key === "Escape") {
+                                event.preventDefault();
+                                cancelEditingMessage();
+                              }
+                            }}
+                          />
+                          <span className="message-edit-actions">
+                            <button
+                              type="submit"
+                              disabled={editingMessageSaving}
+                            >
+                              {editingMessageSaving ? "Saving..." : "Save"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={editingMessageSaving}
+                              onClick={cancelEditingMessage}
+                            >
+                              Cancel
+                            </button>
+                          </span>
+                        </form>
+                      ) : (
+                        <span>{renderMessageContent(entry)}</span>
+                      )}
                       {hasSharedPin || hasPersonalPin ? (
                         <span className="message-pin-state">
                           <Pin size={12} aria-hidden="true" />
@@ -3679,6 +3841,14 @@ function ChatScreen({
                         <span className="message-actions">
                           {activeChat?.type === "group" ? (
                             <>
+                              {canEditMessage && !isEditingMessage ? (
+                                <button
+                                  type="button"
+                                  onClick={() => startEditingMessage(entry)}
+                                >
+                                  Edit
+                                </button>
+                              ) : null}
                               {hasSharedPin ? (
                                 <button
                                   type="button"
@@ -3710,16 +3880,34 @@ function ChatScreen({
                               ) : null}
                             </>
                           ) : activeChat?.type === "self" ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                void deleteMessage(entry, "chat");
-                              }}
-                            >
-                              Delete
-                            </button>
+                            <>
+                              {canEditMessage && !isEditingMessage ? (
+                                <button
+                                  type="button"
+                                  onClick={() => startEditingMessage(entry)}
+                                >
+                                  Edit
+                                </button>
+                              ) : null}
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  void deleteMessage(entry, "chat");
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </>
                           ) : (
                             <>
+                              {canEditMessage && !isEditingMessage ? (
+                                <button
+                                  type="button"
+                                  onClick={() => startEditingMessage(entry)}
+                                >
+                                  Edit
+                                </button>
+                              ) : null}
                               {!hasPersonalPin ? (
                                 <button
                                   type="button"
@@ -3776,6 +3964,7 @@ function ChatScreen({
                         {sentAt && entry.created_at ? (
                           <time dateTime={entry.created_at}>{sentAt}</time>
                         ) : null}
+                        {entry.edited_at ? <span>edited</span> : null}
                         {deliveryStatus ? (
                           <span
                             className={`message-status ${deliveryStatus.kind}`}

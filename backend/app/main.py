@@ -29,6 +29,7 @@ from app.models import (
     Message,
     MessageCreate,
     MessageDeleteRequest,
+    MessageEditRequest,
     MessagePinRequest,
     MessagePublic,
     MessageUserState,
@@ -1784,6 +1785,56 @@ async def delete_message(
                 )
 
     return {"ok": True}
+
+
+@fastapi_app.patch("/messages/{message_id}", response_model=MessagePublic)
+async def edit_message(
+    message_id: int,
+    payload: MessageEditRequest,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    message = session.get(Message, message_id)
+
+    if message is None or message.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    require_active_participant(session, message.chat_id, user_id)
+
+    if message.sender_id != user_id:
+        raise HTTPException(
+            status_code=403, detail="You can only edit your own messages"
+        )
+
+    message_user_state = session.get(MessageUserState, (message.id, user_id))
+    if message_user_state and message_user_state.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    message.content = payload.content.strip()
+    message.updated_at = datetime.now(timezone.utc)
+    message.edited_at = message.updated_at
+
+    session.add(message)
+    session.commit()
+    session.refresh(message)
+
+    public_message = to_message_public(
+        message,
+        current_user,
+        message_user_state=message_user_state,
+    )
+
+    await sio.emit(
+        "message_updated",
+        public_message.model_dump(mode="json"),
+        room=str(message.chat_id),
+    )
+
+    return public_message
 
 
 # Socket.IO server

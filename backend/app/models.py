@@ -365,3 +365,7 @@ class MessagePinRequest(SQLModel):
 
 class MessageDeleteRequest(SQLModel):
     scope: Literal["me", "chat"]
+
+
+class MessageEditRequest(SQLModel):
+    content: str = Field(min_length=1, max_length=4000)
