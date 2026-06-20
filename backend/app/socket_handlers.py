@@ -1,0 +1,191 @@
+from datetime import datetime, timezone
+
+from fastapi import HTTPException
+from sqlmodel import Session, col, select
+
+from app.db import engine
+from app.dependencies import decode_access_token, get_cookie_from_environ
+from app.models import Chat, ChatParticipant, Message, User
+from app.services.chats import require_chat_permission
+from app.services.messages import to_message_public
+from app.socket import sio
+
+
+@sio.event
+async def connect(sid, environ, auth):
+    access_token = get_cookie_from_environ(environ, "access_token")
+
+    if access_token is None:
+        raise ConnectionRefusedError("Not authenticated")
+
+    try:
+        payload = decode_access_token(access_token)
+        user_id = int(payload["sub"])
+        token_expires_at = payload["exp"]
+    except Exception:
+        raise ConnectionRefusedError("Invalid token")
+
+    with Session(engine) as session:
+        user = session.get(User, user_id)
+
+        if user is None:
+            raise ConnectionRefusedError("User not found")
+
+        await sio.save_session(
+            sid,
+            {
+                "user_id": user.id,
+                "username": user.username,
+                "avatar_url": user.avatar_url,
+                "token_expires_at": token_expires_at,
+            },
+        )
+
+        await sio.enter_room(sid, f"user:{user.id}")
+
+
+@sio.event
+async def disconnect(sid, reason):
+    if reason == sio.reason.CLIENT_DISCONNECT:
+        print("the client disconnected")
+    elif reason == sio.reason.SERVER_DISCONNECT:
+        print("the server disconnected the client")
+    else:
+        print("disconnect reason:", reason)
+
+
+@sio.event
+async def join_room(sid, room):
+    session = await sio.get_session(sid)
+    user_id = session["user_id"]
+
+    if datetime.now(timezone.utc).timestamp() >= session["token_expires_at"]:
+        await sio.disconnect(sid)
+        return {"ok": False, "error": "Session expired"}
+    try:
+        chat_id = int(room)
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "Invalid room"}
+
+    with Session(engine) as db:
+        participant = db.exec(
+            select(ChatParticipant).where(
+                ChatParticipant.chat_id == chat_id,
+                ChatParticipant.user_id == user_id,
+                col(ChatParticipant.left_at).is_(None),
+            )
+        ).first()
+
+        if participant is None:
+            return {"ok": False, "error": "Not a participant"}
+
+    await sio.enter_room(sid, str(chat_id))
+    return {"ok": True}
+
+
+@sio.event
+async def leave_room(sid, room):
+    session = await sio.get_session(sid)
+
+    if datetime.now(timezone.utc).timestamp() >= session["token_expires_at"]:
+        await sio.disconnect(sid)
+        return
+    try:
+        chat_id = int(room)
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "Invalid room"}
+
+    await sio.leave_room(sid, str(chat_id))
+    return {"ok": True}
+
+
+@sio.event
+async def message(sid, data):
+    session = await sio.get_session(sid)
+    sender_id = session["user_id"]
+    sender_username = session["username"]
+    sender_avatar_url = session["avatar_url"]
+
+    if datetime.now(timezone.utc).timestamp() >= session["token_expires_at"]:
+        await sio.disconnect(sid)
+        return
+
+    content = data.get("content", "").strip()
+
+    if not content:
+        return {"ok": False, "error": "No content"}
+    try:
+        chat_id = int(data.get("chat_id"))
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "Invalid chat"}
+
+    with Session(engine) as db:
+        try:
+            participant = require_chat_permission(
+                db, chat_id, sender_id, "send_messages"
+            )
+        except HTTPException as exc:
+            return {"ok": False, "error": exc.detail}
+
+        if participant is None:
+            return {"ok": False, "error": "Not a participant"}
+
+        chat = db.get(Chat, chat_id)
+        if chat is None:
+            return {"ok": False, "error": "Chat was not found"}
+
+        message = Message(
+            chat_id=chat_id,
+            sender_id=sender_id,
+            content=content,
+            message_type=data.get("message_type", "text"),
+            reply_to_message_id=data.get("reply_to_message_id"),
+        )
+
+        db.add(message)
+        db.flush()
+        db.refresh(message)
+
+        chat.last_message_id = message.id
+        chat.updated_at = message.created_at
+
+        db.commit()
+        db.refresh(chat)
+        db.refresh(message)
+
+        participant_ids = db.exec(
+            select(ChatParticipant.user_id).where(
+                ChatParticipant.chat_id == chat_id,
+                col(ChatParticipant.left_at).is_(None),
+            )
+        ).all()
+
+        public_message = to_message_public(
+            message,
+            sender_username=sender_username,
+            sender_avatar_url=sender_avatar_url,
+        ).model_dump(mode="json", by_alias=True)
+
+    await sio.emit(
+        "message",
+        public_message,
+        room=str(chat_id),
+        skip_sid=sid,
+    )
+
+    chat_update = {
+        "chat_id": chat_id,
+        "last_message": public_message,
+    }
+
+    for participant_id in participant_ids:
+        await sio.emit(
+            "chat_updated",
+            chat_update,
+            room=f"user:{participant_id}",
+        )
+
+    return {
+        "ok": True,
+        "message": public_message,
+    }

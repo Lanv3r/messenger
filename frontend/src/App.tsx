@@ -1484,7 +1484,7 @@ function ChatScreen({
 
     try {
       const responseMessage = await apiFetch<ChatMessage>(
-        `/messages/${activeChatId}`,
+        `/chats/${activeChatId}/messages`,
         {
           method: "POST",
           body: JSON.stringify({

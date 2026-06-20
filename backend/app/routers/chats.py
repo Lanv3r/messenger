@@ -1,0 +1,678 @@
+from datetime import datetime, timezone
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
+from sqlmodel import col, select
+
+from app.constants import SAVED_MESSAGES_AVATAR_URL
+from app.db import SessionDep
+from app.dependencies import get_current_user
+from app.models import (
+    AddGroupMembers,
+    Chat,
+    ChatListItem,
+    ChatMemberPermissions,
+    ChatMemberPublic,
+    ChatParticipant,
+    ChatReadRequest,
+    ChatSettingsUpdate,
+    GroupCreate,
+    Message,
+    User,
+)
+from app.permissions import SYSTEM_ROLE_DEFAULTS
+from app.services.chats import (
+    assert_actor_strictly_outranks_target,
+    assert_admin_permissions_do_not_restrict_enabled_member_permissions,
+    assert_permissions_are_subset_or_equal,
+    assert_valid_admin_permission_list,
+    assert_valid_permission_list,
+    get_effective_permissions,
+    require_active_participant,
+    require_chat_permission,
+)
+from app.socket import sio
+
+router = APIRouter(tags=["chats"])
+
+
+@router.get("/chats", response_model=list[ChatListItem])
+def get_chats(
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    current_user_id = current_user.id
+    if current_user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    rows = session.exec(
+        select(ChatParticipant, Chat)
+        .join(Chat, col(Chat.id) == ChatParticipant.chat_id)
+        .where(
+            ChatParticipant.user_id == current_user_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).all()
+    result = []
+
+    for current_participant, chat in rows:
+        display_title = chat.title
+        display_avatar_url = chat.avatar_url or "/favicon.svg"
+        other_user_id = None
+        other_last_read_at = None
+        other_last_read_message_id = None
+        member_ids: list[int] = []
+        member_count = 0
+        current_user_role = None
+
+        if chat.id is None or chat.created_at is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Chat was not fetched correctly",
+            )
+
+        if chat.type == "self":
+            display_title = "Saved Messages"
+            display_avatar_url = SAVED_MESSAGES_AVATAR_URL
+            unread_count = 0
+
+        elif chat.type == "direct":
+            other_participant = session.exec(
+                select(ChatParticipant).where(
+                    ChatParticipant.chat_id == chat.id,
+                    ChatParticipant.user_id != current_user_id,
+                    col(ChatParticipant.left_at).is_(None),
+                )
+            ).first()
+
+            if other_participant is not None:
+                other_user = session.get(User, other_participant.user_id)
+
+                if other_user is not None:
+                    other_user_id = other_user.id
+                    display_title = (
+                        f"{other_user.first_name} {other_user.last_name}"
+                        if other_user.last_name
+                        else other_user.first_name
+                    )
+                    display_avatar_url = other_user.avatar_url
+                    other_last_read_message_id = other_participant.last_read_message_id
+                    other_last_read_at = other_participant.last_read_at
+        else:
+            member_ids = list(
+                session.exec(
+                    select(ChatParticipant.user_id).where(
+                        ChatParticipant.chat_id == chat.id,
+                        col(ChatParticipant.left_at).is_(None),
+                    )
+                ).all()
+            )
+            member_count = len(member_ids)
+            current_user_role = current_participant.role
+
+        last_message = session.exec(
+            select(Message)
+            .where(
+                Message.chat_id == chat.id,
+                col(Message.deleted_at).is_(None),
+            )
+            .order_by(col(Message.created_at).desc())
+        ).first()
+
+        if last_message is None and chat.type not in {"self", "group"}:
+            continue
+
+        last_read_message_id = (
+            current_participant.last_read_message_id if current_participant else None
+        )
+
+        unread_statement = select(func.count(col(Message.id))).where(
+            Message.chat_id == chat.id,
+            Message.sender_id != current_user_id,
+            col(Message.deleted_at).is_(None),
+        )
+
+        if last_read_message_id is not None:
+            unread_statement = unread_statement.where(
+                col(Message.id) > last_read_message_id
+            )
+
+        unread_count = session.exec(unread_statement).one()
+
+        result.append(
+            ChatListItem(
+                id=chat.id,
+                type=chat.type,
+                title=chat.title,
+                description=chat.description,
+                avatar_url=chat.avatar_url,
+                display_title=display_title or "Chat",
+                display_avatar_url=display_avatar_url,
+                other_user_id=other_user_id,
+                member_ids=member_ids,
+                member_count=member_count,
+                current_user_role=current_user_role,
+                last_message_id=last_message.id if last_message else None,
+                last_message_text=last_message.content if last_message else None,
+                last_message_sender_id=last_message.sender_id if last_message else None,
+                last_message_created_at=last_message.created_at
+                if last_message
+                else None,
+                unread_count=unread_count,
+                current_last_read_message_id=last_read_message_id,
+                other_last_read_message_id=other_last_read_message_id,
+                other_last_read_at=other_last_read_at,
+                created_at=chat.created_at,
+                updated_at=chat.updated_at,
+                is_pinned=current_participant.is_pinned,
+            )
+        )
+    result.sort(
+        key=lambda chat: (
+            chat.is_pinned,
+            chat.last_message_created_at or chat.created_at,
+        ),
+        reverse=True,
+    )
+    return result
+
+
+@router.post("/chats/{chat_id}/read")
+async def chat_read(
+    chat_id: int,
+    payload: ChatReadRequest,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    participant = require_active_participant(session, chat_id, user_id)
+    participant.last_read_message_id = payload.last_read_message_id
+    participant.last_read_at = datetime.now(timezone.utc)
+
+    session.add(participant)
+    session.commit()
+    session.refresh(participant)
+
+    read_update = {
+        "chat_id": chat_id,
+        "user_id": user_id,
+        "last_read_message_id": participant.last_read_message_id,
+        "last_read_at": participant.last_read_at.isoformat()
+        if participant.last_read_at
+        else None,
+    }
+
+    participant_ids = session.exec(
+        select(ChatParticipant.user_id).where(
+            ChatParticipant.chat_id == chat_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).all()
+
+    for participant_id in participant_ids:
+        await sio.emit(
+            "chat_read",
+            read_update,
+            room=f"user:{participant_id}",
+        )
+
+    return {"ok": True}
+
+
+@router.get("/chats/{chat_id}/members", response_model=list[ChatMemberPublic])
+def get_chat_members(
+    chat_id: int,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    require_active_participant(session, chat_id, user_id)
+
+    participants = session.exec(
+        select(ChatParticipant).where(
+            ChatParticipant.chat_id == chat_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).all()
+
+    members = []
+
+    for member in participants:
+        member_user = session.get(User, member.user_id)
+        if member_user is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        chat_member = ChatMemberPublic(
+            user_id=member.user_id,
+            username=member_user.username,
+            first_name=member_user.first_name,
+            last_name=member_user.last_name,
+            bio=member_user.bio,
+            avatar_url=member_user.avatar_url,
+            status=member_user.status,
+            role=member.role,
+            joined_at=member.joined_at,
+            added_by=member.added_by,
+        )
+        members.append(chat_member)
+
+    return members
+
+
+@router.patch("/chats/{chat_id}/settings")
+def pin_chat(
+    chat_id: int,
+    payload: ChatSettingsUpdate,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    participant = require_active_participant(session, chat_id, user_id)
+
+    update_data = payload.model_dump(exclude_unset=True)
+    for key, value in update_data.items():
+        setattr(participant, key, value)
+    session.add(participant)
+    session.commit()
+    session.refresh(participant)
+
+    return {
+        "ok": True,
+        "chat_id": chat_id,
+        "is_pinned": participant.is_pinned,
+        "is_archived": participant.is_archived,
+        "muted_until": participant.muted_until,
+    }
+
+
+@router.post("/chats/group", response_model=ChatListItem)
+async def create_group_chat(
+    payload: GroupCreate,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    chat = Chat(
+        type="group",
+        title=payload.title,
+        description=payload.description,
+        avatar_url=payload.avatar_url,
+    )
+    session.add(chat)
+    session.flush()
+
+    if chat.id is None:
+        raise HTTPException(status_code=500, detail="Chat was not created")
+
+    session.add(
+        ChatMemberPermissions(
+            chat_id=chat.id,
+            permissions=SYSTEM_ROLE_DEFAULTS["member"].copy(),
+        )
+    )
+
+    session.add(
+        ChatParticipant(
+            chat_id=chat.id,
+            user_id=user_id,
+            role="owner",
+        )
+    )
+
+    member_ids = [user_id]
+
+    for member_id in set(payload.member_ids):
+        if member_id == user_id:
+            continue
+
+        member = session.get(User, member_id)
+        if member is None:
+            raise HTTPException(status_code=404, detail=f"User {member_id} not found")
+
+        member_ids.append(member_id)
+        session.add(
+            ChatParticipant(
+                chat_id=chat.id,
+                user_id=member_id,
+                added_by=user_id,
+                role="member",
+            )
+        )
+
+    session.commit()
+    session.refresh(chat)
+
+    chat_list_item = ChatListItem(
+        id=chat.id,
+        type=chat.type,
+        title=chat.title,
+        description=chat.description,
+        avatar_url=chat.avatar_url,
+        display_title=payload.title,
+        member_ids=member_ids,
+        member_count=len(member_ids),
+        current_user_role="owner",
+        last_message_id=None,
+        last_message_text=None,
+        last_message_sender_id=None,
+        last_message_created_at=None,
+        created_at=chat.created_at,
+        updated_at=chat.updated_at,
+    )
+
+    for member_id in member_ids:
+        member_chat_list_item = chat_list_item.model_copy(
+            update={
+                "current_user_role": "owner" if member_id == user_id else "member",
+            }
+        )
+        await sio.emit(
+            "chat_created",
+            member_chat_list_item.model_dump(mode="json"),
+            room=f"user:{member_id}",
+        )
+
+    return chat_list_item
+
+
+@router.post("/chats/{chat_id}/members")
+async def add_group_members(
+    chat_id: int,
+    payload: AddGroupMembers,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    require_chat_permission(session, chat_id, user_id, "add_members")
+
+    chat = session.get(Chat, chat_id)
+    if chat is None:
+        raise HTTPException(
+            status_code=500,
+            detail="Chat was not found",
+        )
+
+    if chat.type != "group":
+        raise HTTPException(
+            status_code=403, detail="Can't add members to non-group chats"
+        )
+
+    participants = session.exec(
+        select(ChatParticipant).where(
+            ChatParticipant.chat_id == chat_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).all()
+
+    roles_by_user_id = {
+        participant.user_id: participant.role for participant in participants
+    }
+
+    new_member_ids = []
+
+    # add users
+    for member_id in set(payload.member_ids):
+        member = session.get(User, member_id)
+        if member is None:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        if member_id in roles_by_user_id:
+            continue
+
+        new_member_ids.append(member_id)
+        roles_by_user_id[member_id] = "member"
+
+        session.add(
+            ChatParticipant(
+                chat_id=chat_id,
+                user_id=member_id,
+                added_by=user_id,
+                role="member",
+            )
+        )
+
+    session.commit()
+
+    all_member_ids = list(roles_by_user_id.keys())
+
+    chat_list_item = ChatListItem(
+        id=chat_id,
+        type=chat.type,
+        title=chat.title,
+        description=chat.description,
+        avatar_url=chat.avatar_url,
+        display_title=chat.title if chat.title is not None else "New group chat",
+        member_ids=all_member_ids,
+        member_count=len(all_member_ids),
+        current_user_role=roles_by_user_id[user_id],
+        last_message_id=None,
+        last_message_text=None,
+        last_message_sender_id=None,
+        last_message_created_at=None,
+        created_at=chat.created_at,
+        updated_at=chat.updated_at,
+    )
+
+    if not new_member_ids:
+        return chat_list_item
+
+    for member_id in all_member_ids:
+        member_chat_list_item = chat_list_item.model_copy(
+            update={
+                "current_user_role": roles_by_user_id[member_id],
+            }
+        )
+
+        # New users only
+        if member_id in new_member_ids:
+            await sio.emit(
+                "chat_created",
+                member_chat_list_item.model_dump(mode="json"),
+                room=f"user:{member_id}",
+            )
+        # Old users only
+        else:
+            await sio.emit(
+                "chat_members_updated",
+                {
+                    "chat": member_chat_list_item.model_dump(mode="json"),
+                    "added_member_ids": new_member_ids,
+                    "added_by": user_id,
+                },
+                room=f"user:{member_id}",
+            )
+
+    return chat_list_item
+
+
+@router.get("/chats/{chat_id}/member-default-permissions")
+def get_chat_default_permissions(
+    chat_id: int,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    require_chat_permission(session, chat_id, user_id, "ban_users")
+    chat = session.get(Chat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    chat_member_permissions = session.get(ChatMemberPermissions, chat_id)
+    if chat_member_permissions is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    return chat_member_permissions.permissions
+
+
+@router.patch("/chats/{chat_id}/member-default-permissions")
+def patch_chat_default_permissions(
+    chat_id: int,
+    new_permissions: dict,
+    session: SessionDep,
+    actor_user: Annotated[User, Depends(get_current_user)],
+):
+    if actor_user.id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    require_chat_permission(session, chat_id, actor_user.id, "ban_users")
+
+    chat_member_permissions = session.get(ChatMemberPermissions, chat_id)
+    if chat_member_permissions is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    assert_valid_permission_list(new_permissions)
+    chat_member_permissions.permissions = new_permissions
+    session.add(chat_member_permissions)
+    session.commit()
+
+
+@router.get("/chats/{chat_id}/admins/{user_id}/permissions")
+def get_admin_permissions(
+    chat_id: int,
+    user_id: int,
+    session: SessionDep,
+    actor_user: Annotated[User, Depends(get_current_user)],
+):
+    if actor_user.id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    if user_id is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    actor_participant = require_active_participant(session, chat_id, actor_user.id)
+    target_participant = require_active_participant(session, chat_id, user_id)
+    if actor_participant == target_participant:
+        return get_effective_permissions(target_participant, session)
+    require_chat_permission(session, chat_id, actor_user.id, "manage_admins")
+    actor_permissions = get_effective_permissions(actor_participant, session)
+    target_permissions = get_effective_permissions(target_participant, session)
+    if target_participant.role != "admin":
+        raise HTTPException(
+            status_code=404,
+            detail="Target is not an admin",
+        )
+
+    assert_actor_strictly_outranks_target(
+        actor_participant, target_participant, actor_permissions, target_permissions
+    )
+    return get_effective_permissions(target_participant, session)
+
+
+@router.patch("/chats/{chat_id}/admins/{user_id}/permissions")
+def patch_admin_permissions(
+    chat_id: int,
+    user_id: int,
+    new_permissions: dict,
+    session: SessionDep,
+    actor_user: Annotated[User, Depends(get_current_user)],
+):
+    if actor_user.id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    if user_id is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    actor_participant = require_chat_permission(
+        session, chat_id, actor_user.id, "manage_admins"
+    )
+    target_participant = require_active_participant(session, chat_id, user_id)
+    actor_permissions = get_effective_permissions(actor_participant, session)
+    target_permissions = get_effective_permissions(target_participant, session)
+    chat_member_permissions = session.get(ChatMemberPermissions, chat_id)
+    if chat_member_permissions is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if target_participant.role != "admin":
+        raise HTTPException(status_code=400, detail="Target is not an admin")
+
+    assert_actor_strictly_outranks_target(
+        actor_participant, target_participant, actor_permissions, target_permissions
+    )
+    assert_valid_admin_permission_list(new_permissions)
+    assert_admin_permissions_do_not_restrict_enabled_member_permissions(
+        new_permissions, chat_member_permissions.permissions
+    )
+    assert_permissions_are_subset_or_equal(new_permissions, actor_permissions)
+
+    target_participant.admin_permissions = new_permissions
+    session.add(target_participant)
+    session.commit()
+
+
+@router.post("/chats/{chat_id}/admins/{user_id}/promote")
+def promote_admin(
+    chat_id: int,
+    user_id: int,
+    new_permissions: dict,
+    session: SessionDep,
+    actor_user: Annotated[User, Depends(get_current_user)],
+):
+    if actor_user.id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    if user_id is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    actor_participant = require_chat_permission(
+        session, chat_id, actor_user.id, "manage_admins"
+    )
+    target_participant = require_active_participant(session, chat_id, user_id)
+    actor_permissions = get_effective_permissions(actor_participant, session)
+    chat_member_permissions = session.get(ChatMemberPermissions, chat_id)
+    if chat_member_permissions is None:
+        raise HTTPException(status_code=404, detail="Chat permissions not found")
+
+    if target_participant.role != "member":
+        raise HTTPException(status_code=403, detail="User is not a member")
+    assert_valid_admin_permission_list(new_permissions)
+    assert_admin_permissions_do_not_restrict_enabled_member_permissions(
+        new_permissions, chat_member_permissions.permissions
+    )
+    assert_permissions_are_subset_or_equal(new_permissions, actor_permissions)
+
+    target_participant.role = "admin"
+    target_participant.admin_permissions = new_permissions
+    target_participant.promoted_by = actor_participant.user_id
+    target_participant.promoted_at = datetime.now(timezone.utc)
+
+    session.add(target_participant)
+    session.commit()
+    return {"ok": True}
+
+
+@router.post("/chats/{chat_id}/admins/{user_id}/dismiss")
+def dismiss_admin(
+    chat_id: int,
+    user_id: int,
+    session: SessionDep,
+    actor_user: Annotated[User, Depends(get_current_user)],
+):
+    if actor_user.id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    if user_id is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    actor_participant = require_chat_permission(
+        session, chat_id, actor_user.id, "manage_admins"
+    )
+    target_participant = require_active_participant(session, chat_id, user_id)
+    actor_permissions = get_effective_permissions(actor_participant, session)
+    target_permissions = get_effective_permissions(target_participant, session)
+    if target_participant.role != "admin":
+        raise HTTPException(status_code=400, detail="Target is not an admin")
+    assert_actor_strictly_outranks_target(
+        actor_participant, target_participant, actor_permissions, target_permissions
+    )
+
+    target_participant.role = "member"
+    target_participant.admin_permissions = {}
+    target_participant.promoted_by = None
+    target_participant.promoted_at = None
+
+    session.add(target_participant)
+    session.commit()
+    return {"ok": True}
+
