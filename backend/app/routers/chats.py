@@ -178,6 +178,155 @@ def get_chats(
     return result
 
 
+@router.get("/chats/direct/by-user/{user_id}", response_model=ChatListItem | None)
+def get_direct_chat_by_user(
+    user_id: int,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    current_user_id = current_user.id
+    if current_user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    if user_id == current_user_id:
+        row = session.exec(
+            select(Chat, ChatParticipant)
+            .join(ChatParticipant, col(ChatParticipant.chat_id) == col(Chat.id))
+            .where(
+                Chat.type == "self",
+                ChatParticipant.user_id == current_user_id,
+                col(ChatParticipant.left_at).is_(None),
+            )
+        ).first()
+
+        if row is None:
+            raise HTTPException(status_code=404, detail="Self chat not found")
+
+        chat, current_participant = row
+        if chat.id is None or chat.created_at is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Chat was not fetched correctly",
+            )
+
+        last_message = session.exec(
+            select(Message)
+            .where(
+                Message.chat_id == chat.id,
+                col(Message.deleted_at).is_(None),
+            )
+            .order_by(col(Message.created_at).desc())
+        ).first()
+
+        return ChatListItem(
+            id=chat.id,
+            type=chat.type,
+            title=chat.title,
+            description=chat.description,
+            avatar_url=chat.avatar_url,
+            display_title="Saved Messages",
+            display_avatar_url=SAVED_MESSAGES_AVATAR_URL,
+            last_message_id=last_message.id if last_message else None,
+            last_message_text=last_message.content if last_message else None,
+            last_message_sender_id=last_message.sender_id if last_message else None,
+            last_message_created_at=last_message.created_at if last_message else None,
+            unread_count=0,
+            current_last_read_message_id=current_participant.last_read_message_id,
+            created_at=chat.created_at,
+            updated_at=chat.updated_at,
+            is_pinned=current_participant.is_pinned,
+        )
+
+    other_user = session.get(User, user_id)
+    if other_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    participant_ids = [current_user_id, user_id]
+    matching_chat_ids = (
+        select(col(ChatParticipant.chat_id))
+        .where(
+            col(ChatParticipant.user_id).in_(participant_ids),
+            col(ChatParticipant.left_at).is_(None),
+        )
+        .group_by(col(ChatParticipant.chat_id))
+        .having(func.count(col(ChatParticipant.user_id)) == 2)
+    )
+
+    row = session.exec(
+        select(Chat, ChatParticipant)
+        .join(ChatParticipant, col(ChatParticipant.chat_id) == col(Chat.id))
+        .where(
+            Chat.type == "direct",
+            col(Chat.id).in_(matching_chat_ids),
+            ChatParticipant.user_id == current_user_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).first()
+
+    if row is None:
+        return None
+
+    chat, current_participant = row
+    if chat.id is None or chat.created_at is None:
+        raise HTTPException(status_code=500, detail="Chat was not fetched correctly")
+
+    other_participant = session.exec(
+        select(ChatParticipant).where(
+            ChatParticipant.chat_id == chat.id,
+            ChatParticipant.user_id == user_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).first()
+
+    last_message = session.exec(
+        select(Message)
+        .where(
+            Message.chat_id == chat.id,
+            col(Message.deleted_at).is_(None),
+        )
+        .order_by(col(Message.created_at).desc())
+    ).first()
+
+    last_read_message_id = current_participant.last_read_message_id
+    unread_statement = select(func.count(col(Message.id))).where(
+        Message.chat_id == chat.id,
+        Message.sender_id != current_user_id,
+        col(Message.deleted_at).is_(None),
+    )
+
+    if last_read_message_id is not None:
+        unread_statement = unread_statement.where(col(Message.id) > last_read_message_id)
+
+    unread_count = session.exec(unread_statement).one()
+
+    return ChatListItem(
+        id=chat.id,
+        type=chat.type,
+        title=chat.title,
+        description=chat.description,
+        avatar_url=chat.avatar_url,
+        display_title=(
+            f"{other_user.first_name} {other_user.last_name}"
+            if other_user.last_name
+            else other_user.first_name
+        ),
+        display_avatar_url=other_user.avatar_url,
+        other_user_id=other_user.id,
+        last_message_id=last_message.id if last_message else None,
+        last_message_text=last_message.content if last_message else None,
+        last_message_sender_id=last_message.sender_id if last_message else None,
+        last_message_created_at=last_message.created_at if last_message else None,
+        unread_count=unread_count,
+        current_last_read_message_id=last_read_message_id,
+        other_last_read_message_id=other_participant.last_read_message_id
+        if other_participant
+        else None,
+        other_last_read_at=other_participant.last_read_at if other_participant else None,
+        created_at=chat.created_at,
+        updated_at=chat.updated_at,
+        is_pinned=current_participant.is_pinned,
+    )
+
+
 @router.post("/chats/{chat_id}/read")
 async def chat_read(
     chat_id: int,
@@ -675,4 +824,3 @@ def dismiss_admin(
     session.add(target_participant)
     session.commit()
     return {"ok": True}
-

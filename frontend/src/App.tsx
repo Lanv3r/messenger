@@ -2738,7 +2738,7 @@ function ChatScreen({
     activeChat?.type !== "self" &&
     draftRecipient === null;
 
-  const openDraftChat = (profile: UserProfile) => {
+  const openDraftChat = async (profile: UserProfile) => {
     const existingDirectChat = chats.find(
       (chat) =>
         chat.type === "direct" && chat.other_user_id === profile.id,
@@ -2748,6 +2748,34 @@ function ChatScreen({
       joinChat(existingDirectChat);
       setProfileResult(null);
       setProfileError(null);
+      return;
+    }
+
+    try {
+      const serverDirectChat = await apiFetch<Chat | null>(
+        `/chats/direct/by-user/${profile.id}`,
+      );
+
+      if (serverDirectChat) {
+        const resolvedChat = applyLocalReadState(serverDirectChat);
+        setChats((current) => upsertChat(current, resolvedChat));
+        joinChat(resolvedChat);
+        setProfileResult(null);
+        setProfileError(null);
+        return;
+      }
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to check existing chat.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setProfileError(message);
       return;
     }
 
@@ -2954,7 +2982,7 @@ function ChatScreen({
                 <Button
                   type="button"
                   size="sm"
-                  onClick={() => openDraftChat(profileResult)}
+                  onClick={() => void openDraftChat(profileResult)}
                 >
                   Message
                 </Button>
