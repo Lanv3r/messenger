@@ -7,7 +7,7 @@ from sqlmodel import Field, Index, SQLModel
 
 
 class UserBase(SQLModel):
-    username: str = Field(max_length=32, unique=True)
+    username: str = Field(max_length=32)
     first_name: str = Field(max_length=64)
     last_name: str | None = Field(default=None, max_length=64)
     bio: str | None = Field(default=None, max_length=70)
@@ -17,6 +17,7 @@ class UserBase(SQLModel):
 
 class User(UserBase, table=True):
     __tablename__: ClassVar[str] = "users"
+    __table_args__ = (UniqueConstraint("username", name="uq_users_username"),)
 
     id: int | None = Field(default=None, primary_key=True)
     password_hash: str
@@ -140,6 +141,12 @@ class ChatParticipant(ChatParticipantBase, table=True):
             "user_id",
             name="uq_chat_participants_chat_id_user_id",
         ),
+        Index(
+            "ix_chat_participants_active_user_chat",
+            "user_id",
+            "chat_id",
+            postgresql_where=text("left_at IS NULL"),
+        ),
     )
 
     id: int | None = Field(default=None, primary_key=True)
@@ -213,7 +220,15 @@ class MessageBase(SQLModel):
 
 class Message(MessageBase, table=True):
     __tablename__: ClassVar[str] = "messages"
-    __table_args__ = (Index("ix_messages_chat_id_created_at", "chat_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_messages_chat_id_created_at", "chat_id", "created_at"),
+        Index(
+            "ix_messages_active_chat_id",
+            "chat_id",
+            "id",
+            postgresql_where=text("deleted_at IS NULL"),
+        ),
+    )
 
     id: int | None = Field(default=None, primary_key=True)
     created_at: datetime | None = Field(
