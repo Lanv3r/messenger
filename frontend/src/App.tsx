@@ -1493,10 +1493,10 @@ function ChatScreen({
         },
       );
 
-      const confirmedMessage = {
+      const confirmedMessage: ChatMessage = {
         ...responseMessage,
         isOwn: true,
-        delivery_status: "sent" as const,
+        delivery_status: activeChat?.type === "self" ? "read" : "sent",
       };
 
       setMessages((current) =>
@@ -2855,6 +2855,10 @@ function ChatScreen({
 
     if (entry.delivery_status === "failed") {
       return { kind: "failed", label: "Failed" };
+    }
+
+    if (activeChat?.type === "self") {
+      return { kind: "read", label: "Read" };
     }
 
     if (

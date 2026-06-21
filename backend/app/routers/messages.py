@@ -222,7 +222,7 @@ async def create_message(
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
 
-    require_chat_permission(session, chat_id, user_id, "send_messages")
+    participant = require_chat_permission(session, chat_id, user_id, "send_messages")
 
     content = payload.content.strip()
     if not content:
@@ -248,6 +248,12 @@ async def create_message(
 
     chat.last_message_id = message.id
     chat.updated_at = message.created_at
+
+    # messages in self chats are always read
+    if chat.type == "self":
+        participant.last_read_message_id = message.id
+        participant.last_read_at = datetime.now(timezone.utc)
+        session.add(participant)
 
     session.commit()
     session.refresh(message)

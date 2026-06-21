@@ -126,6 +126,8 @@ def get_chats(
         last_read_message_id = (
             current_participant.last_read_message_id if current_participant else None
         )
+        if chat.type == "self" and last_message is not None:
+            last_read_message_id = last_message.id
 
         unread_statement = select(func.count(col(Message.id))).where(
             Message.chat_id == chat.id,
@@ -230,7 +232,9 @@ def get_direct_chat_by_user(
             last_message_sender_id=last_message.sender_id if last_message else None,
             last_message_created_at=last_message.created_at if last_message else None,
             unread_count=0,
-            current_last_read_message_id=current_participant.last_read_message_id,
+            current_last_read_message_id=last_message.id
+            if last_message
+            else current_participant.last_read_message_id,
             created_at=chat.created_at,
             updated_at=chat.updated_at,
             is_pinned=current_participant.is_pinned,
