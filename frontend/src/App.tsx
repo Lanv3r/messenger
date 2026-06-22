@@ -596,6 +596,9 @@ function ChatScreen({
   );
   const [editingMessageText, setEditingMessageText] = useState("");
   const [editingMessageSaving, setEditingMessageSaving] = useState(false);
+  const [openMessageMenuId, setOpenMessageMenuId] = useState<number | null>(
+    null,
+  );
   const messagesRef = useRef<HTMLUListElement | null>(null);
   const pendingMessageScrollRef = useRef<{
     chatId: number;
@@ -1462,6 +1465,30 @@ function ChatScreen({
     setProfileAvatarUrl(user.avatarUrl);
   }, [user]);
 
+  useEffect(() => {
+    if (openMessageMenuId === null) {
+      return;
+    }
+
+    const closeMessageMenu = () => {
+      setOpenMessageMenuId(null);
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeMessageMenu();
+      }
+    };
+
+    window.addEventListener("click", closeMessageMenu);
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("click", closeMessageMenu);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openMessageMenuId]);
+
   const handleSend = async () => {
     const socket = socketRef.current;
     if (!message.trim()) {
@@ -1558,6 +1585,7 @@ function ChatScreen({
     );
     setMessage("");
     setReplyToMessage(null);
+    setOpenMessageMenuId(null);
 
     try {
       const responseMessage = await apiFetch<ChatMessage>(
@@ -1637,6 +1665,7 @@ function ChatScreen({
     setDraftRecipient(null);
     setMessages([]);
     setReplyToMessage(null);
+    setOpenMessageMenuId(null);
   };
 
   const toggleChatPin = async (chat: Chat) => {
@@ -1815,12 +1844,16 @@ function ChatScreen({
     setReplyToMessage((current) =>
       current?.id === messageId ? null : current,
     );
+    setOpenMessageMenuId((current) =>
+      current === messageId ? null : current,
+    );
   };
 
   const startEditingMessage = (entry: ChatMessage) => {
     setEditingMessageId(entry.id);
     setEditingMessageText(entry.content ?? "");
     setChatError(null);
+    setOpenMessageMenuId(null);
   };
 
   const cancelEditingMessage = () => {
@@ -2609,6 +2642,7 @@ function ChatScreen({
   const startReplyingToMessage = (entry: ChatMessage) => {
     setReplyToMessage(entry);
     setChatError(null);
+    setOpenMessageMenuId(null);
   };
 
   const renderMessageContent = (entry: ChatMessage) => {
@@ -2915,6 +2949,7 @@ function ChatScreen({
     setMessages([]);
     setMessage("");
     setReplyToMessage(null);
+    setOpenMessageMenuId(null);
   };
 
   const getSenderName = (entry: ChatMessage) => {
@@ -3893,6 +3928,7 @@ function ChatScreen({
                 !entry.temp_id &&
                 entry.delivery_status !== "sending" &&
                 entry.delivery_status !== "failed";
+              const isMessageMenuOpen = openMessageMenuId === entry.id;
               const canEditMessage =
                 canUseMessageActions &&
                 entry.sender_id === user.userId &&
@@ -3996,132 +4032,182 @@ function ChatScreen({
                         </span>
                       ) : null}
                       {canUseMessageActions ? (
-                        <span className="message-actions">
+                        <span
+                          className={[
+                            "message-actions",
+                            isMessageMenuOpen ? "open" : "",
+                          ]
+                            .filter(Boolean)
+                            .join(" ")}
+                        >
                           <button
                             type="button"
-                            onClick={() => startReplyingToMessage(entry)}
+                            className="message-menu-trigger"
+                            aria-haspopup="menu"
+                            aria-expanded={isMessageMenuOpen}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              setOpenMessageMenuId((current) =>
+                                current === entry.id ? null : entry.id,
+                              );
+                            }}
                           >
-                            Reply
+                            More
                           </button>
-                          {activeChat?.type === "group" ? (
-                            <>
-                              {canEditMessage && !isEditingMessage ? (
-                                <button
-                                  type="button"
-                                  onClick={() => startEditingMessage(entry)}
-                                >
-                                  Edit
-                                </button>
-                              ) : null}
-                              {hasSharedPin ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    void unpinMessage(entry);
-                                  }}
-                                >
-                                  Unpin
-                                </button>
+                          {isMessageMenuOpen ? (
+                            <span
+                              className="message-context-menu"
+                              role="menu"
+                            >
+                              <button
+                                type="button"
+                                role="menuitem"
+                                onClick={() => startReplyingToMessage(entry)}
+                              >
+                                Reply
+                              </button>
+                              {activeChat?.type === "group" ? (
+                                <>
+                                  {canEditMessage && !isEditingMessage ? (
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={() => startEditingMessage(entry)}
+                                    >
+                                      Edit
+                                    </button>
+                                  ) : null}
+                                  {hasSharedPin ? (
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={() => {
+                                        setOpenMessageMenuId(null);
+                                        void unpinMessage(entry);
+                                      }}
+                                    >
+                                      Unpin
+                                    </button>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={() => {
+                                        setOpenMessageMenuId(null);
+                                        void pinMessage(entry, "chat");
+                                      }}
+                                    >
+                                      Pin
+                                    </button>
+                                  )}
+                                  {canDeleteGroupMessage ? (
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={() => {
+                                        setOpenMessageMenuId(null);
+                                        void deleteMessage(entry, "chat");
+                                      }}
+                                    >
+                                      Delete
+                                    </button>
+                                  ) : null}
+                                </>
+                              ) : activeChat?.type === "self" ? (
+                                <>
+                                  {canEditMessage && !isEditingMessage ? (
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={() => startEditingMessage(entry)}
+                                    >
+                                      Edit
+                                    </button>
+                                  ) : null}
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() => {
+                                      setOpenMessageMenuId(null);
+                                      void deleteMessage(entry, "chat");
+                                    }}
+                                  >
+                                    Delete
+                                  </button>
+                                </>
                               ) : (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    void pinMessage(entry, "chat");
-                                  }}
-                                >
-                                  Pin
-                                </button>
+                                <>
+                                  {canEditMessage && !isEditingMessage ? (
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={() => startEditingMessage(entry)}
+                                    >
+                                      Edit
+                                    </button>
+                                  ) : null}
+                                  {!hasPersonalPin ? (
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={() => {
+                                        setOpenMessageMenuId(null);
+                                        void pinMessage(entry, "me");
+                                      }}
+                                    >
+                                      Pin me
+                                    </button>
+                                  ) : null}
+                                  {!hasSharedPin ? (
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={() => {
+                                        setOpenMessageMenuId(null);
+                                        void pinMessage(entry, "chat");
+                                      }}
+                                    >
+                                      Pin chat
+                                    </button>
+                                  ) : null}
+                                  {hasPersonalPin || hasSharedPin ? (
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={() => {
+                                        setOpenMessageMenuId(null);
+                                        void unpinMessage(entry);
+                                      }}
+                                    >
+                                      Unpin
+                                    </button>
+                                  ) : null}
+                                  <button
+                                    type="button"
+                                    role="menuitem"
+                                    onClick={() => {
+                                      setOpenMessageMenuId(null);
+                                      void deleteMessage(entry, "me");
+                                    }}
+                                  >
+                                    Delete me
+                                  </button>
+                                  {entry.sender_id === user.userId ? (
+                                    <button
+                                      type="button"
+                                      role="menuitem"
+                                      onClick={() => {
+                                        setOpenMessageMenuId(null);
+                                        void deleteMessage(entry, "chat");
+                                      }}
+                                    >
+                                      Delete both
+                                    </button>
+                                  ) : null}
+                                </>
                               )}
-                              {canDeleteGroupMessage ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    void deleteMessage(entry, "chat");
-                                  }}
-                                >
-                                  Delete
-                                </button>
-                              ) : null}
-                            </>
-                          ) : activeChat?.type === "self" ? (
-                            <>
-                              {canEditMessage && !isEditingMessage ? (
-                                <button
-                                  type="button"
-                                  onClick={() => startEditingMessage(entry)}
-                                >
-                                  Edit
-                                </button>
-                              ) : null}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  void deleteMessage(entry, "chat");
-                                }}
-                              >
-                                Delete
-                              </button>
-                            </>
-                          ) : (
-                            <>
-                              {canEditMessage && !isEditingMessage ? (
-                                <button
-                                  type="button"
-                                  onClick={() => startEditingMessage(entry)}
-                                >
-                                  Edit
-                                </button>
-                              ) : null}
-                              {!hasPersonalPin ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    void pinMessage(entry, "me");
-                                  }}
-                                >
-                                  Pin me
-                                </button>
-                              ) : null}
-                              {!hasSharedPin ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    void pinMessage(entry, "chat");
-                                  }}
-                                >
-                                  Pin chat
-                                </button>
-                              ) : null}
-                              {hasPersonalPin || hasSharedPin ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    void unpinMessage(entry);
-                                  }}
-                                >
-                                  Unpin
-                                </button>
-                              ) : null}
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  void deleteMessage(entry, "me");
-                                }}
-                              >
-                                Delete me
-                              </button>
-                              {entry.sender_id === user.userId ? (
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    void deleteMessage(entry, "chat");
-                                  }}
-                                >
-                                  Delete both
-                                </button>
-                              ) : null}
-                            </>
-                          )}
+                            </span>
+                          ) : null}
                         </span>
                       ) : null}
                       <span className="message-meta">
