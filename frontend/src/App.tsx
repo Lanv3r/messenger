@@ -610,7 +610,7 @@ function ChatScreen({
   } | null>(null);
   const [messageActionDialog, setMessageActionDialog] =
     useState<MessageActionDialog | null>(null);
-  const [pinAlsoForOtherUser, setPinAlsoForOtherUser] = useState(false);
+  const [actionAlsoForOtherUser, setActionAlsoForOtherUser] = useState(false);
   const messagesRef = useRef<HTMLUListElement | null>(null);
   const pendingMessageScrollRef = useRef<{
     chatId: number;
@@ -2671,13 +2671,13 @@ function ChatScreen({
   ) => {
     setOpenMessageMenuId(null);
     setMessageMenuPosition(null);
-    setPinAlsoForOtherUser(false);
+    setActionAlsoForOtherUser(false);
     setMessageActionDialog({ kind, entry });
   };
 
   const closeMessageActionDialog = () => {
     setMessageActionDialog(null);
-    setPinAlsoForOtherUser(false);
+    setActionAlsoForOtherUser(false);
   };
 
   const confirmPinAction = (scope: "me" | "chat" | "unpin") => {
@@ -3871,7 +3871,7 @@ function ChatScreen({
                     ? actionDialogIsPinned
                       ? "Would you like to unpin this message?"
                       : "Would you like to pin this message?"
-                    : "Delete this message?"}
+                    : "Would you like to delete this message?"}
                 </strong>
                 {messageActionDialog.kind === "pin" &&
                 actionDialogChat.type === "direct" &&
@@ -3879,9 +3879,9 @@ function ChatScreen({
                   <label className="message-action-checkbox">
                     <input
                       type="checkbox"
-                      checked={pinAlsoForOtherUser}
+                      checked={actionAlsoForOtherUser}
                       onChange={(event) =>
-                        setPinAlsoForOtherUser(event.target.checked)
+                        setActionAlsoForOtherUser(event.target.checked)
                       }
                     />
                     <span>
@@ -3889,12 +3889,30 @@ function ChatScreen({
                     </span>
                   </label>
                 ) : null}
-                {messageActionDialog.kind === "delete" ? (
+                {messageActionDialog.kind === "delete" &&
+                actionDialogChat.type === "direct" &&
+                actionDialogCanDeleteForEveryone ? (
+                  <label className="message-action-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={actionAlsoForOtherUser}
+                      onChange={(event) =>
+                        setActionAlsoForOtherUser(event.target.checked)
+                      }
+                    />
+                    <span>
+                      Also delete for {actionDialogOtherUserDisplayName}
+                    </span>
+                  </label>
+                ) : null}
+                {messageActionDialog.kind === "delete" &&
+                !(
+                  actionDialogChat.type === "direct" &&
+                  actionDialogCanDeleteForEveryone
+                ) ? (
                   <p>
                     {actionDialogChat.type === "direct"
-                      ? actionDialogCanDeleteForEveryone
-                        ? "Choose whether to delete it only for you or for both people in this chat."
-                        : "This will delete the message only for you."
+                      ? "This will delete the message only for you."
                       : "This will delete the message for everyone in this chat."}
                   </p>
                 ) : null}
@@ -3919,7 +3937,7 @@ function ChatScreen({
                       onClick={() =>
                         confirmPinAction(
                           actionDialogChat.type === "direct" &&
-                            !pinAlsoForOtherUser
+                            !actionAlsoForOtherUser
                             ? "me"
                             : "chat",
                         )
@@ -3928,30 +3946,19 @@ function ChatScreen({
                       Pin
                     </button>
                   )
-                ) : actionDialogChat.type === "direct" ? (
-                  <>
-                    <button
-                      type="button"
-                      className="danger"
-                      onClick={() => confirmDeleteAction("me")}
-                    >
-                      Delete for me
-                    </button>
-                    {actionDialogCanDeleteForEveryone ? (
-                      <button
-                        type="button"
-                        className="danger"
-                        onClick={() => confirmDeleteAction("chat")}
-                      >
-                        Delete for both
-                      </button>
-                    ) : null}
-                  </>
                 ) : (
                   <button
                     type="button"
                     className="danger"
-                    onClick={() => confirmDeleteAction("chat")}
+                    onClick={() =>
+                      confirmDeleteAction(
+                        actionDialogChat.type === "direct" &&
+                          (!actionDialogCanDeleteForEveryone ||
+                            !actionAlsoForOtherUser)
+                          ? "me"
+                          : "chat",
+                      )
+                    }
                   >
                     Delete
                   </button>
