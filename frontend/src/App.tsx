@@ -599,6 +599,10 @@ function ChatScreen({
   const [openMessageMenuId, setOpenMessageMenuId] = useState<number | null>(
     null,
   );
+  const [messageMenuPosition, setMessageMenuPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
   const messagesRef = useRef<HTMLUListElement | null>(null);
   const pendingMessageScrollRef = useRef<{
     chatId: number;
@@ -1472,6 +1476,7 @@ function ChatScreen({
 
     const closeMessageMenu = () => {
       setOpenMessageMenuId(null);
+      setMessageMenuPosition(null);
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -3961,6 +3966,38 @@ function ChatScreen({
                       .filter(Boolean)
                       .join(" ")}
                     data-message-id={entry.id}
+                    onContextMenu={(event) => {
+                      if (!canUseMessageActions) {
+                        return;
+                      }
+
+                      event.preventDefault();
+                      event.stopPropagation();
+
+                      const menuWidth = 180;
+                      const menuMaxHeight = 280;
+                      const viewportPadding = 8;
+                      const maxX = Math.max(
+                        viewportPadding,
+                        window.innerWidth - menuWidth - viewportPadding,
+                      );
+                      const maxY = Math.max(
+                        viewportPadding,
+                        window.innerHeight - menuMaxHeight - viewportPadding,
+                      );
+
+                      setMessageMenuPosition({
+                        x: Math.min(
+                          Math.max(event.clientX, viewportPadding),
+                          maxX,
+                        ),
+                        y: Math.min(
+                          Math.max(event.clientY, viewportPadding),
+                          maxY,
+                        ),
+                      });
+                      setOpenMessageMenuId(entry.id);
+                    }}
                   >
                     <img
                       src={getSenderAvatar(entry)}
@@ -4040,24 +4077,19 @@ function ChatScreen({
                             .filter(Boolean)
                             .join(" ")}
                         >
-                          <button
-                            type="button"
-                            className="message-menu-trigger"
-                            aria-haspopup="menu"
-                            aria-expanded={isMessageMenuOpen}
-                            onClick={(event) => {
-                              event.stopPropagation();
-                              setOpenMessageMenuId((current) =>
-                                current === entry.id ? null : entry.id,
-                              );
-                            }}
-                          >
-                            More
-                          </button>
                           {isMessageMenuOpen ? (
                             <span
                               className="message-context-menu"
                               role="menu"
+                              style={
+                                messageMenuPosition
+                                  ? {
+                                      left: messageMenuPosition.x,
+                                      top: messageMenuPosition.y,
+                                    }
+                                  : undefined
+                              }
+                              onClick={(event) => event.stopPropagation()}
                             >
                               <button
                                 type="button"
