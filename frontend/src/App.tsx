@@ -44,6 +44,11 @@ type MessageActionDialog = {
   entry: ChatMessage;
 };
 
+type ComposerDraft = {
+  text: string;
+  reply_to_message_id: number | null;
+};
+
 type AuthUser = {
   userId: number;
   username: string;
@@ -623,6 +628,9 @@ function ChatScreen({
   >({});
   const lastReadMessageIdByChatRef = useRef<Record<number, number>>({});
   const unreadCountOverrideByChatRef = useRef<Record<number, number>>({});
+  const pendingReplyToMessageIdByChatRef = useRef<
+    Record<number, number | undefined>
+  >({});
   const socketRef = useRef<Socket | null>(null);
   const activeChat = chats.find(
     (chat) => chat.id === activeChatId,
@@ -634,6 +642,18 @@ function ChatScreen({
 
   function getChatScrollSessionStorageKey(chatId: number) {
     return getChatSessionStorageKey(`chat:${chatId}:scrollTop`);
+  }
+
+  function getMessageDraftSessionStorageKey(chatId: number) {
+    return getChatSessionStorageKey(`chat:${chatId}:messageDraft`);
+  }
+
+  function getActiveEditDraftSessionStorageKey(chatId: number) {
+    return getChatSessionStorageKey(`chat:${chatId}:activeEditMessageId`);
+  }
+
+  function getEditDraftSessionStorageKey(chatId: number, messageId: number) {
+    return getChatSessionStorageKey(`chat:${chatId}:edit:${messageId}`);
   }
 
   function saveActiveChatId(chatId: number) {
@@ -659,6 +679,171 @@ function ChatScreen({
   function getSavedChatScrollPosition(chatId: number) {
     return readNumberFromSessionStorage(
       getChatScrollSessionStorageKey(chatId),
+    );
+  }
+
+  function readComposerDraft(chatId: number): ComposerDraft {
+    const value = window.sessionStorage.getItem(
+      getMessageDraftSessionStorageKey(chatId),
+    );
+
+    if (value === null) {
+      return { text: "", reply_to_message_id: null };
+    }
+
+    try {
+      const draft = JSON.parse(value) as Partial<ComposerDraft>;
+      return {
+        text: typeof draft.text === "string" ? draft.text : "",
+        reply_to_message_id:
+          typeof draft.reply_to_message_id === "number"
+            ? draft.reply_to_message_id
+            : null,
+      };
+    } catch {
+      return { text: value, reply_to_message_id: null };
+    }
+  }
+
+  function saveComposerDraft(
+    chatId: number,
+    text: string,
+    replyToMessageId: number | null,
+  ) {
+    const key = getMessageDraftSessionStorageKey(chatId);
+
+    if (!text && replyToMessageId === null) {
+      window.sessionStorage.removeItem(key);
+      return;
+    }
+
+    window.sessionStorage.setItem(
+      key,
+      JSON.stringify({
+        text,
+        reply_to_message_id: replyToMessageId,
+      } satisfies ComposerDraft),
+    );
+  }
+
+  function clearComposerDraft(chatId: number) {
+    delete pendingReplyToMessageIdByChatRef.current[chatId];
+    window.sessionStorage.removeItem(
+      getMessageDraftSessionStorageKey(chatId),
+    );
+  }
+
+  function restoreComposerDraft(
+    chatId: number,
+    availableMessages: ChatMessage[] = messages,
+    messagesLoaded = false,
+  ) {
+    const draft = readComposerDraft(chatId);
+    const replyToMessageId = draft.reply_to_message_id;
+
+    setMessage(draft.text);
+
+    if (replyToMessageId === null) {
+      delete pendingReplyToMessageIdByChatRef.current[chatId];
+      setReplyToMessage(null);
+      return;
+    }
+
+    const replyMessage =
+      availableMessages.find((entry) => entry.id === replyToMessageId) ??
+      null;
+
+    if (replyMessage) {
+      delete pendingReplyToMessageIdByChatRef.current[chatId];
+      setReplyToMessage(replyMessage);
+      return;
+    }
+
+    if (messagesLoaded) {
+      delete pendingReplyToMessageIdByChatRef.current[chatId];
+      setReplyToMessage(null);
+      return;
+    }
+
+    pendingReplyToMessageIdByChatRef.current[chatId] = replyToMessageId;
+    setReplyToMessage(
+      availableMessages.find((entry) => entry.id === replyToMessageId) ??
+        null,
+    );
+  }
+
+  function saveActiveEditDraft(chatId: number, messageId: number) {
+    window.sessionStorage.setItem(
+      getActiveEditDraftSessionStorageKey(chatId),
+      String(messageId),
+    );
+  }
+
+  function clearActiveEditDraft(chatId: number) {
+    window.sessionStorage.removeItem(
+      getActiveEditDraftSessionStorageKey(chatId),
+    );
+  }
+
+  function readActiveEditDraft(chatId: number) {
+    return readNumberFromSessionStorage(
+      getActiveEditDraftSessionStorageKey(chatId),
+    );
+  }
+
+  function saveEditDraft(
+    chatId: number,
+    messageId: number,
+    text: string,
+  ) {
+    window.sessionStorage.setItem(
+      getEditDraftSessionStorageKey(chatId, messageId),
+      text,
+    );
+  }
+
+  function readEditDraft(chatId: number, messageId: number) {
+    return window.sessionStorage.getItem(
+      getEditDraftSessionStorageKey(chatId, messageId),
+    );
+  }
+
+  function clearEditDraft(chatId: number, messageId: number) {
+    window.sessionStorage.removeItem(
+      getEditDraftSessionStorageKey(chatId, messageId),
+    );
+  }
+
+  function restoreEditDraft(
+    chatId: number,
+    availableMessages: ChatMessage[],
+  ) {
+    const messageId = readActiveEditDraft(chatId);
+    if (messageId === null) {
+      setEditingMessageId(null);
+      setEditingMessageText("");
+      return;
+    }
+
+    const editedMessage = availableMessages.find(
+      (entry) => entry.id === messageId,
+    );
+    if (
+      editedMessage === undefined ||
+      editedMessage.sender_id !== user.userId ||
+      editedMessage.content === null ||
+      editedMessage.message_type !== "text"
+    ) {
+      clearActiveEditDraft(chatId);
+      clearEditDraft(chatId, messageId);
+      setEditingMessageId(null);
+      setEditingMessageText("");
+      return;
+    }
+
+    setEditingMessageId(messageId);
+    setEditingMessageText(
+      readEditDraft(chatId, messageId) ?? editedMessage.content,
     );
   }
 
@@ -1123,6 +1308,7 @@ function ChatScreen({
           activeChatIdRef.current = selectedChat.id;
           saveActiveChatId(selectedChat.id);
           setActiveChatId(selectedChat.id);
+          restoreComposerDraft(selectedChat.id, []);
         }
       } catch (error) {
         const message =
@@ -1148,18 +1334,21 @@ function ChatScreen({
       return;
     }
 
+    const chatId = activeChatId;
     const controller = new AbortController();
 
     async function loadMessages() {
       try {
         const chatMessages = await apiFetch<ChatMessage[]>(
-          `/chats/${activeChatId}/messages`,
+          `/chats/${chatId}/messages`,
           {
             signal: controller.signal,
           },
         );
 
         setMessages(chatMessages);
+        restoreComposerDraft(chatId, chatMessages, true);
+        restoreEditDraft(chatId, chatMessages);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           return;
@@ -1502,6 +1691,29 @@ function ChatScreen({
     };
   }, [openMessageMenuId]);
 
+  useEffect(() => {
+    if (activeChatId === null || draftRecipient !== null) {
+      return;
+    }
+
+    saveComposerDraft(
+      activeChatId,
+      message,
+      replyToMessage?.id ??
+        pendingReplyToMessageIdByChatRef.current[activeChatId] ??
+        null,
+    );
+  }, [activeChatId, draftRecipient, message, replyToMessage?.id]);
+
+  useEffect(() => {
+    if (activeChatId === null || editingMessageId === null) {
+      return;
+    }
+
+    saveActiveEditDraft(activeChatId, editingMessageId);
+    saveEditDraft(activeChatId, editingMessageId, editingMessageText);
+  }, [activeChatId, editingMessageId, editingMessageText]);
+
   const handleSend = async () => {
     const socket = socketRef.current;
     if (!message.trim()) {
@@ -1602,6 +1814,7 @@ function ChatScreen({
     setReplyToMessage(null);
     setOpenMessageMenuId(null);
     setMessageActionDialog(null);
+    clearComposerDraft(activeChatId);
 
     try {
       const responseMessage = await apiFetch<ChatMessage>(
@@ -1680,7 +1893,10 @@ function ChatScreen({
     setActiveChatId(chatId);
     setDraftRecipient(null);
     setMessages([]);
-    setReplyToMessage(null);
+    restoreComposerDraft(chatId, []);
+    setEditingMessageId(null);
+    setEditingMessageText("");
+    setEditingMessageSaving(false);
     setOpenMessageMenuId(null);
     setMessageActionDialog(null);
   };
@@ -1867,16 +2083,28 @@ function ChatScreen({
     setMessageActionDialog((current) =>
       current?.entry.id === messageId ? null : current,
     );
+    clearEditDraft(chatId, messageId);
+    if (readActiveEditDraft(chatId) === messageId) {
+      clearActiveEditDraft(chatId);
+    }
   };
 
   const startEditingMessage = (entry: ChatMessage) => {
     setEditingMessageId(entry.id);
-    setEditingMessageText(entry.content ?? "");
+    setEditingMessageText(
+      readEditDraft(entry.chat_id, entry.id) ?? entry.content ?? "",
+    );
+    saveActiveEditDraft(entry.chat_id, entry.id);
     setChatError(null);
     setOpenMessageMenuId(null);
   };
 
   const cancelEditingMessage = () => {
+    if (activeChatId !== null && editingMessageId !== null) {
+      clearEditDraft(activeChatId, editingMessageId);
+      clearActiveEditDraft(activeChatId);
+    }
+
     setEditingMessageId(null);
     setEditingMessageText("");
     setEditingMessageSaving(false);
@@ -1908,6 +2136,8 @@ function ChatScreen({
       );
 
       applyMessageUpdate(updatedMessage);
+      clearEditDraft(entry.chat_id, entry.id);
+      clearActiveEditDraft(entry.chat_id);
       cancelEditingMessage();
     } catch (error) {
       const message =
@@ -3010,6 +3240,9 @@ function ChatScreen({
     setMessages([]);
     setMessage("");
     setReplyToMessage(null);
+    setEditingMessageId(null);
+    setEditingMessageText("");
+    setEditingMessageSaving(false);
     setOpenMessageMenuId(null);
     setMessageActionDialog(null);
   };
