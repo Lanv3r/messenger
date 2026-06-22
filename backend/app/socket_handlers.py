@@ -7,7 +7,11 @@ from app.db import engine
 from app.dependencies import decode_access_token, get_cookie_from_environ
 from app.models import Chat, ChatParticipant, Message, User
 from app.services.chats import require_chat_permission
-from app.services.messages import to_message_public
+from app.services.messages import (
+    build_message_reply_preview,
+    get_reply_target,
+    to_message_public,
+)
 from app.socket import sio
 
 
@@ -119,10 +123,26 @@ async def message(sid, data):
     except (TypeError, ValueError):
         return {"ok": False, "error": "Invalid chat"}
 
+    raw_reply_to_message_id = data.get("reply_to_message_id")
+    try:
+        reply_to_message_id = (
+            int(raw_reply_to_message_id)
+            if raw_reply_to_message_id not in {None, ""}
+            else None
+        )
+    except (TypeError, ValueError):
+        return {"ok": False, "error": "Invalid reply target"}
+
     with Session(engine) as db:
         try:
             participant = require_chat_permission(
                 db, chat_id, sender_id, "send_messages"
+            )
+            reply_target = get_reply_target(
+                db,
+                chat_id,
+                sender_id,
+                reply_to_message_id,
             )
         except HTTPException as exc:
             return {"ok": False, "error": exc.detail}
@@ -139,7 +159,7 @@ async def message(sid, data):
             sender_id=sender_id,
             content=content,
             message_type=data.get("message_type", "text"),
-            reply_to_message_id=data.get("reply_to_message_id"),
+            reply_to_message_id=reply_target.id if reply_target else None,
         )
 
         db.add(message)
@@ -160,28 +180,40 @@ async def message(sid, data):
             )
         ).all()
 
-        public_message = to_message_public(
-            message,
-            sender_username=sender_username,
-            sender_avatar_url=sender_avatar_url,
-        ).model_dump(mode="json", by_alias=True)
+        public_messages_by_participant = {}
+        for participant_id in participant_ids:
+            public_messages_by_participant[participant_id] = to_message_public(
+                message,
+                sender_username=sender_username,
+                sender_avatar_url=sender_avatar_url,
+                reply_to=build_message_reply_preview(db, message, participant_id),
+            ).model_dump(mode="json", by_alias=True)
 
-    await sio.emit(
-        "message",
-        public_message,
-        room=str(chat_id),
-        skip_sid=sid,
-    )
+        public_message = public_messages_by_participant.get(sender_id)
+        if public_message is None:
+            return {"ok": False, "error": "Not a participant"}
 
-    chat_update = {
-        "chat_id": chat_id,
-        "last_message": public_message,
-    }
+    for participant_id, participant_message in public_messages_by_participant.items():
+        if participant_id == sender_id:
+            await sio.emit(
+                "message",
+                participant_message,
+                room=f"user:{participant_id}",
+                skip_sid=sid,
+            )
+        else:
+            await sio.emit(
+                "message",
+                participant_message,
+                room=f"user:{participant_id}",
+            )
 
-    for participant_id in participant_ids:
         await sio.emit(
             "chat_updated",
-            chat_update,
+            {
+                "chat_id": chat_id,
+                "last_message": participant_message,
+            },
             room=f"user:{participant_id}",
         )
 

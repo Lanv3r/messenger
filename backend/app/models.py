@@ -256,22 +256,6 @@ class Message(MessageBase, table=True):
     )
 
 
-class MessagePublic(MessageBase):
-    id: int
-    chat_id: int
-    sender_username: str | None = None
-    sender_avatar_url: str | None = None
-    created_at: datetime
-    updated_at: datetime | None = None
-    edited_at: datetime | None = None
-    deleted_at: datetime | None = None
-    # Shared/chat-level pin
-    pinned_at: datetime | None = None
-    pinned_by: int | None = None
-    # Current-user personal pin
-    is_pinned_for_me: bool = False
-
-
 class ChatListItem(SQLModel):
     id: int
     type: str
@@ -308,11 +292,7 @@ class DirectMessageCreate(SQLModel):
 
 class MessageCreate(SQLModel):
     content: str
-
-
-class DirectMessageResponse(SQLModel):
-    chat: ChatListItem
-    message: MessagePublic
+    reply_to_message_id: int | None = None
 
 
 class ChatReadRequest(SQLModel):
@@ -384,3 +364,36 @@ class MessageDeleteRequest(SQLModel):
 
 class MessageEditRequest(SQLModel):
     content: str = Field(min_length=1, max_length=4000)
+
+
+class MessageReplyPreview(SQLModel):
+    id: int
+    sender_id: int | None = None
+    sender_username: str | None = None
+    content: str | None = None
+    message_type: str
+
+
+class MessagePublic(MessageBase):
+    id: int
+    chat_id: int
+    sender_username: str | None = None
+    sender_avatar_url: str | None = None
+    created_at: datetime
+    updated_at: datetime | None = None
+    edited_at: datetime | None = None
+    deleted_at: datetime | None = None
+
+    # Shared/chat-level pin
+    pinned_at: datetime | None = None
+    pinned_by: int | None = None
+
+    # Current-user personal pin
+    is_pinned_for_me: bool = False
+
+    reply_to: MessageReplyPreview | None = None
+
+
+class DirectMessageResponse(SQLModel):
+    chat: ChatListItem
+    message: MessagePublic

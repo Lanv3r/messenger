@@ -1,6 +1,15 @@
+from app.models import (
+    Message,
+    MessagePublic,
+    MessageReplyPreview,
+    MessageUserState,
+    User,
+)
 from fastapi import HTTPException
+from sqlmodel import Session, col, exists, select
 
-from app.models import Message, MessagePublic, MessageUserState, User
+DELETED_MESSAGE_PREVIEW_CONTENT = "message deleted"
+DELETED_MESSAGE_PREVIEW_TYPE = "deleted"
 
 
 def to_message_public(
@@ -9,6 +18,7 @@ def to_message_public(
     sender_username: str | None = None,
     sender_avatar_url: str | None = None,
     message_user_state: MessageUserState | None = None,
+    reply_to: MessageReplyPreview | None = None,
 ) -> MessagePublic:
     if message.id is None or message.created_at is None:
         raise HTTPException(
@@ -34,4 +44,83 @@ def to_message_public(
         pinned_by=message.pinned_by,
         is_pinned_for_me=message_user_state is not None
         and message_user_state.pinned_at is not None,
+        reply_to=reply_to,
     )
+
+
+def build_message_reply_preview(
+    session: Session,
+    message: Message,
+    viewer_id: int | None = None,
+) -> MessageReplyPreview | None:
+    if message.reply_to_message_id is None:
+        return None
+
+    reply_target_statement = select(Message).where(
+        col(Message.id) == message.reply_to_message_id,
+        col(Message.chat_id) == message.chat_id,
+    )
+
+    reply_target = session.exec(reply_target_statement).first()
+    if reply_target is None or reply_target.id is None:
+        return MessageReplyPreview(
+            id=message.reply_to_message_id,
+            content=DELETED_MESSAGE_PREVIEW_CONTENT,
+            message_type=DELETED_MESSAGE_PREVIEW_TYPE,
+        )
+
+    message_user_state = (
+        session.get(MessageUserState, (reply_target.id, viewer_id))
+        if viewer_id is not None
+        else None
+    )
+    if reply_target.deleted_at is not None or (
+        message_user_state is not None and message_user_state.deleted_at is not None
+    ):
+        return MessageReplyPreview(
+            id=reply_target.id,
+            content=DELETED_MESSAGE_PREVIEW_CONTENT,
+            message_type=DELETED_MESSAGE_PREVIEW_TYPE,
+        )
+
+    sender = (
+        session.get(User, reply_target.sender_id)
+        if reply_target.sender_id is not None
+        else None
+    )
+
+    return MessageReplyPreview(
+        id=reply_target.id,
+        sender_id=reply_target.sender_id,
+        sender_username=sender.username if sender else None,
+        content=reply_target.content,
+        message_type=reply_target.message_type,
+    )
+
+
+def get_reply_target(
+    session: Session,
+    chat_id: int,
+    user_id: int,
+    reply_to_message_id: int | None,
+) -> Message | None:
+    if reply_to_message_id is None:
+        return None
+
+    reply_target = session.exec(
+        select(Message).where(
+            col(Message.id) == reply_to_message_id,
+            col(Message.chat_id) == chat_id,
+            col(Message.deleted_at).is_(None),
+            ~exists().where(
+                col(MessageUserState.message_id) == col(Message.id),
+                col(MessageUserState.user_id) == user_id,
+                col(MessageUserState.deleted_at).is_not(None),
+            ),
+        )
+    ).first()
+
+    if reply_target is None:
+        raise HTTPException(status_code=400, detail="Reply target not found")
+
+    return reply_target

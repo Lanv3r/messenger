@@ -19,7 +19,11 @@ from app.models import (
     User,
 )
 from app.services.chats import require_active_participant, require_chat_permission
-from app.services.messages import to_message_public
+from app.services.messages import (
+    build_message_reply_preview,
+    get_reply_target,
+    to_message_public,
+)
 from app.socket import sio
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
@@ -72,8 +76,14 @@ def get_chat_messages(
         message_user_state = session.get(
             MessageUserState, (message.id, current_user_id)
         )
+        reply_to = build_message_reply_preview(session, message, current_user_id)
         public_messages.append(
-            to_message_public(message, sender, message_user_state=message_user_state)
+            to_message_public(
+                message,
+                sender,
+                message_user_state=message_user_state,
+                reply_to=reply_to,
+            )
         )
 
     return public_messages
@@ -235,11 +245,19 @@ async def create_message(
             detail="Chat was not found",
         )
 
+    reply_target = get_reply_target(
+        session,
+        chat_id,
+        user_id,
+        payload.reply_to_message_id,
+    )
+
     message = Message(
         chat_id=chat_id,
         sender_id=user_id,
         content=content,
         message_type="text",
+        reply_to_message_id=reply_target.id if reply_target else None,
     )
 
     session.add(message)
@@ -259,12 +277,8 @@ async def create_message(
     session.refresh(message)
     session.refresh(chat)
 
-    public_message = to_message_public(message, current_user)
-
-    chat_update = {
-        "chat_id": chat.id,
-        "last_message": public_message.model_dump(mode="json", by_alias=True),
-    }
+    reply_to = build_message_reply_preview(session, message, user_id)
+    public_message = to_message_public(message, current_user, reply_to=reply_to)
 
     participant_ids = session.exec(
         select(ChatParticipant.user_id).where(
@@ -274,9 +288,17 @@ async def create_message(
     ).all()
 
     for participant_id in participant_ids:
+        participant_message = to_message_public(
+            message,
+            current_user,
+            reply_to=build_message_reply_preview(session, message, participant_id),
+        ).model_dump(mode="json", by_alias=True)
         await sio.emit(
             "chat_updated",
-            chat_update,
+            {
+                "chat_id": chat.id,
+                "last_message": participant_message,
+            },
             room=f"user:{participant_id}",
         )
 
@@ -322,8 +344,9 @@ def search_chat_messages(
 
     for message in messages:
         sender = session.get(User, message.sender_id)
+        reply_to = build_message_reply_preview(session, message, user_id)
 
-        public_messages.append(to_message_public(message, sender))
+        public_messages.append(to_message_public(message, sender, reply_to=reply_to))
 
     return public_messages
 
@@ -621,12 +644,30 @@ async def edit_message(
         message,
         current_user,
         message_user_state=message_user_state,
+        reply_to=build_message_reply_preview(session, message, user_id),
     )
 
-    await sio.emit(
-        "message_updated",
-        public_message.model_dump(mode="json"),
-        room=str(message.chat_id),
-    )
+    participant_ids = session.exec(
+        select(ChatParticipant.user_id).where(
+            ChatParticipant.chat_id == message.chat_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).all()
+
+    for participant_id in participant_ids:
+        participant_message_user_state = session.get(
+            MessageUserState, (message.id, participant_id)
+        )
+        participant_public_message = to_message_public(
+            message,
+            current_user,
+            message_user_state=participant_message_user_state,
+            reply_to=build_message_reply_preview(session, message, participant_id),
+        )
+        await sio.emit(
+            "message_updated",
+            participant_public_message.model_dump(mode="json"),
+            room=f"user:{participant_id}",
+        )
 
     return public_message

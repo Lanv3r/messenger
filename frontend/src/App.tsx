@@ -8,6 +8,14 @@ import Signup from "@/Signup";
 import { Button } from "@/components/ui/button";
 import "./App.css";
 
+type MessageReplyPreview = {
+  id: number;
+  sender_id: number | null;
+  sender_username: string | null;
+  content: string | null;
+  message_type: string;
+};
+
 type ChatMessage = {
   id: number;
   chat_id: number;
@@ -28,6 +36,7 @@ type ChatMessage = {
   isOwn?: boolean;
   delivery_status?: "sending" | "sent" | "read" | "failed";
   temp_id?: string;
+  reply_to?: MessageReplyPreview | null;
 };
 
 type AuthUser = {
@@ -499,6 +508,9 @@ function ChatScreen({
     null,
   );
   const [message, setMessage] = useState("");
+  const [replyToMessage, setReplyToMessage] = useState<ChatMessage | null>(
+    null,
+  );
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState("Connecting...");
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -686,6 +698,78 @@ function ChatScreen({
     }
   }
 
+  function getMessagePreviewText(entry: ChatMessage) {
+    if (entry.message_type === "deleted") {
+      return "message deleted";
+    }
+
+    const content = entry.content?.trim();
+    if (content) {
+      return content;
+    }
+
+    return entry.message_type === "text" ? "Message" : entry.message_type;
+  }
+
+  function getReplyPreviewText(reply: MessageReplyPreview) {
+    if (reply.message_type === "deleted") {
+      return "message deleted";
+    }
+
+    const content = reply.content?.trim();
+    if (content) {
+      return content;
+    }
+
+    return reply.message_type === "text" ? "Message" : reply.message_type;
+  }
+
+  function getReplySenderName(reply: MessageReplyPreview) {
+    if (reply.message_type === "deleted") {
+      return "Original message";
+    }
+
+    if (reply.sender_id === user.userId) {
+      return "You";
+    }
+
+    if (reply.sender_id === null) {
+      return "System";
+    }
+
+    return reply.sender_username ?? `User ${reply.sender_id}`;
+  }
+
+  function toReplyPreview(entry: ChatMessage): MessageReplyPreview {
+    return {
+      id: entry.id,
+      sender_id: entry.sender_id,
+      sender_username: entry.sender_username,
+      content: entry.content,
+      message_type: entry.message_type,
+    };
+  }
+
+  function markReplyPreviewDeleted(
+    entry: ChatMessage,
+    deletedMessageId: number,
+  ): ChatMessage {
+    if (entry.reply_to?.id !== deletedMessageId) {
+      return entry;
+    }
+
+    return {
+      ...entry,
+      reply_to: {
+        id: deletedMessageId,
+        sender_id: null,
+        sender_username: null,
+        content: "message deleted",
+        message_type: "deleted",
+      },
+    };
+  }
+
   function applyMessageUpdate(updatedMessage: ChatMessage) {
     const nextMessage = {
       ...updatedMessage,
@@ -701,7 +785,13 @@ function ChatScreen({
             delivery_status: entry.delivery_status,
             temp_id: entry.temp_id,
           }
-        : entry;
+        : entry.reply_to?.id === updatedMessage.id &&
+            entry.reply_to.message_type !== "deleted"
+          ? {
+              ...entry,
+              reply_to: toReplyPreview(updatedMessage),
+            }
+          : entry;
 
     setMessages((current) => current.map(updateMessage));
     setMessageSearchResults((current) => current.map(updateMessage));
@@ -916,24 +1006,7 @@ function ChatScreen({
     });
 
     socket.on("message_deleted", (data: MessageDeletedEvent) => {
-      setMessages((current) =>
-        current.filter(
-          (entry) =>
-            entry.id !== data.message_id || entry.chat_id !== data.chat_id,
-        ),
-      );
-      setMessageSearchResults((current) =>
-        current.filter(
-          (entry) =>
-            entry.id !== data.message_id || entry.chat_id !== data.chat_id,
-        ),
-      );
-      setActiveSearchResultId((current) =>
-        current === data.message_id ? null : current,
-      );
-      setEditingMessageId((current) =>
-        current === data.message_id ? null : current,
-      );
+      removeMessageLocally(data.message_id, data.chat_id);
       void refreshChats();
     });
 
@@ -1396,6 +1469,7 @@ function ChatScreen({
     }
 
     const outgoingMessage = message.trim();
+    const replyTarget = draftRecipient ? null : replyToMessage;
     const tempId = crypto.randomUUID();
     const optimisticMessage: ChatMessage = {
       id: Date.now(),
@@ -1405,7 +1479,7 @@ function ChatScreen({
       sender_avatar_url: user.avatarUrl,
       content: outgoingMessage,
       message_type: "text",
-      reply_to_message_id: null,
+      reply_to_message_id: replyTarget?.id ?? null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       edited_at: null,
@@ -1417,11 +1491,13 @@ function ChatScreen({
       isOwn: true,
       delivery_status: "sending",
       temp_id: tempId,
+      reply_to: replyTarget ? toReplyPreview(replyTarget) : null,
     };
 
     if (draftRecipient) {
       setMessages([optimisticMessage]);
       setMessage("");
+      setReplyToMessage(null);
 
       try {
         const result = await apiFetch<DirectMessageResponse>(
@@ -1481,6 +1557,7 @@ function ChatScreen({
       updateChatPreview(current, optimisticMessage),
     );
     setMessage("");
+    setReplyToMessage(null);
 
     try {
       const responseMessage = await apiFetch<ChatMessage>(
@@ -1489,6 +1566,7 @@ function ChatScreen({
           method: "POST",
           body: JSON.stringify({
             content: outgoingMessage,
+            reply_to_message_id: replyTarget?.id ?? null,
           }),
         },
       );
@@ -1558,6 +1636,7 @@ function ChatScreen({
     setActiveChatId(chatId);
     setDraftRecipient(null);
     setMessages([]);
+    setReplyToMessage(null);
   };
 
   const toggleChatPin = async (chat: Chat) => {
@@ -1714,20 +1793,27 @@ function ChatScreen({
 
   const removeMessageLocally = (messageId: number, chatId: number) => {
     setMessages((current) =>
-      current.filter(
-        (entry) => entry.id !== messageId || entry.chat_id !== chatId,
-      ),
+      current
+        .filter(
+          (entry) => entry.id !== messageId || entry.chat_id !== chatId,
+        )
+        .map((entry) => markReplyPreviewDeleted(entry, messageId)),
     );
     setMessageSearchResults((current) =>
-      current.filter(
-        (entry) => entry.id !== messageId || entry.chat_id !== chatId,
-      ),
+      current
+        .filter(
+          (entry) => entry.id !== messageId || entry.chat_id !== chatId,
+        )
+        .map((entry) => markReplyPreviewDeleted(entry, messageId)),
     );
     setActiveSearchResultId((current) =>
       current === messageId ? null : current,
     );
     setEditingMessageId((current) =>
       current === messageId ? null : current,
+    );
+    setReplyToMessage((current) =>
+      current?.id === messageId ? null : current,
     );
   };
 
@@ -2501,11 +2587,11 @@ function ChatScreen({
     }
   };
 
-  const revealMessageSearchResult = (entry: ChatMessage) => {
-    setActiveSearchResultId(entry.id);
+  const revealMessageById = (messageId: number) => {
+    setActiveSearchResultId(messageId);
 
     const target = messagesRef.current?.querySelector(
-      `[data-message-id="${entry.id}"]`,
+      `[data-message-id="${messageId}"]`,
     );
 
     if (target instanceof HTMLElement) {
@@ -2514,6 +2600,15 @@ function ChatScreen({
         messagesRef.current?.dispatchEvent(new Event("scroll"));
       });
     }
+  };
+
+  const revealMessageSearchResult = (entry: ChatMessage) => {
+    revealMessageById(entry.id);
+  };
+
+  const startReplyingToMessage = (entry: ChatMessage) => {
+    setReplyToMessage(entry);
+    setChatError(null);
   };
 
   const renderMessageContent = (entry: ChatMessage) => {
@@ -2525,6 +2620,35 @@ function ChatScreen({
     }
 
     return highlightSearchText(content, query);
+  };
+
+  const renderReplyPreview = (reply: MessageReplyPreview) => {
+    const isDeleted = reply.message_type === "deleted";
+
+    return (
+      <button
+        type="button"
+        className={[
+          "message-reply-preview",
+          isDeleted ? "deleted" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        disabled={isDeleted}
+        onClick={() => {
+          if (!isDeleted) {
+            revealMessageById(reply.id);
+          }
+        }}
+      >
+        <span className="message-reply-author">
+          {getReplySenderName(reply)}
+        </span>
+        <span className="message-reply-text">
+          {getReplyPreviewText(reply)}
+        </span>
+      </button>
+    );
   };
 
   const handleProfileUpdate = async (event: React.FormEvent) => {
@@ -2790,6 +2914,7 @@ function ChatScreen({
     setDraftRecipient(profile);
     setMessages([]);
     setMessage("");
+    setReplyToMessage(null);
   };
 
   const getSenderName = (entry: ChatMessage) => {
@@ -3811,6 +3936,7 @@ function ChatScreen({
                     />
                     <div className="message-copy">
                       <span className="sender">{getSenderName(entry)}</span>
+                      {entry.reply_to ? renderReplyPreview(entry.reply_to) : null}
                       {isEditingMessage ? (
                         <form
                           className="message-edit-form"
@@ -3871,6 +3997,12 @@ function ChatScreen({
                       ) : null}
                       {canUseMessageActions ? (
                         <span className="message-actions">
+                          <button
+                            type="button"
+                            onClick={() => startReplyingToMessage(entry)}
+                          >
+                            Reply
+                          </button>
                           {activeChat?.type === "group" ? (
                             <>
                               {canEditMessage && !isEditingMessage ? (
@@ -4027,6 +4159,28 @@ function ChatScreen({
         </ul>
 
         <div className="composer">
+          {replyToMessage ? (
+            <div className="composer-reply-preview">
+              <button
+                type="button"
+                className="composer-reply-main"
+                onClick={() => revealMessageById(replyToMessage.id)}
+              >
+                <span>
+                  Replying to <strong>{getSenderName(replyToMessage)}</strong>
+                </span>
+                <span>{getMessagePreviewText(replyToMessage)}</span>
+              </button>
+              <button
+                type="button"
+                className="composer-reply-cancel"
+                aria-label="Cancel reply"
+                onClick={() => setReplyToMessage(null)}
+              >
+                &times;
+              </button>
+            </div>
+          ) : null}
           <input
             id="message"
             type="text"
