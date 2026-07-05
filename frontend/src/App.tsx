@@ -554,6 +554,8 @@ function ChatScreen({
     useState<ChatMember | null>(null);
   const [chatInfoLoading, setChatInfoLoading] = useState(false);
   const [chatInfoError, setChatInfoError] = useState<string | null>(null);
+  const [chatInfoAddingMember, setChatInfoAddingMember] = useState(false);
+  const [chatInfoManaging, setChatInfoManaging] = useState(false);
   const [creatingGroup, setCreatingGroup] = useState(false);
   const [groupTitle, setGroupTitle] = useState("");
   const [groupDescription, setGroupDescription] = useState("");
@@ -1248,6 +1250,8 @@ function ChatScreen({
       setChatInfoMembers([]);
       setSelectedChatMember(null);
       setMemberRemovalCandidate(null);
+      setChatInfoAddingMember(false);
+      setChatInfoManaging(false);
       setChatInfoError(null);
       setChatError("You were removed from this group.");
     });
@@ -1437,6 +1441,8 @@ function ChatScreen({
     setMessageSearchHasSearched(false);
     setActiveSearchResultId(null);
     setChatInfoOpen(false);
+    setChatInfoAddingMember(false);
+    setChatInfoManaging(false);
     setChatInfoMembers([]);
     setSelectedChatMember(null);
     setChatInfoError(null);
@@ -2415,6 +2421,8 @@ function ChatScreen({
     setMemberRemovalError(null);
     setMemberRemovalMessage(null);
     setMemberRemovalCandidate(null);
+    setChatInfoAddingMember(false);
+    setChatInfoManaging(false);
     setSelectedChatMember(null);
 
     try {
@@ -2473,6 +2481,8 @@ function ChatScreen({
     if (chatInfoOpen) {
       setChatInfoOpen(false);
       setChatInfoError(null);
+      setChatInfoAddingMember(false);
+      setChatInfoManaging(false);
       return;
     }
 
@@ -3875,6 +3885,12 @@ function ChatScreen({
             className="chat-info-backdrop"
             role="presentation"
             onClick={() => {
+              if (chatInfoAddingMember || chatInfoManaging) {
+                setChatInfoAddingMember(false);
+                setChatInfoManaging(false);
+                return;
+              }
+
               setChatInfoOpen(false);
               setChatInfoError(null);
             }}
@@ -3887,22 +3903,61 @@ function ChatScreen({
             onClick={(event) => event.stopPropagation()}
           >
             <div className="chat-info-header">
-              <div>
-                <strong>{getChatTitle(activeChat)}</strong>
-                <span>
-                  {activeChat.member_count}{" "}
-                  {activeChat.member_count === 1 ? "member" : "members"}
-                </span>
-              </div>
               <button
                 type="button"
+                aria-label="Close group info"
                 onClick={() => {
                   setChatInfoOpen(false);
                   setChatInfoError(null);
+                  setChatInfoAddingMember(false);
+                  setChatInfoManaging(false);
                 }}
               >
-                Close
+                &times;
               </button>
+            </div>
+
+            <div className="chat-info-hero">
+              <img
+                src={
+                  activeChat.display_avatar_url ||
+                  activeChat.avatar_url ||
+                  "/favicon.svg"
+                }
+                alt=""
+                onError={(event) => {
+                  event.currentTarget.src = "/favicon.svg";
+                }}
+              />
+              <strong>{getChatTitle(activeChat)}</strong>
+              {activeChat.description ? (
+                <span>{activeChat.description}</span>
+              ) : null}
+            </div>
+
+            <div className="chat-info-actions">
+              {currentUserCanRemoveGroupMembers ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    setChatInfoManaging(true);
+                    setChatInfoAddingMember(false);
+                  }}
+                >
+                  Manage
+                </Button>
+              ) : null}
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                disabled
+                title="Leaving groups is not implemented yet."
+              >
+                Leave
+              </Button>
             </div>
 
             {chatInfoLoading ? (
@@ -3916,6 +3971,25 @@ function ChatScreen({
             !chatInfoError &&
             activeChat.type === "group" ? (
               <>
+                <div className="chat-members-heading">
+                  <strong>
+                    {activeChat.member_count}{" "}
+                    {activeChat.member_count === 1 ? "member" : "members"}
+                  </strong>
+                  <button
+                    type="button"
+                    aria-label="Add member"
+                    onClick={() => {
+                      setChatInfoAddingMember(true);
+                      setChatInfoManaging(false);
+                      setAddMemberError(null);
+                      setAddMemberMessage(null);
+                    }}
+                  >
+                    +
+                  </button>
+                </div>
+
                 <div className="chat-member-list">
                   {chatInfoMembers.map((member) => (
                     <div
@@ -3975,125 +4049,177 @@ function ChatScreen({
                   ))}
                 </div>
 
-                <div className="chat-members-panel">
-                  <div>
-                    <strong>Add member</strong>
-                    <span>Anyone in this group can add another user.</span>
-                  </div>
-                  <form onSubmit={handleAddMemberToActiveGroup}>
-                    <input
-                      type="search"
-                      value={addMemberQuery}
-                      placeholder="Add member by username"
-                      autoComplete="off"
-                      onChange={(event) => {
-                        setAddMemberQuery(event.target.value);
-                        setAddMemberError(null);
-                        setAddMemberMessage(null);
-                      }}
-                    />
-                    <Button type="submit" disabled={addMemberLoading}>
-                      {addMemberLoading ? "Adding..." : "Add member"}
-                    </Button>
-                  </form>
-                  {addMemberError ? (
-                    <p className="profile-error">{addMemberError}</p>
-                  ) : null}
-                  {addMemberMessage ? (
-                    <p className="profile-success">{addMemberMessage}</p>
-                  ) : null}
-                  {memberRemovalError && !selectedChatMember ? (
-                    <p className="profile-error">{memberRemovalError}</p>
-                  ) : null}
-                  {memberRemovalMessage && !selectedChatMember ? (
-                    <p className="profile-success">{memberRemovalMessage}</p>
-                  ) : null}
-                </div>
+                {memberRemovalError && !selectedChatMember ? (
+                  <p className="profile-error">{memberRemovalError}</p>
+                ) : memberRemovalMessage && !selectedChatMember ? (
+                  <p className="profile-success">{memberRemovalMessage}</p>
+                ) : null}
 
-                <div className="permissions-panel">
-                  <div className="permissions-panel-header">
-                    <div>
-                      <strong>Default member permissions</strong>
-                      <span>
-                        Applies to all members. Editing this requires the
-                        ban-users permission.
-                      </span>
-                    </div>
-                    {memberPermissionsLoading ? (
-                      <small>Loading...</small>
-                    ) : null}
-                  </div>
-
-                  {memberPermissionsDraft ? (
-                    <div className="permission-list">
-                      {MEMBER_BOOLEAN_PERMISSION_KEYS.map((key) => (
-                        <label className="permission-row" key={key}>
-                          <span>{PERMISSION_LABELS[key]}</span>
-                          <input
-                            type="checkbox"
-                            checked={memberPermissionsDraft[key] === true}
-                            disabled={!canAttemptManageGroup}
-                            onChange={(event) =>
-                              updateMemberBooleanPermission(
-                                key,
-                                event.target.checked,
-                              )
-                            }
-                          />
-                        </label>
-                      ))}
-                      {MEMBER_NUMERIC_PERMISSION_KEYS.map((key) => (
-                        <label className="permission-row" key={key}>
-                          <span>{PERMISSION_LABELS[key]}</span>
-                          <input
-                            type="number"
-                            min="0"
-                            step="1"
-                            value={Number(memberPermissionsDraft[key] ?? 0)}
-                            disabled={!canAttemptManageGroup}
-                            onChange={(event) =>
-                              updateMemberNumericPermission(
-                                key,
-                                Number(event.target.value),
-                              )
-                            }
-                          />
-                        </label>
-                      ))}
-                    </div>
-                  ) : memberPermissionsLoading ? null : (
-                    <p className="message-search-empty">
-                      Permission defaults are not loaded.
-                    </p>
-                  )}
-
-                  {memberPermissionsError ? (
-                    <p className="profile-error">{memberPermissionsError}</p>
-                  ) : null}
-                  {memberPermissionsMessage ? (
-                    <p className="profile-success">
-                      {memberPermissionsMessage}
-                    </p>
-                  ) : null}
-                  {canAttemptManageGroup ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={
-                        memberPermissionsSaving || !memberPermissionsDraft
-                      }
-                      onClick={() => {
-                        void saveMemberDefaultPermissions();
-                      }}
+                {chatInfoAddingMember ? (
+                  <div
+                    className="chat-info-nested-backdrop"
+                    role="presentation"
+                    onClick={() => setChatInfoAddingMember(false)}
+                  >
+                    <section
+                      className="chat-info-nested-panel chat-members-panel"
+                      role="dialog"
+                      aria-modal="true"
+                      aria-label="Add group member"
+                      onClick={(event) => event.stopPropagation()}
                     >
-                      {memberPermissionsSaving
-                        ? "Saving..."
-                        : "Save member defaults"}
-                    </Button>
-                  ) : (
-                    <p className="permissions-note">View only.</p>
-                  )}
-                </div>
+                      <div className="chat-info-nested-header">
+                        <div>
+                          <strong>Add member</strong>
+                          <span>
+                            Anyone in this group can add another user.
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          aria-label="Close add member"
+                          onClick={() => setChatInfoAddingMember(false)}
+                        >
+                          &times;
+                        </button>
+                      </div>
+                      <form onSubmit={handleAddMemberToActiveGroup}>
+                        <input
+                          type="search"
+                          value={addMemberQuery}
+                          placeholder="Add member by username"
+                          autoComplete="off"
+                          onChange={(event) => {
+                            setAddMemberQuery(event.target.value);
+                            setAddMemberError(null);
+                            setAddMemberMessage(null);
+                          }}
+                        />
+                        <Button type="submit" disabled={addMemberLoading}>
+                          {addMemberLoading ? "Adding..." : "Add member"}
+                        </Button>
+                      </form>
+                      {addMemberError ? (
+                        <p className="profile-error">{addMemberError}</p>
+                      ) : null}
+                      {addMemberMessage ? (
+                        <p className="profile-success">{addMemberMessage}</p>
+                      ) : null}
+                    </section>
+                  </div>
+                ) : null}
+
+                {chatInfoManaging && currentUserCanRemoveGroupMembers ? (
+                  <div
+                    className="chat-info-nested-backdrop"
+                    role="presentation"
+                    onClick={() => setChatInfoManaging(false)}
+                  >
+                    <section
+                      className="chat-info-nested-panel permissions-panel"
+                      role="dialog"
+                      aria-modal="true"
+                      aria-label="Manage group"
+                      onClick={(event) => event.stopPropagation()}
+                    >
+                      <div className="chat-info-nested-header">
+                        <div>
+                          <strong>Manage</strong>
+                          <span>
+                            Default member permissions for this group.
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          aria-label="Close manage"
+                          onClick={() => setChatInfoManaging(false)}
+                        >
+                          &times;
+                        </button>
+                      </div>
+                      <div className="permissions-panel-header">
+                        <div>
+                          <strong>Default member permissions</strong>
+                          <span>
+                            Applies to all members. Editing this requires the
+                            ban-users permission.
+                          </span>
+                        </div>
+                        {memberPermissionsLoading ? (
+                          <small>Loading...</small>
+                        ) : null}
+                      </div>
+
+                      {memberPermissionsDraft ? (
+                        <div className="permission-list">
+                          {MEMBER_BOOLEAN_PERMISSION_KEYS.map((key) => (
+                            <label className="permission-row" key={key}>
+                              <span>{PERMISSION_LABELS[key]}</span>
+                              <input
+                                type="checkbox"
+                                checked={memberPermissionsDraft[key] === true}
+                                disabled={!currentUserCanRemoveGroupMembers}
+                                onChange={(event) =>
+                                  updateMemberBooleanPermission(
+                                    key,
+                                    event.target.checked,
+                                  )
+                                }
+                              />
+                            </label>
+                          ))}
+                          {MEMBER_NUMERIC_PERMISSION_KEYS.map((key) => (
+                            <label className="permission-row" key={key}>
+                              <span>{PERMISSION_LABELS[key]}</span>
+                              <input
+                                type="number"
+                                min="0"
+                                step="1"
+                                value={Number(memberPermissionsDraft[key] ?? 0)}
+                                disabled={!currentUserCanRemoveGroupMembers}
+                                onChange={(event) =>
+                                  updateMemberNumericPermission(
+                                    key,
+                                    Number(event.target.value),
+                                  )
+                                }
+                              />
+                            </label>
+                          ))}
+                        </div>
+                      ) : memberPermissionsLoading ? null : (
+                        <p className="message-search-empty">
+                          Permission defaults are not loaded.
+                        </p>
+                      )}
+
+                      {memberPermissionsError ? (
+                        <p className="profile-error">
+                          {memberPermissionsError}
+                        </p>
+                      ) : null}
+                      {memberPermissionsMessage ? (
+                        <p className="profile-success">
+                          {memberPermissionsMessage}
+                        </p>
+                      ) : null}
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={
+                          memberPermissionsSaving || !memberPermissionsDraft
+                        }
+                        onClick={() => {
+                          void saveMemberDefaultPermissions();
+                        }}
+                      >
+                        {memberPermissionsSaving
+                          ? "Saving..."
+                          : "Save member defaults"}
+                      </Button>
+                    </section>
+                  </div>
+                ) : null}
               </>
             ) : null}
           </section>
