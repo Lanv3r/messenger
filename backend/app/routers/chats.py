@@ -1,10 +1,6 @@
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func
-from sqlmodel import col, select
-
 from app.constants import SAVED_MESSAGES_AVATAR_URL
 from app.db import SessionDep
 from app.dependencies import get_current_user
@@ -33,6 +29,9 @@ from app.services.chats import (
     require_chat_permission,
 )
 from app.socket import sio
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import func
+from sqlmodel import col, select
 
 router = APIRouter(tags=["chats"])
 
@@ -298,7 +297,9 @@ def get_direct_chat_by_user(
     )
 
     if last_read_message_id is not None:
-        unread_statement = unread_statement.where(col(Message.id) > last_read_message_id)
+        unread_statement = unread_statement.where(
+            col(Message.id) > last_read_message_id
+        )
 
     unread_count = session.exec(unread_statement).one()
 
@@ -324,7 +325,9 @@ def get_direct_chat_by_user(
         other_last_read_message_id=other_participant.last_read_message_id
         if other_participant
         else None,
-        other_last_read_at=other_participant.last_read_at if other_participant else None,
+        other_last_read_at=other_participant.last_read_at
+        if other_participant
+        else None,
         created_at=chat.created_at,
         updated_at=chat.updated_at,
         is_pinned=current_participant.is_pinned,
@@ -512,6 +515,7 @@ async def create_group_chat(
         description=chat.description,
         avatar_url=chat.avatar_url,
         display_title=payload.title,
+        display_avatar_url=chat.avatar_url or "/favicon.svg",
         member_ids=member_ids,
         member_count=len(member_ids),
         current_user_role="owner",
@@ -608,6 +612,7 @@ async def add_group_members(
         description=chat.description,
         avatar_url=chat.avatar_url,
         display_title=chat.title if chat.title is not None else "New group chat",
+        display_avatar_url=chat.avatar_url or "/favicon.svg",
         member_ids=all_member_ids,
         member_count=len(all_member_ids),
         current_user_role=roles_by_user_id[user_id],
@@ -827,4 +832,115 @@ def dismiss_admin(
 
     session.add(target_participant)
     session.commit()
+    return {"ok": True}
+
+
+@router.delete("/chats/{chat_id}/members/{user_id}")
+async def remove_user(
+    chat_id: int,
+    user_id: int,
+    session: SessionDep,
+    actor_user: Annotated[User, Depends(get_current_user)],
+):
+    if actor_user.id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    if actor_user.id == user_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Use the leave chat endpoint to leave a group",
+        )
+
+    actor_participant = require_chat_permission(
+        session, chat_id, actor_user.id, "ban_users"
+    )
+    target_participant = require_active_participant(session, chat_id, user_id)
+
+    chat = session.get(Chat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    if chat.type != "group":
+        raise HTTPException(
+            status_code=403,
+            detail="Users can only be removed from group chats",
+        )
+
+    if target_participant.role == "owner":
+        raise HTTPException(status_code=403, detail="Cannot remove owner")
+
+    actor_permissions = get_effective_permissions(actor_participant, session)
+    target_permissions = get_effective_permissions(target_participant, session)
+
+    if target_participant.role != "member":
+        assert_actor_strictly_outranks_target(
+            actor_participant, target_participant, actor_permissions, target_permissions
+        )
+
+    target_participant.left_at = datetime.now(timezone.utc)
+    target_participant.role = "member"
+    target_participant.admin_permissions = {}
+    target_participant.promoted_by = None
+    target_participant.promoted_at = None
+
+    session.add(target_participant)
+    session.commit()
+
+    remaining_participants = session.exec(
+        select(ChatParticipant).where(
+            ChatParticipant.chat_id == chat_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).all()
+    roles_by_user_id = {
+        participant.user_id: participant.role for participant in remaining_participants
+    }
+    remaining_member_ids = list(roles_by_user_id.keys())
+
+    chat_list_item = ChatListItem(
+        id=chat_id,
+        type=chat.type,
+        title=chat.title,
+        description=chat.description,
+        avatar_url=chat.avatar_url,
+        display_title=chat.title if chat.title is not None else "New group chat",
+        display_avatar_url=chat.avatar_url or "/favicon.svg",
+        member_ids=remaining_member_ids,
+        member_count=len(remaining_member_ids),
+        current_user_role=actor_participant.role,
+        last_message_id=None,
+        last_message_text=None,
+        last_message_sender_id=None,
+        last_message_created_at=None,
+        created_at=chat.created_at,
+        updated_at=chat.updated_at,
+    )
+
+    await sio.emit(
+        "removed_from_chat",
+        {
+            "chat_id": chat_id,
+            "removed_by": actor_user.id,
+        },
+        room=f"user:{user_id}",
+    )
+
+    for member_id in remaining_member_ids:
+        member_chat_list_item = chat_list_item.model_copy(
+            update={
+                "current_user_role": roles_by_user_id[member_id],
+            }
+        )
+        await sio.emit(
+            "chat_members_updated",
+            {
+                "chat": member_chat_list_item.model_dump(mode="json"),
+                "added_member_ids": [],
+                "added_by": actor_user.id,
+                "removed_member_ids": [user_id],
+                "removed_by": actor_user.id,
+            },
+            room=f"user:{member_id}",
+        )
+
     return {"ok": True}

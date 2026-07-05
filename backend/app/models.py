@@ -136,10 +136,12 @@ class ChatParticipantBase(SQLModel):
 class ChatParticipant(ChatParticipantBase, table=True):
     __tablename__: ClassVar[str] = "chat_participants"
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "uq_chat_participants_active_chat_user",
             "chat_id",
             "user_id",
-            name="uq_chat_participants_chat_id_user_id",
+            unique=True,
+            postgresql_where=text("left_at IS NULL"),
         ),
         Index(
             "ix_chat_participants_active_user_chat",

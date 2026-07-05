@@ -138,7 +138,14 @@ type ChatUpdatedEvent = {
 type ChatMembersUpdatedEvent = {
   chat: Chat;
   added_member_ids: number[];
-  added_by: number;
+  added_by: number | null;
+  removed_member_ids?: number[];
+  removed_by?: number | null;
+};
+
+type RemovedFromChatEvent = {
+  chat_id: number;
+  removed_by: number | null;
 };
 
 type MessagePinUpdatedEvent = {
@@ -588,6 +595,14 @@ function ChatScreen({
     useState<string | null>(null);
   const [adminPermissionsMessage, setAdminPermissionsMessage] =
     useState<string | null>(null);
+  const [memberRemovalUserId, setMemberRemovalUserId] =
+    useState<number | null>(null);
+  const [memberRemovalError, setMemberRemovalError] =
+    useState<string | null>(null);
+  const [memberRemovalMessage, setMemberRemovalMessage] =
+    useState<string | null>(null);
+  const [memberRemovalCandidate, setMemberRemovalCandidate] =
+    useState<ChatMember | null>(null);
   const [messageSearchQuery, setMessageSearchQuery] = useState("");
   const [messageSearchResults, setMessageSearchResults] = useState<
     ChatMessage[]
@@ -1185,6 +1200,56 @@ function ChatScreen({
 
         return upsertChat(current, applyLocalReadState(updatedChat));
       });
+
+      if (
+        data.chat.id === activeChatIdRef.current &&
+        data.removed_member_ids?.length
+      ) {
+        setChatInfoMembers((current) =>
+          current.filter(
+            (member) => !data.removed_member_ids?.includes(member.user_id),
+          ),
+        );
+        setSelectedChatMember((current) =>
+          current && data.removed_member_ids?.includes(current.user_id)
+            ? null
+            : current,
+        );
+        setMemberRemovalCandidate((current) =>
+          current && data.removed_member_ids?.includes(current.user_id)
+            ? null
+            : current,
+        );
+      }
+    });
+
+    socket.on("removed_from_chat", (data: RemovedFromChatEvent) => {
+      setChats((current) =>
+        current.filter((chat) => chat.id !== data.chat_id),
+      );
+
+      delete lastReadMessageIdByChatRef.current[data.chat_id];
+      delete unreadCountOverrideByChatRef.current[data.chat_id];
+      delete readCoverageByChatRef.current[data.chat_id];
+
+      if (activeChatIdRef.current !== data.chat_id) {
+        return;
+      }
+
+      socket.emit("leave_room", String(data.chat_id));
+      activeChatIdRef.current = null;
+      window.sessionStorage.removeItem(getChatSessionStorageKey("activeChatId"));
+      setActiveChatId(null);
+      setDraftRecipient(null);
+      setMessages([]);
+      setMessage("");
+      setReplyToMessage(null);
+      setChatInfoOpen(false);
+      setChatInfoMembers([]);
+      setSelectedChatMember(null);
+      setMemberRemovalCandidate(null);
+      setChatInfoError(null);
+      setChatError("You were removed from this group.");
     });
 
     socket.on("message_pin_updated", (data: MessagePinUpdatedEvent) => {
@@ -2347,6 +2412,9 @@ function ChatScreen({
     setChatInfoOpen(showPanel);
     setChatInfoLoading(true);
     setChatInfoError(null);
+    setMemberRemovalError(null);
+    setMemberRemovalMessage(null);
+    setMemberRemovalCandidate(null);
     setSelectedChatMember(null);
 
     try {
@@ -2591,6 +2659,8 @@ function ChatScreen({
     setSelectedChatMember(member);
     setAdminPermissionsError(null);
     setAdminPermissionsMessage(null);
+    setMemberRemovalError(null);
+    setMemberRemovalMessage(null);
 
     if (activeChat?.type === "group" && member.role === "admin") {
       void loadAdminPermissions(activeChat.id, member.user_id);
@@ -2867,6 +2937,81 @@ function ChatScreen({
       setAdminPermissionsError(message);
     } finally {
       setAdminPermissionsSavingUserId(null);
+    }
+  };
+
+  const removeSelectedChatMember = async (member = memberRemovalCandidate) => {
+    if (
+      !activeChat ||
+      activeChat.type !== "group" ||
+      !member ||
+      member.user_id === user.userId ||
+      member.role === "owner"
+    ) {
+      return;
+    }
+
+    const removedMember = member;
+
+    setMemberRemovalUserId(removedMember.user_id);
+    setMemberRemovalError(null);
+    setMemberRemovalMessage(null);
+
+    try {
+      await apiFetch<{ ok: boolean }>(
+        `/chats/${activeChat.id}/members/${removedMember.user_id}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      setChatInfoMembers((current) =>
+        current.filter((member) => member.user_id !== removedMember.user_id),
+      );
+      setSelectedChatMember(null);
+      setAdminPermissionsByUserId((current) => {
+        const next = { ...current };
+        delete next[removedMember.user_id];
+        return next;
+      });
+      setAdminPermissionsDraftByUserId((current) => {
+        const next = { ...current };
+        delete next[removedMember.user_id];
+        return next;
+      });
+      setChats((current) =>
+        current.map((chat) => {
+          if (chat.id !== activeChat.id) {
+            return chat;
+          }
+
+          const memberIds = chat.member_ids.filter(
+            (memberId) => memberId !== removedMember.user_id,
+          );
+
+          return {
+            ...chat,
+            member_ids: memberIds,
+            member_count: memberIds.length,
+          };
+        }),
+      );
+      setMemberRemovalMessage(
+        `${getChatMemberDisplayName(removedMember)} removed from the group.`,
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to remove member.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setMemberRemovalError(message);
+    } finally {
+      setMemberRemovalUserId(null);
+      setMemberRemovalCandidate(null);
     }
   };
 
@@ -3342,6 +3487,10 @@ function ChatScreen({
     activeChat?.type === "group" &&
     (activeChat.current_user_role === "owner" ||
       activeChat.current_user_role === "admin");
+  const currentUserCanRemoveGroupMembers =
+    activeChat?.type === "group" &&
+    (activeChat.current_user_role === "owner" ||
+      currentUserAdminPermissions?.ban_users === true);
   const selectedAdminPermissions = selectedChatMember
     ? (adminPermissionsDraftByUserId[selectedChatMember.user_id] ??
       adminPermissionsByUserId[selectedChatMember.user_id] ??
@@ -3357,9 +3506,17 @@ function ChatScreen({
     canAttemptManageGroup &&
     selectedChatMember?.role === "member" &&
     selectedChatMember.user_id !== user.userId;
+  const canRemoveSelectedMember =
+    currentUserCanRemoveGroupMembers &&
+    selectedChatMember !== null &&
+    selectedChatMember.user_id !== user.userId &&
+    selectedChatMember.role !== "owner";
   const selectedMemberPermissionIsSaving =
     selectedChatMember !== null &&
     adminPermissionsSavingUserId === selectedChatMember.user_id;
+  const selectedMemberRemovalIsSaving =
+    selectedChatMember !== null &&
+    memberRemovalUserId === selectedChatMember.user_id;
 
   const adminPermissionIsForcedByMemberDefault = (key: string) => {
     return (
@@ -3761,28 +3918,60 @@ function ChatScreen({
               <>
                 <div className="chat-member-list">
                   {chatInfoMembers.map((member) => (
-                    <button
-                      type="button"
-                      className="chat-member-row"
+                    <div
+                      className={[
+                        "chat-member-row",
+                        currentUserCanRemoveGroupMembers &&
+                        member.user_id !== user.userId &&
+                        member.role !== "owner"
+                          ? "can-remove"
+                          : "",
+                      ]
+                        .filter(Boolean)
+                        .join(" ")}
                       key={member.user_id}
-                      onClick={() => openChatMemberProfile(member)}
                     >
-                      <img
-                        src={member.avatar_url}
-                        alt=""
-                        onError={(event) => {
-                          event.currentTarget.src = "/favicon.svg";
-                        }}
-                      />
-                      <div>
-                        <strong>
-                          {getChatMemberDisplayName(member)}
-                          {member.user_id === user.userId ? " (You)" : ""}
-                        </strong>
-                        <span>@{member.username}</span>
+                      <button
+                        type="button"
+                        className="chat-member-main"
+                        onClick={() => openChatMemberProfile(member)}
+                      >
+                        <img
+                          src={member.avatar_url}
+                          alt=""
+                          onError={(event) => {
+                            event.currentTarget.src = "/favicon.svg";
+                          }}
+                        />
+                        <div>
+                          <strong>
+                            {getChatMemberDisplayName(member)}
+                            {member.user_id === user.userId ? " (You)" : ""}
+                          </strong>
+                          <span>@{member.username}</span>
+                        </div>
+                      </button>
+                      <div className="chat-member-side">
+                        {currentUserCanRemoveGroupMembers &&
+                        member.user_id !== user.userId &&
+                        member.role !== "owner" ? (
+                          <button
+                            type="button"
+                            disabled={memberRemovalUserId === member.user_id}
+                            onClick={() => {
+                              setMemberRemovalError(null);
+                              setMemberRemovalMessage(null);
+                              setMemberRemovalCandidate(member);
+                            }}
+                          >
+                            {memberRemovalUserId === member.user_id
+                              ? "Removing..."
+                              : "Remove"}
+                          </button>
+                        ) : null}
+                        <small>{member.role}</small>
                       </div>
-                      <small>{member.role}</small>
-                    </button>
+                    </div>
                   ))}
                 </div>
 
@@ -3812,6 +4001,12 @@ function ChatScreen({
                   ) : null}
                   {addMemberMessage ? (
                     <p className="profile-success">{addMemberMessage}</p>
+                  ) : null}
+                  {memberRemovalError && !selectedChatMember ? (
+                    <p className="profile-error">{memberRemovalError}</p>
+                  ) : null}
+                  {memberRemovalMessage && !selectedChatMember ? (
+                    <p className="profile-success">{memberRemovalMessage}</p>
                   ) : null}
                 </div>
 
@@ -4072,10 +4267,91 @@ function ChatScreen({
                         )}
                       </div>
                     ) : null}
+
+                    {memberRemovalError ? (
+                      <p className="profile-error">{memberRemovalError}</p>
+                    ) : null}
+                    {memberRemovalMessage ? (
+                      <p className="profile-success">
+                        {memberRemovalMessage}
+                      </p>
+                    ) : null}
+                    {canRemoveSelectedMember ? (
+                      <div className="member-danger-actions">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={selectedMemberRemovalIsSaving}
+                          onClick={() => {
+                            setMemberRemovalCandidate(selectedChatMember);
+                          }}
+                        >
+                          {selectedMemberRemovalIsSaving
+                            ? "Removing..."
+                            : "Remove from group"}
+                        </Button>
+                      </div>
+                    ) : selectedChatMember.user_id !== user.userId &&
+                      selectedChatMember.role !== "owner" ? (
+                      <p className="permissions-note">
+                        You need the ban-users permission to remove members.
+                      </p>
+                    ) : null}
                   </section>
                 ) : null}
               </div>
             </article>
+          </div>
+        ) : null}
+
+        {memberRemovalCandidate ? (
+          <div
+            className="message-action-backdrop"
+            role="presentation"
+            onClick={() => setMemberRemovalCandidate(null)}
+          >
+            <section
+              className="message-action-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Remove group member"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="message-action-dialog-copy">
+                <strong>
+                  Are you sure you want to remove{" "}
+                  {getChatMemberDisplayName(memberRemovalCandidate)}?
+                </strong>
+                <p>
+                  They will lose access to this group until someone adds them
+                  again.
+                </p>
+              </div>
+
+              <div className="message-action-dialog-actions">
+                <button
+                  type="button"
+                  onClick={() => setMemberRemovalCandidate(null)}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="danger"
+                  disabled={
+                    memberRemovalUserId === memberRemovalCandidate.user_id
+                  }
+                  onClick={() => {
+                    void removeSelectedChatMember(memberRemovalCandidate);
+                  }}
+                >
+                  {memberRemovalUserId === memberRemovalCandidate.user_id
+                    ? "Removing..."
+                    : "Remove"}
+                </button>
+              </div>
+            </section>
           </div>
         ) : null}
 
