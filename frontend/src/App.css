@@ -1569,19 +1569,17 @@
 #messages li {
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr);
-  align-items: start;
+  align-items: end;
   gap: 10px;
   max-width: 80%;
-  padding: 14px 16px;
-  border-radius: 18px;
+  padding: 0;
   text-align: left;
   color: #1f2937;
-  background: #fff5ef;
+  background: transparent;
 }
 
 #messages li.you {
   margin-left: auto;
-  background: #f46f54;
   color: #fff;
 }
 
@@ -1615,6 +1613,7 @@
 #messages li.empty-state {
   grid-template-columns: 1fr;
   max-width: 100%;
+  padding: 18px;
   place-items: center;
   text-align: center;
   color: #6b7280;
@@ -1634,17 +1633,32 @@
 }
 
 .message-avatar {
+  align-self: end;
   width: 38px;
   height: 38px;
+  margin-bottom: 3px;
+  border: 2px solid rgba(255, 255, 255, 0.86);
   border-radius: 999px;
   object-fit: cover;
   background: rgba(133, 144, 167, 0.16);
+  box-shadow: 0 10px 22px rgba(106, 58, 45, 0.12);
 }
 
 .message-copy {
   display: grid;
   min-width: 0;
   gap: 5px;
+  padding: 13px 16px;
+  border: 1px solid rgba(163, 88, 66, 0.1);
+  border-radius: 18px;
+  background: #fff5ef;
+  box-shadow: 0 14px 34px rgba(106, 58, 45, 0.08);
+}
+
+#messages li.you .message-copy {
+  border-color: rgba(255, 255, 255, 0.16);
+  background: linear-gradient(135deg, #f46f54, #d64c2f);
+  box-shadow: 0 16px 38px rgba(214, 76, 47, 0.18);
 }
 
 .message-pin-state,
@@ -1865,10 +1879,22 @@
   opacity: 0.64;
 }
 
-.sender {
+.voice-message {
+  display: grid;
+  min-width: min(280px, 100%);
+  gap: 7px;
+}
+
+.voice-message-label,
+.voice-message-missing {
   font-size: 12px;
-  font-weight: 700;
-  opacity: 0.72;
+  font-weight: 800;
+  opacity: 0.76;
+}
+
+.voice-message audio {
+  width: min(320px, 100%);
+  height: 36px;
 }
 
 .message-reply-preview {
@@ -1930,12 +1956,16 @@
 
 .composer {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 12px;
 }
 
-.composer-reply-preview {
+.composer-reply-preview,
+.voice-recording-panel {
   grid-column: 1 / -1;
+}
+
+.composer-reply-preview {
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: stretch;
@@ -1994,6 +2024,50 @@
 
 .composer .composer-reply-cancel:hover {
   background: rgba(244, 111, 84, 0.2);
+}
+
+.voice-recording-panel {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgba(163, 88, 66, 0.14);
+  border-radius: 16px;
+  color: #6f3a2b;
+  background: rgba(244, 111, 84, 0.08);
+}
+
+.voice-recording-panel span {
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.composer .voice-recording-panel button {
+  min-width: auto;
+  min-height: 36px;
+  padding: 0 12px;
+  border-radius: 12px;
+  font-size: 12px;
+}
+
+.composer .voice-recording-panel .voice-cancel-button {
+  color: #9a4f36;
+  background: rgba(244, 111, 84, 0.14);
+}
+
+.composer .voice-record-button {
+  width: 52px;
+  min-width: 52px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+}
+
+.composer .voice-record-button svg {
+  width: 18px;
+  height: 18px;
+  stroke-width: 2.4;
 }
 
 .composer input {
@@ -2097,6 +2171,10 @@
   }
 
   .composer {
+    grid-template-columns: minmax(0, 1fr) auto auto;
+  }
+
+  .voice-recording-panel {
     grid-template-columns: 1fr;
   }
 
@@ -2106,6 +2184,6 @@
   }
 
   .composer button {
-    width: 100%;
+    width: auto;
   }
 }

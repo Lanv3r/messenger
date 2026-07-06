@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Check, CheckCheck, ClockArrowUp, Pin } from "lucide-react";
+import { Check, CheckCheck, ClockArrowUp, Mic, Pin } from "lucide-react";
 import { io, Socket } from "socket.io-client";
 
 import { API_URL, apiFetch } from "@/lib/api";
@@ -338,6 +338,19 @@ function sortChats(chats: Chat[]) {
   });
 }
 
+function getChatMessagePreviewText(message: Pick<ChatMessage, "content" | "message_type">) {
+  const content = message.content?.trim();
+  if (content) {
+    return content;
+  }
+
+  if (message.message_type === "voice") {
+    return "Voice message";
+  }
+
+  return message.message_type === "text" ? null : message.message_type;
+}
+
 function upsertChat(chats: Chat[], chat: Chat) {
   const existingIndex = chats.findIndex((item) => item.id === chat.id);
 
@@ -383,7 +396,7 @@ function applyLastMessagePreview(
   return {
     ...chat,
     last_message_id: message.id,
-    last_message_text: message.content,
+    last_message_text: getChatMessagePreviewText(message),
     last_message_sender_id: message.sender_id,
     last_message_created_at: message.created_at,
     updated_at: message.updated_at ?? chat.updated_at,
@@ -566,6 +579,17 @@ function ChatScreen({
   const [replyToMessage, setReplyToMessage] = useState<ChatMessage | null>(
     null,
   );
+  const [voiceRecorder, setVoiceRecorder] = useState<MediaRecorder | null>(
+    null,
+  );
+  const [voiceRecordingStartedAt, setVoiceRecordingStartedAt] = useState<
+    number | null
+  >(null);
+  const [voiceRecordingTickMs, setVoiceRecordingTickMs] = useState(0);
+  const [voiceSending, setVoiceSending] = useState(false);
+  const voiceChunksRef = useRef<Blob[]>([]);
+  const voiceRecorderRef = useRef<MediaRecorder | null>(null);
+  const voiceRecordingTimerRef = useRef<number | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState("Connecting...");
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -700,6 +724,10 @@ function ChatScreen({
   const activeChat = chats.find(
     (chat) => chat.id === activeChatId,
   );
+  const voiceRecordingElapsedMs =
+    voiceRecordingStartedAt === null
+      ? 0
+      : Math.max(0, voiceRecordingTickMs - voiceRecordingStartedAt);
 
   function getChatSessionStorageKey(key: string) {
     return `messenger:${user.userId}:${key}`;
@@ -973,6 +1001,10 @@ function ChatScreen({
       return content;
     }
 
+    if (entry.message_type === "voice") {
+      return "Voice message";
+    }
+
     return entry.message_type === "text" ? "Message" : entry.message_type;
   }
 
@@ -984,6 +1016,10 @@ function ChatScreen({
     const content = reply.content?.trim();
     if (content) {
       return content;
+    }
+
+    if (reply.message_type === "voice") {
+      return "Voice message";
     }
 
     return reply.message_type === "text" ? "Message" : reply.message_type;
@@ -1013,6 +1049,28 @@ function ChatScreen({
       content: entry.content,
       message_type: entry.message_type,
     };
+  }
+
+  function getVoiceAudioUrl(entry: ChatMessage) {
+    const audioUrl = entry.metadata?.audio_url;
+
+    if (typeof audioUrl !== "string" || !audioUrl) {
+      return null;
+    }
+
+    if (audioUrl.startsWith("blob:") || audioUrl.startsWith("http")) {
+      return audioUrl;
+    }
+
+    return `${API_URL}${audioUrl}`;
+  }
+
+  function formatVoiceDuration(durationMs: number) {
+    const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   }
 
   function markReplyPreviewDeleted(
@@ -1837,6 +1895,241 @@ function ChatScreen({
     saveActiveEditDraft(activeChatId, editingMessageId);
     saveEditDraft(activeChatId, editingMessageId, editingMessageText);
   }, [activeChatId, editingMessageId, editingMessageText]);
+
+  useEffect(() => {
+    voiceRecorderRef.current = voiceRecorder;
+  }, [voiceRecorder]);
+
+  useEffect(() => {
+    return () => {
+      const recorder = voiceRecorderRef.current;
+
+      if (voiceRecordingTimerRef.current !== null) {
+        window.clearInterval(voiceRecordingTimerRef.current);
+      }
+      if (recorder?.state === "recording") {
+        recorder.stop();
+      }
+      recorder?.stream.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
+
+  const getSupportedVoiceMimeType = () => {
+    if (typeof MediaRecorder === "undefined") {
+      return "";
+    }
+
+    const candidates = [
+      "audio/webm;codecs=opus",
+      "audio/webm",
+      "audio/mp4",
+      "audio/ogg;codecs=opus",
+    ];
+
+    return candidates.find((type) => MediaRecorder.isTypeSupported(type)) ?? "";
+  };
+
+  const startVoiceRecording = async () => {
+    if (draftRecipient) {
+      setChatError("Send a text message first before using voice messages.");
+      return;
+    }
+
+    if (activeChatId === null) {
+      setChatError("Select a chat before recording a voice message.");
+      return;
+    }
+
+    if (!navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
+      setChatError("Voice recording is not supported in this browser.");
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mimeType = getSupportedVoiceMimeType();
+      const recorder = new MediaRecorder(
+        stream,
+        mimeType ? { mimeType } : undefined,
+      );
+      const startedAt = Date.now();
+
+      voiceChunksRef.current = [];
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          voiceChunksRef.current.push(event.data);
+        }
+      };
+      recorder.onerror = () => {
+        setChatError("Voice recording failed.");
+      };
+      recorder.start();
+
+      setVoiceRecordingStartedAt(startedAt);
+      setVoiceRecordingTickMs(startedAt);
+      voiceRecorderRef.current = recorder;
+      setVoiceRecorder(recorder);
+      if (voiceRecordingTimerRef.current !== null) {
+        window.clearInterval(voiceRecordingTimerRef.current);
+      }
+      voiceRecordingTimerRef.current = window.setInterval(() => {
+        setVoiceRecordingTickMs(Date.now());
+      }, 250);
+      setChatError(null);
+    } catch (error) {
+      const message =
+        error instanceof DOMException && error.name === "NotAllowedError"
+          ? "Microphone access was denied."
+          : "Unable to start voice recording.";
+      setChatError(message);
+    }
+  };
+
+  const stopVoiceRecording = async (send: boolean) => {
+    const recorder = voiceRecorder;
+
+    if (!recorder) {
+      return;
+    }
+
+    const durationMs = voiceRecordingStartedAt
+      ? Date.now() - voiceRecordingStartedAt
+      : 0;
+
+    setVoiceRecorder(null);
+    voiceRecorderRef.current = null;
+    setVoiceRecordingStartedAt(null);
+    setVoiceRecordingTickMs(0);
+    if (voiceRecordingTimerRef.current !== null) {
+      window.clearInterval(voiceRecordingTimerRef.current);
+      voiceRecordingTimerRef.current = null;
+    }
+
+    const blob = await new Promise<Blob>((resolve) => {
+      recorder.onstop = () => {
+        recorder.stream.getTracks().forEach((track) => track.stop());
+        resolve(
+          new Blob(voiceChunksRef.current, {
+            type:
+              recorder.mimeType ||
+              voiceChunksRef.current[0]?.type ||
+              "audio/webm",
+          }),
+        );
+      };
+
+      if (recorder.state === "recording") {
+        recorder.stop();
+      } else {
+        recorder.stream.getTracks().forEach((track) => track.stop());
+        resolve(new Blob([], { type: recorder.mimeType || "audio/webm" }));
+      }
+    });
+
+    if (!send) {
+      voiceChunksRef.current = [];
+      return;
+    }
+
+    await sendVoiceMessage(blob, durationMs);
+    voiceChunksRef.current = [];
+  };
+
+  const sendVoiceMessage = async (blob: Blob, durationMs: number) => {
+    if (activeChatId === null || blob.size === 0) {
+      return;
+    }
+
+    const replyTarget = replyToMessage;
+    const tempId = crypto.randomUUID();
+    const objectUrl = URL.createObjectURL(blob);
+    const optimisticMessage: ChatMessage = {
+      id: Date.now(),
+      chat_id: activeChatId,
+      sender_id: user.userId,
+      sender_username: user.username,
+      sender_avatar_url: user.avatarUrl,
+      content: null,
+      message_type: "voice",
+      reply_to_message_id: replyTarget?.id ?? null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      edited_at: null,
+      deleted_at: null,
+      pinned_at: null,
+      pinned_by: null,
+      is_pinned_for_me: false,
+      metadata: {
+        audio_url: objectUrl,
+        duration_ms: Math.max(1, Math.round(durationMs)),
+        mime_type: blob.type,
+        size_bytes: blob.size,
+      },
+      isOwn: true,
+      delivery_status: "sending",
+      temp_id: tempId,
+      reply_to: replyTarget ? toReplyPreview(replyTarget) : null,
+    };
+
+    setVoiceSending(true);
+    setMessages((current) => [...current, optimisticMessage]);
+    setChats((current) => updateChatPreview(current, optimisticMessage));
+    setReplyToMessage(null);
+    setOpenMessageMenuId(null);
+    setMessageActionDialog(null);
+    clearComposerDraft(activeChatId);
+
+    const formData = new FormData();
+    formData.append("file", blob, `voice-${tempId}.webm`);
+    formData.append("duration_ms", String(Math.max(1, Math.round(durationMs))));
+    if (replyTarget) {
+      formData.append("reply_to_message_id", String(replyTarget.id));
+    }
+
+    try {
+      const responseMessage = await apiFetch<ChatMessage>(
+        `/chats/${activeChatId}/messages/voice`,
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
+      const confirmedMessage: ChatMessage = {
+        ...responseMessage,
+        isOwn: true,
+        delivery_status: activeChat?.type === "self" ? "read" : "sent",
+      };
+
+      setMessages((current) =>
+        replaceTemporaryMessage(current, tempId, confirmedMessage),
+      );
+      setChats((current) => updateChatPreview(current, confirmedMessage));
+      markChatReadThrough(activeChatId, confirmedMessage.id, {
+        resetUnread: true,
+      });
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      setMessages((current) =>
+        current.map((entry) =>
+          entry.temp_id === tempId
+            ? { ...entry, delivery_status: "failed" }
+            : entry,
+        ),
+      );
+
+      const errorMessage =
+        error instanceof Error ? error.message : "Unable to send voice message.";
+
+      if (errorMessage === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setChatError(errorMessage);
+    } finally {
+      setVoiceSending(false);
+    }
+  };
 
   const handleSend = async () => {
     const socket = socketRef.current;
@@ -3293,6 +3586,32 @@ function ChatScreen({
     }
 
     return highlightSearchText(content, query);
+  };
+
+  const renderMessageBody = (entry: ChatMessage) => {
+    if (entry.message_type === "voice") {
+      const audioUrl = getVoiceAudioUrl(entry);
+      const durationMs =
+        typeof entry.metadata?.duration_ms === "number"
+          ? entry.metadata.duration_ms
+          : 0;
+
+      return (
+        <span className="voice-message">
+          <span className="voice-message-label">
+            Voice message
+            {durationMs > 0 ? ` · ${formatVoiceDuration(durationMs)}` : ""}
+          </span>
+          {audioUrl ? (
+            <audio controls preload="metadata" src={audioUrl} />
+          ) : (
+            <span className="voice-message-missing">Audio unavailable</span>
+          )}
+        </span>
+      );
+    }
+
+    return <span>{renderMessageContent(entry)}</span>;
   };
 
   const renderReplyPreview = (reply: MessageReplyPreview) => {
@@ -5256,7 +5575,6 @@ function ChatScreen({
                       }}
                     />
                     <div className="message-copy">
-                      <span className="sender">{getSenderName(entry)}</span>
                       {entry.reply_to ? renderReplyPreview(entry.reply_to) : null}
                       {isEditingMessage ? (
                         <form
@@ -5306,7 +5624,7 @@ function ChatScreen({
                           </span>
                         </form>
                       ) : (
-                        <span>{renderMessageContent(entry)}</span>
+                        renderMessageBody(entry)
                       )}
                       {hasSharedPin || hasPersonalPin ? (
                         <span className="message-pin-state">
@@ -5450,11 +5768,37 @@ function ChatScreen({
               </button>
             </div>
           ) : null}
+          {voiceRecorder ? (
+            <div className="voice-recording-panel">
+              <span>
+                Recording voice message ·{" "}
+                {formatVoiceDuration(voiceRecordingElapsedMs)}
+              </span>
+              <button
+                type="button"
+                className="voice-cancel-button"
+                onClick={() => {
+                  void stopVoiceRecording(false);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void stopVoiceRecording(true);
+                }}
+              >
+                Send voice
+              </button>
+            </div>
+          ) : null}
           <input
             id="message"
             type="text"
             value={message}
             placeholder="Write a message..."
+            disabled={voiceRecorder !== null}
             onChange={(event) => setMessage(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
@@ -5463,8 +5807,38 @@ function ChatScreen({
             }}
           />
           <button
+            type="button"
+            className="voice-record-button"
+            aria-label={
+              voiceSending ? "Uploading voice message" : "Record voice message"
+            }
+            title={
+              voiceSending ? "Uploading voice message" : "Record voice message"
+            }
+            disabled={
+              activeChatId === null ||
+              draftRecipient !== null ||
+              voiceRecorder !== null ||
+              voiceSending
+            }
+            onClick={() => {
+              void startVoiceRecording();
+            }}
+          >
+            {voiceSending ? (
+              <ClockArrowUp aria-hidden="true" size={18} />
+            ) : (
+              <Mic aria-hidden="true" size={18} />
+            )}
+          </button>
+          <button
+            type="button"
+            className="send-button"
             onClick={handleSend}
-            disabled={activeChatId === null && draftRecipient === null}
+            disabled={
+              (activeChatId === null && draftRecipient === null) ||
+              voiceRecorder !== null
+            }
           >
             Send
           </button>

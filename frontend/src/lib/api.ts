@@ -33,15 +33,18 @@ function formatErrorDetail(detail: unknown): string {
 
 export async function apiFetch<T>(path: string, options?: RequestInit) {
   let response: Response;
+  const isFormData = options?.body instanceof FormData;
 
   try {
     response = await fetch(`${API_URL}${path}`, {
       ...options,
       credentials: "include",
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-      },
+      headers: isFormData
+        ? options?.headers
+        : {
+            "Content-Type": "application/json",
+            ...options?.headers,
+          },
     });
   } catch (error) {
     if (error instanceof TypeError) {

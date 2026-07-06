@@ -31,6 +31,7 @@ from app.services.chats import (
     require_active_participant,
     require_chat_permission,
 )
+from app.services.messages import get_message_preview_text
 from app.socket import sio
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
@@ -177,7 +178,9 @@ def get_chats(
                 member_count=member_count,
                 current_user_role=current_user_role,
                 last_message_id=last_message.id if last_message else None,
-                last_message_text=last_message.content if last_message else None,
+                last_message_text=get_message_preview_text(last_message)
+                if last_message
+                else None,
                 last_message_sender_id=last_message.sender_id if last_message else None,
                 last_message_created_at=last_message.created_at
                 if last_message
@@ -249,7 +252,9 @@ def get_direct_chat_by_user(
             display_title="Saved Messages",
             display_avatar_url=SAVED_MESSAGES_AVATAR_URL,
             last_message_id=last_message.id if last_message else None,
-            last_message_text=last_message.content if last_message else None,
+            last_message_text=get_message_preview_text(last_message)
+            if last_message
+            else None,
             last_message_sender_id=last_message.sender_id if last_message else None,
             last_message_created_at=last_message.created_at if last_message else None,
             unread_count=0,
@@ -339,7 +344,9 @@ def get_direct_chat_by_user(
         display_avatar_url=other_user.avatar_url,
         other_user_id=other_user.id,
         last_message_id=last_message.id if last_message else None,
-        last_message_text=last_message.content if last_message else None,
+        last_message_text=get_message_preview_text(last_message)
+        if last_message
+        else None,
         last_message_sender_id=last_message.sender_id if last_message else None,
         last_message_created_at=last_message.created_at if last_message else None,
         unread_count=unread_count,

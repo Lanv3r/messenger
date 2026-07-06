@@ -6,6 +6,7 @@ venv/
 # Env
 .env
 backend/.env
+backend/uploads/
 
 # Node
 node_modules/

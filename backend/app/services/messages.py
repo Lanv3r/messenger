@@ -10,6 +10,18 @@ from sqlmodel import Session, col, exists, select
 
 DELETED_MESSAGE_PREVIEW_CONTENT = "message deleted"
 DELETED_MESSAGE_PREVIEW_TYPE = "deleted"
+VOICE_MESSAGE_PREVIEW_CONTENT = "Voice message"
+
+
+def get_message_preview_text(message: Message) -> str | None:
+    content = message.content.strip() if message.content else None
+    if content:
+        return content
+
+    if message.message_type == "voice":
+        return VOICE_MESSAGE_PREVIEW_CONTENT
+
+    return message.message_type if message.message_type != "text" else None
 
 
 def to_message_public(

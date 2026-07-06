@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from typing import Annotated
+from uuid import uuid4
 
 from app.db import SessionDep
 from app.dependencies import get_current_user
@@ -25,7 +26,13 @@ from app.services.messages import (
     to_message_public,
 )
 from app.socket import sio
-from fastapi import APIRouter, Depends, HTTPException
+from app.upload_constants import (
+    VOICE_MESSAGE_ALLOWED_TYPES,
+    VOICE_MESSAGE_MAX_BYTES,
+    VOICE_UPLOAD_URL_PREFIX,
+    VOICE_UPLOADS_DIR,
+)
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import func
 from sqlmodel import col, exists, select
 
@@ -268,6 +275,122 @@ async def create_message(
     chat.updated_at = message.created_at
 
     # messages in self chats are always read
+    if chat.type == "self":
+        participant.last_read_message_id = message.id
+        participant.last_read_at = datetime.now(timezone.utc)
+        session.add(participant)
+
+    session.commit()
+    session.refresh(message)
+    session.refresh(chat)
+
+    reply_to = build_message_reply_preview(session, message, user_id)
+    public_message = to_message_public(message, current_user, reply_to=reply_to)
+
+    participant_ids = session.exec(
+        select(ChatParticipant.user_id).where(
+            ChatParticipant.chat_id == chat_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).all()
+
+    for participant_id in participant_ids:
+        participant_message = to_message_public(
+            message,
+            current_user,
+            reply_to=build_message_reply_preview(session, message, participant_id),
+        ).model_dump(mode="json", by_alias=True)
+        await sio.emit(
+            "chat_updated",
+            {
+                "chat_id": chat.id,
+                "last_message": participant_message,
+            },
+            room=f"user:{participant_id}",
+        )
+
+    return public_message
+
+
+@router.post("/chats/{chat_id}/messages/voice", response_model=MessagePublic)
+async def create_voice_message(
+    chat_id: int,
+    file: Annotated[UploadFile, File()],
+    duration_ms: Annotated[int, Form()],
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+    reply_to_message_id: Annotated[int | None, Form()] = None,
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    participant = require_chat_permission(
+        session,
+        chat_id,
+        user_id,
+        "send_voice_messages",
+    )
+
+    if duration_ms <= 0 or duration_ms > 10 * 60 * 1000:
+        raise HTTPException(
+            status_code=400,
+            detail="Voice message duration is invalid",
+        )
+
+    content_type = file.content_type or ""
+    base_content_type = content_type.split(";", 1)[0].strip()
+    extension = VOICE_MESSAGE_ALLOWED_TYPES.get(base_content_type)
+    if extension is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Unsupported voice message format",
+        )
+
+    audio_bytes = await file.read()
+    if not audio_bytes:
+        raise HTTPException(status_code=400, detail="Voice message is empty")
+    if len(audio_bytes) > VOICE_MESSAGE_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="Voice message is too large")
+
+    chat = session.get(Chat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    reply_target = get_reply_target(
+        session,
+        chat_id,
+        user_id,
+        reply_to_message_id,
+    )
+
+    VOICE_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid4().hex}{extension}"
+    upload_path = VOICE_UPLOADS_DIR / filename
+    upload_path.write_bytes(audio_bytes)
+    audio_url = f"{VOICE_UPLOAD_URL_PREFIX}/{filename}"
+
+    message = Message(
+        chat_id=chat_id,
+        sender_id=user_id,
+        content=None,
+        message_type="voice",
+        reply_to_message_id=reply_target.id if reply_target else None,
+        metadata_={
+            "audio_url": audio_url,
+            "duration_ms": duration_ms,
+            "mime_type": content_type or base_content_type,
+            "size_bytes": len(audio_bytes),
+        },
+    )
+
+    session.add(message)
+    session.flush()
+    session.refresh(message)
+
+    chat.last_message_id = message.id
+    chat.updated_at = message.created_at
+
     if chat.type == "self":
         participant.last_read_message_id = message.id
         participant.last_read_at = datetime.now(timezone.utc)
