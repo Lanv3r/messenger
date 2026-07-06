@@ -376,7 +376,7 @@ async def create_voice_message(
         content=None,
         message_type="voice",
         reply_to_message_id=reply_target.id if reply_target else None,
-        metadata_={
+        metadata={
             "audio_url": audio_url,
             "duration_ms": duration_ms,
             "mime_type": content_type or base_content_type,
