@@ -44,6 +44,8 @@ type MessageActionDialog = {
   entry: ChatMessage;
 };
 
+type MemberManagementMode = "admin" | "member" | null;
+
 type ComposerDraft = {
   text: string;
   reply_to_message_id: number | null;
@@ -86,6 +88,7 @@ type ChatMember = {
   role: string;
   joined_at: string | null;
   added_by: number | null;
+  member_permissions: Record<string, MemberPermissionValue>;
 };
 
 type MemberPermissionValue = boolean | number;
@@ -276,6 +279,41 @@ function enforceAdminMemberOverlaps(
     if (memberPermissions?.[key] === true) {
       permissions[key] = true;
     }
+  }
+
+  return permissions;
+}
+
+function buildEffectiveMemberPermissions(
+  defaultPermissions: MemberPermissions | null,
+  memberOverrides: Record<string, MemberPermissionValue> | null | undefined,
+): MemberPermissions | null {
+  if (!defaultPermissions) {
+    return null;
+  }
+
+  const permissions: MemberPermissions = { ...defaultPermissions };
+  const overrides = memberOverrides ?? {};
+
+  for (const key of MEMBER_BOOLEAN_PERMISSION_KEYS) {
+    if (defaultPermissions[key] === false) {
+      permissions[key] = false;
+      continue;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(overrides, key)) {
+      permissions[key] = overrides[key] === true;
+    }
+  }
+
+  for (const key of MEMBER_NUMERIC_PERMISSION_KEYS) {
+    const defaultValue = Number(defaultPermissions[key] ?? 0);
+    const overrideValue = overrides[key];
+
+    permissions[key] =
+      overrideValue === undefined
+        ? defaultValue
+        : Math.max(defaultValue, Number(overrideValue));
   }
 
   return permissions;
@@ -552,6 +590,8 @@ function ChatScreen({
   const [chatInfoMembers, setChatInfoMembers] = useState<ChatMember[]>([]);
   const [selectedChatMember, setSelectedChatMember] =
     useState<ChatMember | null>(null);
+  const [selectedMemberManagementMode, setSelectedMemberManagementMode] =
+    useState<MemberManagementMode>(null);
   const [chatInfoLoading, setChatInfoLoading] = useState(false);
   const [chatInfoError, setChatInfoError] = useState<string | null>(null);
   const [chatInfoAddingMember, setChatInfoAddingMember] = useState(false);
@@ -583,6 +623,14 @@ function ChatScreen({
   const [memberPermissionsError, setMemberPermissionsError] =
     useState<string | null>(null);
   const [memberPermissionsMessage, setMemberPermissionsMessage] =
+    useState<string | null>(null);
+  const [selectedMemberPermissionsDraft, setSelectedMemberPermissionsDraft] =
+    useState<MemberPermissions | null>(null);
+  const [selectedMemberPermissionsSaving, setSelectedMemberPermissionsSaving] =
+    useState(false);
+  const [selectedMemberPermissionsError, setSelectedMemberPermissionsError] =
+    useState<string | null>(null);
+  const [selectedMemberPermissionsMessage, setSelectedMemberPermissionsMessage] =
     useState<string | null>(null);
   const [adminPermissionsByUserId, setAdminPermissionsByUserId] = useState<
     Record<number, AdminPermissions>
@@ -1445,6 +1493,7 @@ function ChatScreen({
     setChatInfoManaging(false);
     setChatInfoMembers([]);
     setSelectedChatMember(null);
+    setSelectedMemberManagementMode(null);
     setChatInfoError(null);
     setAddMemberQuery("");
     setAddMemberError(null);
@@ -1453,6 +1502,10 @@ function ChatScreen({
     setMemberPermissionsDraft(null);
     setMemberPermissionsError(null);
     setMemberPermissionsMessage(null);
+    setSelectedMemberPermissionsDraft(null);
+    setSelectedMemberPermissionsError(null);
+    setSelectedMemberPermissionsMessage(null);
+    setSelectedMemberPermissionsSaving(false);
     setAdminPermissionsByUserId({});
     setAdminPermissionsDraftByUserId({});
     setAdminPermissionsError(null);
@@ -2392,6 +2445,25 @@ function ChatScreen({
   };
 
   useEffect(() => {
+    if (!selectedChatMember || activeChat?.type !== "group") {
+      setSelectedMemberPermissionsDraft(null);
+      return;
+    }
+
+    setSelectedMemberPermissionsDraft(
+      buildEffectiveMemberPermissions(
+        memberPermissionsDraft ?? memberPermissions,
+        selectedChatMember.member_permissions,
+      ),
+    );
+  }, [
+    activeChat?.type,
+    memberPermissions,
+    memberPermissionsDraft,
+    selectedChatMember,
+  ]);
+
+  useEffect(() => {
     if (
       activeChat?.type !== "group" ||
       activeChat.current_user_role !== "admin" ||
@@ -2667,6 +2739,15 @@ function ChatScreen({
 
   const openChatMemberProfile = (member: ChatMember) => {
     setSelectedChatMember(member);
+    setSelectedMemberManagementMode(null);
+    setSelectedMemberPermissionsDraft(
+      buildEffectiveMemberPermissions(
+        memberPermissionsDraft ?? memberPermissions,
+        member.member_permissions,
+      ),
+    );
+    setSelectedMemberPermissionsError(null);
+    setSelectedMemberPermissionsMessage(null);
     setAdminPermissionsError(null);
     setAdminPermissionsMessage(null);
     setMemberRemovalError(null);
@@ -2707,6 +2788,33 @@ function ChatScreen({
     );
     setMemberPermissionsMessage(null);
     setMemberPermissionsError(null);
+  };
+
+  const updateSelectedMemberBooleanPermission = (
+    key: string,
+    value: boolean,
+  ) => {
+    setSelectedMemberPermissionsDraft((current) =>
+      current ? { ...current, [key]: value } : current,
+    );
+    setSelectedMemberPermissionsMessage(null);
+    setSelectedMemberPermissionsError(null);
+  };
+
+  const updateSelectedMemberNumericPermission = (
+    key: string,
+    value: number,
+  ) => {
+    setSelectedMemberPermissionsDraft((current) =>
+      current
+        ? {
+            ...current,
+            [key]: Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0,
+          }
+        : current,
+    );
+    setSelectedMemberPermissionsMessage(null);
+    setSelectedMemberPermissionsError(null);
   };
 
   const updateAdminPermission = (
@@ -2768,6 +2876,83 @@ function ChatScreen({
     }
   };
 
+  const saveSelectedMemberPermissions = async () => {
+    if (
+      !activeChat ||
+      activeChat.type !== "group" ||
+      !selectedChatMember ||
+      !selectedMemberPermissionsDraft
+    ) {
+      return;
+    }
+
+    setSelectedMemberPermissionsSaving(true);
+    setSelectedMemberPermissionsError(null);
+    setSelectedMemberPermissionsMessage(null);
+
+    try {
+      const updatedMember = await apiFetch<ChatMember>(
+        `/chats/${activeChat.id}/members/${selectedChatMember.user_id}/permissions`,
+        {
+          method: "PATCH",
+          body: JSON.stringify(selectedMemberPermissionsDraft),
+        },
+      );
+      const wasDemoted =
+        selectedChatMember.role === "admin" && updatedMember.role === "member";
+
+      setChatInfoMembers((current) =>
+        current.map((member) =>
+          member.user_id === updatedMember.user_id ? updatedMember : member,
+        ),
+      );
+      setSelectedChatMember(updatedMember);
+
+      if (updatedMember.role !== "admin") {
+        setAdminPermissionsByUserId((current) => {
+          const next = { ...current };
+          delete next[updatedMember.user_id];
+          return next;
+        });
+        setAdminPermissionsDraftByUserId((current) => {
+          const next = { ...current };
+          delete next[updatedMember.user_id];
+          return next;
+        });
+      }
+
+      if (updatedMember.user_id === user.userId) {
+        setChats((current) =>
+          current.map((chat) =>
+            chat.id === activeChat.id
+              ? { ...chat, current_user_role: updatedMember.role }
+              : chat,
+          ),
+        );
+      }
+
+      setSelectedMemberPermissionsMessage(
+        wasDemoted
+          ? "Member rights updated. This user was demoted to member."
+          : "Member rights updated.",
+      );
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Unable to update member rights.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setSelectedMemberPermissionsError(message);
+    } finally {
+      setSelectedMemberPermissionsSaving(false);
+    }
+  };
+
   const promoteSelectedMember = async () => {
     if (
       !activeChat ||
@@ -2808,16 +2993,24 @@ function ChatScreen({
       setChatInfoMembers((current) =>
         current.map((member) =>
           member.user_id === selectedChatMember.user_id
-            ? { ...member, role: "admin" }
+            ? { ...member, role: "admin", member_permissions: {} }
             : member,
         ),
       );
       setSelectedChatMember((current) =>
         current && current.user_id === selectedChatMember.user_id
-          ? { ...current, role: "admin" }
+          ? { ...current, role: "admin", member_permissions: {} }
           : current,
       );
-      setAdminPermissionsMessage("Admin promoted.");
+      setSelectedMemberPermissionsDraft(
+        buildEffectiveMemberPermissions(
+          memberPermissionsDraft ?? memberPermissions,
+          {},
+        ),
+      );
+      setAdminPermissionsMessage(
+        "Admin promoted. Member restrictions were restored.",
+      );
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to promote admin.";
@@ -3521,6 +3714,17 @@ function ChatScreen({
     selectedChatMember !== null &&
     selectedChatMember.user_id !== user.userId &&
     selectedChatMember.role !== "owner";
+  const canEditSelectedMemberPermissions =
+    currentUserCanRemoveGroupMembers &&
+    selectedChatMember !== null &&
+    selectedChatMember.user_id !== user.userId &&
+    selectedChatMember.role !== "owner";
+  const canOpenSelectedAdminManagement =
+    selectedChatMember?.role === "admin"
+      ? canEditSelectedAdmin || selectedChatMember.user_id === user.userId
+      : selectedChatMember?.role === "member" && canPromoteSelectedMember;
+  const hasSelectedMemberManagementActions =
+    canOpenSelectedAdminManagement || canEditSelectedMemberPermissions;
   const selectedMemberPermissionIsSaving =
     selectedChatMember !== null &&
     adminPermissionsSavingUserId === selectedChatMember.user_id;
@@ -3534,6 +3738,9 @@ function ChatScreen({
         key,
       ) && (memberPermissionsDraft ?? memberPermissions)?.[key] === true
     );
+  };
+  const memberPermissionIsLockedByDefault = (key: string) => {
+    return (memberPermissionsDraft ?? memberPermissions)?.[key] === false;
   };
 
   const actionDialogEntry = messageActionDialog?.entry ?? null;
@@ -4284,113 +4491,323 @@ function ChatScreen({
                       </p>
                     ) : null}
 
-                    {selectedChatMember.role === "admin" ||
-                    selectedChatMember.role === "member" ? (
-                      <div className="permission-list compact">
-                        {ADMIN_PERMISSION_KEYS.map((key) => {
-                          const forcedByMemberDefault =
-                            adminPermissionIsForcedByMemberDefault(key);
-                          const canChangePermission =
-                            selectedChatMember.role === "member"
-                              ? canPromoteSelectedMember
-                              : canEditSelectedAdmin;
-
-                          return (
-                            <label className="permission-row" key={key}>
-                              <span>
-                                {PERMISSION_LABELS[key]}
-                                {forcedByMemberDefault ? (
-                                  <small>Enabled for all members</small>
-                                ) : null}
-                              </span>
-                              <input
-                                type="checkbox"
-                                checked={
-                                  forcedByMemberDefault ||
-                                  selectedAdminPermissions?.[key] === true
-                                }
-                                disabled={
-                                  forcedByMemberDefault ||
-                                  !canChangePermission ||
-                                  selectedMemberPermissionIsSaving
-                                }
-                                onChange={(event) =>
-                                  updateAdminPermission(
-                                    selectedChatMember.user_id,
-                                    key,
-                                    event.target.checked,
-                                  )
-                                }
-                              />
-                            </label>
-                          );
-                        })}
+                    {hasSelectedMemberManagementActions ? (
+                      <div className="member-management-actions">
+                        {selectedChatMember.role === "member" &&
+                        canPromoteSelectedMember ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() =>
+                              setSelectedMemberManagementMode("admin")
+                            }
+                          >
+                            Promote to admin
+                          </Button>
+                        ) : null}
+                        {selectedChatMember.role === "admin" ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            onClick={() =>
+                              setSelectedMemberManagementMode("admin")
+                            }
+                          >
+                            {canEditSelectedAdmin
+                              ? "Edit admin rights"
+                              : "View admin rights"}
+                          </Button>
+                        ) : null}
+                        {canEditSelectedMemberPermissions ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="outline"
+                            onClick={() =>
+                              setSelectedMemberManagementMode("member")
+                            }
+                          >
+                            Restrict member rights
+                          </Button>
+                        ) : null}
                       </div>
                     ) : null}
 
-                    {adminPermissionsError ? (
-                      <p className="profile-error">{adminPermissionsError}</p>
-                    ) : null}
-                    {adminPermissionsMessage ? (
-                      <p className="profile-success">
-                        {adminPermissionsMessage}
-                      </p>
-                    ) : null}
+                    {selectedMemberManagementMode === "member" ? (
+                      <div className="member-rights-section">
+                        <div className="member-editor-header">
+                          <div>
+                            <strong>Restrict member rights</strong>
+                            <span>
+                              Default-disabled rights are locked for everyone.
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedMemberManagementMode(null)
+                            }
+                          >
+                            Back
+                          </button>
+                        </div>
 
-                    {selectedChatMember.role === "member" &&
-                    canPromoteSelectedMember ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        disabled={selectedMemberPermissionIsSaving}
-                        onClick={() => {
-                          void promoteSelectedMember();
-                        }}
-                      >
-                        {selectedMemberPermissionIsSaving
-                          ? "Promoting..."
-                          : "Promote to admin"}
-                      </Button>
-                    ) : null}
+                        {selectedMemberPermissionsDraft ? (
+                          <div className="permission-list compact">
+                            {MEMBER_BOOLEAN_PERMISSION_KEYS.map((key) => {
+                              const lockedByDefault =
+                                memberPermissionIsLockedByDefault(key);
 
-                    {selectedChatMember.role === "admin" ? (
-                      <div className="member-permissions-actions">
-                        {canEditSelectedAdmin ? (
-                          <>
-                            <Button
-                              type="button"
-                              size="sm"
-                              disabled={selectedMemberPermissionIsSaving}
-                              onClick={() => {
-                                void saveSelectedAdminPermissions();
-                              }}
-                            >
-                              {selectedMemberPermissionIsSaving
-                                ? "Saving..."
-                                : "Save admin rights"}
-                            </Button>
-                            <Button
-                              type="button"
-                              size="sm"
-                              variant="outline"
-                              disabled={selectedMemberPermissionIsSaving}
-                              onClick={() => {
-                                void dismissSelectedAdmin();
-                              }}
-                            >
-                              Dismiss admin
-                            </Button>
-                          </>
-                        ) : selectedChatMember.user_id === user.userId ? (
-                          <p className="permissions-note">
-                            You can view your admin rights, but not edit them.
+                              return (
+                                <label className="permission-row" key={key}>
+                                  <span>
+                                    {PERMISSION_LABELS[key]}
+                                    {lockedByDefault ? (
+                                      <small>Locked by group default</small>
+                                    ) : null}
+                                  </span>
+                                  <input
+                                    type="checkbox"
+                                    checked={
+                                      selectedMemberPermissionsDraft[key] ===
+                                      true
+                                    }
+                                    disabled={
+                                      lockedByDefault ||
+                                      !canEditSelectedMemberPermissions ||
+                                      selectedMemberPermissionsSaving
+                                    }
+                                    onChange={(event) =>
+                                      updateSelectedMemberBooleanPermission(
+                                        key,
+                                        event.target.checked,
+                                      )
+                                    }
+                                  />
+                                </label>
+                              );
+                            })}
+                            {MEMBER_NUMERIC_PERMISSION_KEYS.map((key) => {
+                              const defaultValue = Number(
+                                (memberPermissionsDraft ?? memberPermissions)?.[
+                                  key
+                                ] ?? 0,
+                              );
+
+                              return (
+                                <label className="permission-row" key={key}>
+                                  <span>
+                                    {PERMISSION_LABELS[key]}
+                                    {defaultValue > 0 ? (
+                                      <small>
+                                        Group minimum {defaultValue}s
+                                      </small>
+                                    ) : null}
+                                  </span>
+                                  <input
+                                    type="number"
+                                    min={defaultValue}
+                                    step="1"
+                                    value={Number(
+                                      selectedMemberPermissionsDraft[key] ??
+                                        defaultValue,
+                                    )}
+                                    disabled={
+                                      !canEditSelectedMemberPermissions ||
+                                      selectedMemberPermissionsSaving
+                                    }
+                                    onChange={(event) =>
+                                      updateSelectedMemberNumericPermission(
+                                        key,
+                                        Number(event.target.value),
+                                      )
+                                    }
+                                  />
+                                </label>
+                              );
+                            })}
+                          </div>
+                        ) : memberPermissionsLoading ? (
+                          <p className="message-search-empty">
+                            Loading member rights...
                           </p>
                         ) : (
                           <p className="permissions-note">
-                            Backend permission checks decide whether you can
-                            manage this admin.
+                            Member rights are not loaded.
                           </p>
                         )}
+
+                        {selectedChatMember.role === "admin" &&
+                        canEditSelectedMemberPermissions ? (
+                          <p className="permissions-note">
+                            Reducing an admin's member rights demotes them to
+                            member.
+                          </p>
+                        ) : null}
+                        {selectedMemberPermissionsError ? (
+                          <p className="profile-error">
+                            {selectedMemberPermissionsError}
+                          </p>
+                        ) : null}
+                        {selectedMemberPermissionsMessage ? (
+                          <p className="profile-success">
+                            {selectedMemberPermissionsMessage}
+                          </p>
+                        ) : null}
+                        {canEditSelectedMemberPermissions ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={
+                              selectedMemberPermissionsSaving ||
+                              !selectedMemberPermissionsDraft
+                            }
+                            onClick={() => {
+                              void saveSelectedMemberPermissions();
+                            }}
+                          >
+                            {selectedMemberPermissionsSaving
+                              ? "Saving..."
+                              : "Save member rights"}
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null}
+
+                    {selectedMemberManagementMode === "admin" &&
+                    (selectedChatMember.role === "admin" ||
+                      selectedChatMember.role === "member") ? (
+                      <div className="member-rights-section">
+                        <div className="member-editor-header">
+                          <div>
+                            <strong>
+                              {selectedChatMember.role === "member"
+                                ? "Promote to admin"
+                                : "Admin rights"}
+                            </strong>
+                            <span>
+                              Select the admin rights this user should have.
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setSelectedMemberManagementMode(null)
+                            }
+                          >
+                            Back
+                          </button>
+                        </div>
+
+                        <div className="permission-list compact">
+                          {ADMIN_PERMISSION_KEYS.map((key) => {
+                            const forcedByMemberDefault =
+                              adminPermissionIsForcedByMemberDefault(key);
+                            const canChangePermission =
+                              selectedChatMember.role === "member"
+                                ? canPromoteSelectedMember
+                                : canEditSelectedAdmin;
+
+                            return (
+                              <label className="permission-row" key={key}>
+                                <span>
+                                  {PERMISSION_LABELS[key]}
+                                  {forcedByMemberDefault ? (
+                                    <small>Enabled for all members</small>
+                                  ) : null}
+                                </span>
+                                <input
+                                  type="checkbox"
+                                  checked={
+                                    forcedByMemberDefault ||
+                                    selectedAdminPermissions?.[key] === true
+                                  }
+                                  disabled={
+                                    forcedByMemberDefault ||
+                                    !canChangePermission ||
+                                    selectedMemberPermissionIsSaving
+                                  }
+                                  onChange={(event) =>
+                                    updateAdminPermission(
+                                      selectedChatMember.user_id,
+                                      key,
+                                      event.target.checked,
+                                    )
+                                  }
+                                />
+                              </label>
+                            );
+                          })}
+                        </div>
+
+                        {adminPermissionsError ? (
+                          <p className="profile-error">
+                            {adminPermissionsError}
+                          </p>
+                        ) : null}
+                        {adminPermissionsMessage ? (
+                          <p className="profile-success">
+                            {adminPermissionsMessage}
+                          </p>
+                        ) : null}
+
+                        {selectedChatMember.role === "member" &&
+                        canPromoteSelectedMember ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            disabled={selectedMemberPermissionIsSaving}
+                            onClick={() => {
+                              void promoteSelectedMember();
+                            }}
+                          >
+                            {selectedMemberPermissionIsSaving
+                              ? "Promoting..."
+                              : "Promote to admin"}
+                          </Button>
+                        ) : null}
+
+                        {selectedChatMember.role === "admin" ? (
+                          <div className="member-permissions-actions">
+                            {canEditSelectedAdmin ? (
+                              <>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  disabled={selectedMemberPermissionIsSaving}
+                                  onClick={() => {
+                                    void saveSelectedAdminPermissions();
+                                  }}
+                                >
+                                  {selectedMemberPermissionIsSaving
+                                    ? "Saving..."
+                                    : "Save admin rights"}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  disabled={selectedMemberPermissionIsSaving}
+                                  onClick={() => {
+                                    void dismissSelectedAdmin();
+                                  }}
+                                >
+                                  Dismiss admin
+                                </Button>
+                              </>
+                            ) : selectedChatMember.user_id === user.userId ? (
+                              <p className="permissions-note">
+                                You can view your admin rights, but not edit
+                                them.
+                              </p>
+                            ) : (
+                              <p className="permissions-note">
+                                Backend permission checks decide whether you can
+                                manage this admin.
+                              </p>
+                            )}
+                          </div>
+                        ) : null}
                       </div>
                     ) : null}
 

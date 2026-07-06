@@ -25,6 +25,9 @@ from app.services.chats import (
     assert_valid_admin_permission_list,
     assert_valid_permission_list,
     get_effective_permissions,
+    get_effective_member_permissions,
+    member_permissions_reduce_admin_rights,
+    normalize_member_permission_overrides,
     require_active_participant,
     require_chat_permission,
 )
@@ -34,6 +37,25 @@ from sqlalchemy import func
 from sqlmodel import col, select
 
 router = APIRouter(tags=["chats"])
+
+
+def to_chat_member_public(
+    participant: ChatParticipant,
+    user: User,
+) -> ChatMemberPublic:
+    return ChatMemberPublic(
+        user_id=participant.user_id,
+        username=user.username,
+        first_name=user.first_name,
+        last_name=user.last_name,
+        bio=user.bio,
+        avatar_url=user.avatar_url,
+        status=user.status,
+        role=participant.role,
+        joined_at=participant.joined_at,
+        added_by=participant.added_by,
+        member_permissions=participant.member_permissions,
+    )
 
 
 @router.get("/chats", response_model=list[ChatListItem])
@@ -403,19 +425,7 @@ def get_chat_members(
         if member_user is None:
             raise HTTPException(status_code=404, detail="User not found")
 
-        chat_member = ChatMemberPublic(
-            user_id=member.user_id,
-            username=member_user.username,
-            first_name=member_user.first_name,
-            last_name=member_user.last_name,
-            bio=member_user.bio,
-            avatar_url=member_user.avatar_url,
-            status=member_user.status,
-            role=member.role,
-            joined_at=member.joined_at,
-            added_by=member.added_by,
-        )
-        members.append(chat_member)
+        members.append(to_chat_member_public(member, member_user))
 
     return members
 
@@ -691,8 +701,104 @@ def patch_chat_default_permissions(
         raise HTTPException(status_code=404, detail="Chat not found")
     assert_valid_permission_list(new_permissions)
     chat_member_permissions.permissions = new_permissions
+
+    participants = session.exec(
+        select(ChatParticipant).where(
+            ChatParticipant.chat_id == chat_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).all()
+    for participant in participants:
+        effective_permissions = get_effective_member_permissions(
+            new_permissions,
+            participant.member_permissions,
+        )
+        participant.member_permissions = normalize_member_permission_overrides(
+            new_permissions,
+            effective_permissions,
+        )
+        session.add(participant)
+
     session.add(chat_member_permissions)
     session.commit()
+
+
+@router.patch(
+    "/chats/{chat_id}/members/{user_id}/permissions",
+    response_model=ChatMemberPublic,
+)
+def patch_member_permissions(
+    chat_id: int,
+    user_id: int,
+    new_permissions: dict,
+    session: SessionDep,
+    actor_user: Annotated[User, Depends(get_current_user)],
+):
+    if actor_user.id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+    if user_id is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    actor_participant = require_chat_permission(
+        session,
+        chat_id,
+        actor_user.id,
+        "ban_users",
+    )
+    target_participant = require_active_participant(session, chat_id, user_id)
+
+    chat = session.get(Chat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if chat.type != "group":
+        raise HTTPException(
+            status_code=403,
+            detail="Member permissions only apply to group chats",
+        )
+    if target_participant.role == "owner":
+        raise HTTPException(status_code=403, detail="Cannot manage owner")
+
+    if target_participant.role == "admin":
+        actor_permissions = get_effective_permissions(actor_participant, session)
+        target_permissions = get_effective_permissions(target_participant, session)
+        assert_actor_strictly_outranks_target(
+            actor_participant,
+            target_participant,
+            actor_permissions,
+            target_permissions,
+        )
+
+    chat_member_permissions = session.get(ChatMemberPermissions, chat_id)
+    if chat_member_permissions is None:
+        raise HTTPException(status_code=404, detail="Chat permissions not found")
+
+    target_participant.member_permissions = normalize_member_permission_overrides(
+        chat_member_permissions.permissions,
+        new_permissions,
+    )
+    effective_member_permissions = get_effective_member_permissions(
+        chat_member_permissions.permissions,
+        target_participant.member_permissions,
+    )
+
+    if target_participant.role == "admin" and member_permissions_reduce_admin_rights(
+        chat_member_permissions.permissions,
+        effective_member_permissions,
+    ):
+        target_participant.role = "member"
+        target_participant.admin_permissions = {}
+        target_participant.promoted_by = None
+        target_participant.promoted_at = None
+
+    session.add(target_participant)
+    session.commit()
+    session.refresh(target_participant)
+
+    target_user = session.get(User, target_participant.user_id)
+    if target_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return to_chat_member_public(target_participant, target_user)
 
 
 @router.get("/chats/{chat_id}/admins/{user_id}/permissions")
@@ -794,6 +900,7 @@ def promote_admin(
 
     target_participant.role = "admin"
     target_participant.admin_permissions = new_permissions
+    target_participant.member_permissions = {}
     target_participant.promoted_by = actor_participant.user_id
     target_participant.promoted_at = datetime.now(timezone.utc)
 

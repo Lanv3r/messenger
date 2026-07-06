@@ -23,18 +23,101 @@ def get_effective_permissions(
     )
     if member_permissions is None:
         raise HTTPException(status_code=404, detail="Chat permissions not found")
+    effective_member_permissions = get_effective_member_permissions(
+        member_permissions.permissions,
+        participant.member_permissions,
+    )
     if participant.role == "member":
-        return member_permissions.permissions
+        return effective_member_permissions
     else:
         permissions = SYSTEM_ROLE_DEFAULTS["admin"].copy()
-        permissions.update(member_permissions.permissions)
+        permissions.update(effective_member_permissions)
         permissions.update(participant.admin_permissions or {})
 
         for key in ADMIN_MEMBER_OVERLAP_PERMISSIONS:
-            if member_permissions.permissions.get(key) is True:
+            if effective_member_permissions.get(key) is True:
                 permissions[key] = True
 
         return permissions
+
+
+def get_effective_member_permissions(
+    default_permissions: dict,
+    member_overrides: dict | None,
+) -> dict:
+    permissions = default_permissions.copy()
+    overrides = member_overrides or {}
+
+    for key in MEMBER_BOOLEAN_PERMISSIONS:
+        if default_permissions.get(key) is False:
+            permissions[key] = False
+            continue
+        if key in overrides:
+            permissions[key] = overrides[key]
+
+    for key in MEMBER_NUMERIC_PERMISSIONS:
+        default_value = int(default_permissions.get(key, 0))
+        override_value = overrides.get(key)
+        if override_value is None:
+            permissions[key] = default_value
+            continue
+        permissions[key] = max(default_value, int(override_value))
+
+    return permissions
+
+
+def normalize_member_permission_overrides(
+    default_permissions: dict,
+    permissions: dict,
+) -> dict:
+    assert_valid_permission_list(permissions)
+
+    overrides = {}
+
+    for key in MEMBER_BOOLEAN_PERMISSIONS:
+        if default_permissions.get(key) is False:
+            if permissions[key] is not False:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"{key} is disabled for all members",
+                )
+            continue
+        if permissions[key] != default_permissions.get(key):
+            overrides[key] = permissions[key]
+
+    for key in MEMBER_NUMERIC_PERMISSIONS:
+        default_value = int(default_permissions.get(key, 0))
+        value = permissions[key]
+
+        if value < default_value:
+            raise HTTPException(
+                status_code=400,
+                detail=f"{key} cannot be lower than the group default",
+            )
+        if value != default_value:
+            overrides[key] = value
+
+    return overrides
+
+
+def member_permissions_reduce_admin_rights(
+    default_permissions: dict,
+    effective_member_permissions: dict,
+) -> bool:
+    for key in MEMBER_BOOLEAN_PERMISSIONS:
+        if (
+            default_permissions.get(key) is True
+            and effective_member_permissions.get(key) is not True
+        ):
+            return True
+
+    for key in MEMBER_NUMERIC_PERMISSIONS:
+        if int(effective_member_permissions.get(key, 0)) > int(
+            default_permissions.get(key, 0)
+        ):
+            return True
+
+    return False
 
 
 def assert_admin_permissions_do_not_restrict_enabled_member_permissions(

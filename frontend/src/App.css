@@ -448,10 +448,13 @@
 .profile-popup-card {
   position: relative;
   width: min(100%, 360px);
+  max-height: calc(100vh - 40px);
   display: grid;
   justify-items: center;
   gap: 14px;
   padding: 28px 24px 24px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   border: 1px solid rgba(163, 88, 66, 0.18);
   border-radius: 28px;
   text-align: center;
@@ -491,6 +494,8 @@
 
 .profile-popup-card > div {
   min-width: 0;
+  width: 100%;
+  min-height: 0;
   display: grid;
   justify-items: center;
   gap: 5px;
@@ -1324,6 +1329,61 @@
   min-width: 0;
   display: grid;
   gap: 2px;
+}
+
+.member-rights-section {
+  display: grid;
+  gap: 9px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(180, 91, 67, 0.14);
+}
+
+.member-management-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+.member-management-actions button {
+  width: 100%;
+  justify-content: center;
+}
+
+.member-editor-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.member-editor-header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.member-editor-header strong {
+  font-size: 14px;
+  color: #1f2937;
+}
+
+.member-editor-header span {
+  font-size: 12px;
+  line-height: 1.35;
+  color: #8b5e34;
+}
+
+.member-editor-header button {
+  min-height: 28px;
+  padding: 0 10px;
+  border: 1px solid rgba(163, 88, 66, 0.16);
+  border-radius: 999px;
+  color: #8b5e34;
+  background: rgba(255, 255, 255, 0.78);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  cursor: pointer;
 }
 
 .permissions-panel-header strong,

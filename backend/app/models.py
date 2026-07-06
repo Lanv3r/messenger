@@ -163,6 +163,10 @@ class ChatParticipant(ChatParticipantBase, table=True):
         default_factory=dict,
         sa_column=Column(JSONB, server_default=text("'{}'::jsonb"), nullable=False),
     )
+    member_permissions: dict = Field(
+        default_factory=dict,
+        sa_column=Column(JSONB, server_default=text("'{}'::jsonb"), nullable=False),
+    )
     promoted_by: int | None = Field(
         default=None,
         foreign_key="users.id",
@@ -329,6 +333,7 @@ class ChatMemberPublic(SQLModel):
     role: str
     joined_at: datetime | None = None
     added_by: int | None = None
+    member_permissions: dict = Field(default_factory=dict)
 
 
 class ChatMemberPermissions(SQLModel, table=True):
