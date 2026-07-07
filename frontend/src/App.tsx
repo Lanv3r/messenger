@@ -51,6 +51,13 @@ type ComposerDraft = {
   reply_to_message_id: number | null;
 };
 
+type AttachmentDraft = {
+  id: string;
+  file: File;
+  previewUrl: string;
+  messageType: string;
+};
+
 type AuthUser = {
   userId: number;
   username: string;
@@ -664,6 +671,9 @@ function ChatScreen({
   const [voiceRecordingTickMs, setVoiceRecordingTickMs] = useState(0);
   const [voiceSending, setVoiceSending] = useState(false);
   const [fileSending, setFileSending] = useState(false);
+  const [attachmentDrafts, setAttachmentDrafts] = useState<AttachmentDraft[]>([]);
+  const [attachmentCaption, setAttachmentCaption] = useState("");
+  const [attachmentError, setAttachmentError] = useState<string | null>(null);
   const voiceChunksRef = useRef<Blob[]>([]);
   const voiceRecorderRef = useRef<MediaRecorder | null>(null);
   const voiceRecordingChatIdRef = useRef<number | null>(null);
@@ -1233,6 +1243,59 @@ function ChatScreen({
     }
 
     return "file";
+  }
+
+  function clearAttachmentDrafts(drafts = attachmentDrafts) {
+    drafts.forEach((draft) => URL.revokeObjectURL(draft.previewUrl));
+    setAttachmentDrafts([]);
+    setAttachmentCaption("");
+    setAttachmentError(null);
+  }
+
+  function removeAttachmentDraft(draftId: string) {
+    setAttachmentDrafts((current) => {
+      const draft = current.find((entry) => entry.id === draftId);
+      if (draft) {
+        URL.revokeObjectURL(draft.previewUrl);
+      }
+
+      const nextDrafts = current.filter((entry) => entry.id !== draftId);
+      if (nextDrafts.length === 0) {
+        setAttachmentCaption("");
+        setAttachmentError(null);
+      }
+
+      return nextDrafts;
+    });
+  }
+
+  function addAttachmentDrafts(files: File[]) {
+    if (draftRecipient) {
+      setChatError("Send a text message first before attaching files.");
+      return;
+    }
+
+    if (activeChatId === null) {
+      setChatError("Select a chat before attaching files.");
+      return;
+    }
+
+    const drafts = files
+      .filter((file) => file.size > 0)
+      .map((file) => ({
+        id: crypto.randomUUID(),
+        file,
+        previewUrl: URL.createObjectURL(file),
+        messageType: getFileMessageType(file),
+      }));
+
+    if (drafts.length === 0) {
+      return;
+    }
+
+    setAttachmentDrafts((current) => [...current, ...drafts]);
+    setAttachmentError(null);
+    setChatError(null);
   }
 
   function formatVoiceDuration(durationMs: number) {
@@ -2495,17 +2558,26 @@ function ChatScreen({
     }
   };
 
-  const sendFileMessage = async (file: File) => {
+  const sendFileMessage = async (
+    file: File,
+    options: {
+      caption?: string;
+      manageSending?: boolean;
+      replyTarget?: ChatMessage | null;
+    } = {},
+  ): Promise<boolean> => {
     if (draftRecipient) {
       setChatError("Send a text message first before attaching files.");
-      return;
+      return false;
     }
 
     if (activeChatId === null || file.size === 0) {
-      return;
+      return false;
     }
 
-    const replyTarget = replyToMessage;
+    const caption = options.caption?.trim() ?? "";
+    const replyTarget =
+      options.replyTarget === undefined ? replyToMessage : options.replyTarget;
     const tempId = crypto.randomUUID();
     const objectUrl = URL.createObjectURL(file);
     const optimisticMessage: ChatMessage = {
@@ -2514,7 +2586,7 @@ function ChatScreen({
       sender_id: user.userId,
       sender_username: user.username,
       sender_avatar_url: user.avatarUrl,
-      content: null,
+      content: caption || null,
       message_type: getFileMessageType(file),
       reply_to_message_id: replyTarget?.id ?? null,
       created_at: new Date().toISOString(),
@@ -2536,7 +2608,9 @@ function ChatScreen({
       reply_to: replyTarget ? toReplyPreview(replyTarget) : null,
     };
 
-    setFileSending(true);
+    if (options.manageSending ?? true) {
+      setFileSending(true);
+    }
     setMessages((current) => [...current, optimisticMessage]);
     setChats((current) => updateChatPreview(current, optimisticMessage));
     setReplyToMessage(null);
@@ -2546,6 +2620,9 @@ function ChatScreen({
 
     const formData = new FormData();
     formData.append("file", file);
+    if (caption) {
+      formData.append("content", caption);
+    }
     if (replyTarget) {
       formData.append("reply_to_message_id", String(replyTarget.id));
     }
@@ -2572,6 +2649,7 @@ function ChatScreen({
         resetUnread: true,
       });
       URL.revokeObjectURL(objectUrl);
+      return true;
     } catch (error) {
       setMessages((current) =>
         current.map((entry) =>
@@ -2586,24 +2664,59 @@ function ChatScreen({
 
       if (errorMessage === "Could not validate credentials") {
         onSessionExpired();
-        return;
+        return false;
       }
 
       setChatError(errorMessage);
+      return false;
     } finally {
-      setFileSending(false);
+      if (options.manageSending ?? true) {
+        setFileSending(false);
+      }
     }
   };
 
   const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
+    const files = Array.from(event.target.files ?? []);
     event.target.value = "";
 
-    if (!file) {
+    if (files.length === 0) {
       return;
     }
 
-    void sendFileMessage(file);
+    addAttachmentDrafts(files);
+  };
+
+  const sendAttachmentDrafts = async () => {
+    if (attachmentDrafts.length === 0 || fileSending) {
+      return;
+    }
+
+    const drafts = attachmentDrafts;
+    const caption = attachmentCaption.trim();
+    const replyTarget = replyToMessage;
+
+    setFileSending(true);
+    setAttachmentError(null);
+
+    try {
+      for (let index = 0; index < drafts.length; index += 1) {
+        const sent = await sendFileMessage(drafts[index].file, {
+          caption: index === 0 ? caption : "",
+          manageSending: false,
+          replyTarget,
+        });
+
+        if (!sent) {
+          setAttachmentError("One or more attachments could not be sent.");
+          return;
+        }
+
+        removeAttachmentDraft(drafts[index].id);
+      }
+    } finally {
+      setFileSending(false);
+    }
   };
 
   const handleSend = async () => {
@@ -4094,12 +4207,10 @@ function ChatScreen({
     if (
       entry.message_type === "image" ||
       entry.message_type === "video" ||
-      entry.message_type === "audio" ||
-      entry.message_type === "file"
+      entry.message_type === "audio"
     ) {
       const fileUrl = getUploadedFileUrl(entry);
       const fileName = getUploadedFileName(entry);
-      const fileSize = formatFileSize(entry.metadata?.size_bytes);
 
       return (
         <span className="file-message">
@@ -4114,6 +4225,25 @@ function ChatScreen({
           {entry.message_type === "audio" && fileUrl ? (
             <audio controls preload="metadata" src={fileUrl} />
           ) : null}
+          {!fileUrl ? (
+            <span className="file-message-missing">File unavailable</span>
+          ) : null}
+          {entry.content ? (
+            <span className="file-message-caption">
+              {renderMessageContent(entry)}
+            </span>
+          ) : null}
+        </span>
+      );
+    }
+
+    if (entry.message_type === "file") {
+      const fileUrl = getUploadedFileUrl(entry);
+      const fileName = getUploadedFileName(entry);
+      const fileSize = formatFileSize(entry.metadata?.size_bytes);
+
+      return (
+        <span className="file-message">
           <a
             className="file-message-card"
             href={fileUrl ?? undefined}
@@ -4123,16 +4253,7 @@ function ChatScreen({
             aria-disabled={!fileUrl}
           >
             <span>{fileName}</span>
-            <small>
-              {entry.message_type === "image"
-                ? "Photo"
-                : entry.message_type === "video"
-                  ? "Video"
-                  : entry.message_type === "audio"
-                    ? "Audio file"
-                    : "File"}
-              {fileSize ? ` · ${fileSize}` : ""}
-            </small>
+            <small>File{fileSize ? ` · ${fileSize}` : ""}</small>
           </a>
           {entry.content ? (
             <span className="file-message-caption">
@@ -5750,6 +5871,125 @@ function ChatScreen({
           </div>
         ) : null}
 
+        {attachmentDrafts.length > 0 ? (
+          <div
+            className="message-action-backdrop"
+            role="presentation"
+          >
+            <section
+              className="attachment-preview-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Attachment preview"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="attachment-preview-header">
+                <div>
+                  <strong>Send attachments</strong>
+                  <span>
+                    {attachmentDrafts.length}{" "}
+                    {attachmentDrafts.length === 1 ? "file" : "files"} selected
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  aria-label="Cancel attachments"
+                  disabled={fileSending}
+                  onClick={() => clearAttachmentDrafts()}
+                >
+                  &times;
+                </button>
+              </div>
+
+              <div className="attachment-preview-list">
+                {attachmentDrafts.map((draft) => (
+                  <article className="attachment-preview-item" key={draft.id}>
+                    <div className="attachment-preview-media">
+                      {draft.messageType === "image" ? (
+                        <img src={draft.previewUrl} alt={draft.file.name} />
+                      ) : null}
+                      {draft.messageType === "video" ? (
+                        <video controls preload="metadata" src={draft.previewUrl} />
+                      ) : null}
+                      {draft.messageType === "audio" ||
+                      draft.messageType === "file" ? (
+                        <span className="attachment-preview-file-icon">
+                          <Paperclip size={22} aria-hidden="true" />
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="attachment-preview-copy">
+                      <strong>{draft.file.name}</strong>
+                      <span>
+                        {draft.messageType === "image"
+                          ? "Photo"
+                          : draft.messageType === "video"
+                            ? "Video"
+                            : draft.messageType === "audio"
+                              ? "Audio file"
+                              : "File"}
+                        {formatFileSize(draft.file.size)
+                          ? ` · ${formatFileSize(draft.file.size)}`
+                          : ""}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label={`Remove ${draft.file.name}`}
+                      disabled={fileSending}
+                      onClick={() => removeAttachmentDraft(draft.id)}
+                    >
+                      &times;
+                    </button>
+                  </article>
+                ))}
+              </div>
+
+              <label className="attachment-caption-field">
+                Caption
+                <textarea
+                  value={attachmentCaption}
+                  maxLength={4000}
+                  rows={3}
+                  placeholder="Add a caption..."
+                  disabled={fileSending}
+                  onChange={(event) => setAttachmentCaption(event.target.value)}
+                />
+              </label>
+
+              {attachmentError ? (
+                <p className="profile-error">{attachmentError}</p>
+              ) : null}
+
+              <div className="message-action-dialog-actions">
+                <button
+                  type="button"
+                  disabled={fileSending}
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  Add more
+                </button>
+                <button
+                  type="button"
+                  disabled={fileSending}
+                  onClick={() => clearAttachmentDrafts()}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={fileSending || attachmentDrafts.length === 0}
+                  onClick={() => {
+                    void sendAttachmentDrafts();
+                  }}
+                >
+                  {fileSending ? "Sending..." : "Send"}
+                </button>
+              </div>
+            </section>
+          </div>
+        ) : null}
+
         {memberRemovalCandidate ? (
           <div
             className="message-action-backdrop"
@@ -6094,6 +6334,11 @@ function ChatScreen({
                 activeChat?.type === "group" &&
                 (entry.sender_id === user.userId ||
                   currentUserCanDeleteGroupMessages);
+              const isVisualMediaMessage =
+                entry.message_type === "image" ||
+                entry.message_type === "video";
+              const hasVisualMediaCaption =
+                isVisualMediaMessage && Boolean(entry.content);
               const messageKey = `${entry.sender_id ?? "system"}-${
                 entry.id ?? index
               }`;
@@ -6112,6 +6357,8 @@ function ChatScreen({
                       entry.id === activeSearchResultId
                         ? "search-highlight"
                         : "",
+                      isVisualMediaMessage ? "media-message" : "",
+                      hasVisualMediaCaption ? "media-with-caption" : "",
                     ]
                       .filter(Boolean)
                       .join(" ")}
@@ -6334,6 +6581,7 @@ function ChatScreen({
             ref={fileInputRef}
             className="file-input"
             type="file"
+            multiple
             accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/mp4,audio/ogg,audio/wav,audio/webm,application/pdf,text/plain,text/csv,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             onChange={handleFileInputChange}
           />
