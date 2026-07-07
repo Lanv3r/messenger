@@ -133,6 +133,33 @@ type ChatReadEvent = {
   last_read_at: string | null;
 };
 
+type ChatActivityUser = {
+  user_id: number;
+  display_name: string | null;
+  username: string | null;
+};
+
+type ChatActivityState = {
+  typing: ChatActivityUser[];
+  recording: ChatActivityUser[];
+};
+
+type ChatTypingEvent = {
+  user_id: number;
+  display_name?: string | null;
+  username: string | null;
+  chat_id: number;
+  is_typing: boolean;
+};
+
+type ChatRecordingVoiceEvent = {
+  user_id: number;
+  display_name?: string | null;
+  username: string | null;
+  chat_id: number;
+  is_recording: boolean;
+};
+
 type ChatUpdatedEvent = {
   chat_id: number;
   last_message: ChatMessage;
@@ -349,6 +376,36 @@ function getChatMessagePreviewText(message: Pick<ChatMessage, "content" | "messa
   }
 
   return message.message_type === "text" ? null : message.message_type;
+}
+
+function updateChatActivityState(
+  current: Record<number, ChatActivityState>,
+  chatId: number,
+  user: ChatActivityUser,
+  kind: keyof ChatActivityState,
+  isActive: boolean,
+) {
+  const existing = current[chatId] ?? { typing: [], recording: [] };
+  const nextUsers = isActive
+    ? [
+        ...existing[kind].filter((entry) => entry.user_id !== user.user_id),
+        user,
+      ]
+    : existing[kind].filter((entry) => entry.user_id !== user.user_id);
+  const nextState = {
+    ...existing,
+    [kind]: nextUsers,
+  };
+
+  if (nextState.typing.length === 0 && nextState.recording.length === 0) {
+    const { [chatId]: _removed, ...rest } = current;
+    return rest;
+  }
+
+  return {
+    ...current,
+    [chatId]: nextState,
+  };
 }
 
 function upsertChat(chats: Chat[], chat: Chat) {
@@ -576,6 +633,9 @@ function ChatScreen({
     null,
   );
   const [message, setMessage] = useState("");
+  const [chatActivityByChatId, setChatActivityByChatId] = useState<
+    Record<number, ChatActivityState>
+  >({});
   const [replyToMessage, setReplyToMessage] = useState<ChatMessage | null>(
     null,
   );
@@ -589,7 +649,11 @@ function ChatScreen({
   const [voiceSending, setVoiceSending] = useState(false);
   const voiceChunksRef = useRef<Blob[]>([]);
   const voiceRecorderRef = useRef<MediaRecorder | null>(null);
+  const voiceRecordingChatIdRef = useRef<number | null>(null);
   const voiceRecordingTimerRef = useRef<number | null>(null);
+  const typingTimeoutRef = useRef<number | null>(null);
+  const typingChatIdRef = useRef<number | null>(null);
+  const isTypingRef = useRef(false);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [status, setStatus] = useState("Connecting...");
   const [connectionError, setConnectionError] = useState<string | null>(null);
@@ -702,6 +766,7 @@ function ChatScreen({
     x: number;
     y: number;
   } | null>(null);
+  const messageMenuOpenedAtRef = useRef(0);
   const [messageActionDialog, setMessageActionDialog] =
     useState<MessageActionDialog | null>(null);
   const [actionAlsoForOtherUser, setActionAlsoForOtherUser] = useState(false);
@@ -1208,6 +1273,69 @@ function ChatScreen({
     });
   }
 
+  function stopTypingActivity(chatId = typingChatIdRef.current) {
+    if (typingTimeoutRef.current !== null) {
+      window.clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = null;
+    }
+
+    if (!isTypingRef.current || chatId === null) {
+      return;
+    }
+
+    socketRef.current?.emit("typing", {
+      chat_id: chatId,
+      is_typing: false,
+    });
+    isTypingRef.current = false;
+    typingChatIdRef.current = null;
+  }
+
+  function handleMessageInputChange(value: string) {
+    setMessage(value);
+
+    if (draftRecipient !== null || activeChatIdRef.current === null) {
+      return;
+    }
+
+    const chatId = activeChatIdRef.current;
+    if (!value.trim()) {
+      stopTypingActivity(chatId);
+      return;
+    }
+
+    if (!isTypingRef.current || typingChatIdRef.current !== chatId) {
+      if (isTypingRef.current) {
+        stopTypingActivity();
+      }
+
+      socketRef.current?.emit("typing", {
+        chat_id: chatId,
+        is_typing: true,
+      });
+      isTypingRef.current = true;
+      typingChatIdRef.current = chatId;
+    }
+
+    if (typingTimeoutRef.current !== null) {
+      window.clearTimeout(typingTimeoutRef.current);
+    }
+    typingTimeoutRef.current = window.setTimeout(() => {
+      stopTypingActivity(chatId);
+    }, 1500);
+  }
+
+  function emitRecordingVoiceActivity(chatId: number | null, isRecording: boolean) {
+    if (chatId === null) {
+      return;
+    }
+
+    socketRef.current?.emit("recording_voice", {
+      chat_id: chatId,
+      is_recording: isRecording,
+    });
+  }
+
   useEffect(() => {
     const socket: Socket = io(API_URL, {
       withCredentials: true,
@@ -1234,10 +1362,54 @@ function ChatScreen({
         ];
       });
       setChats((current) => updateChatPreview(current, data));
+      if (data.sender_id !== null) {
+        const activityUser = {
+          user_id: data.sender_id,
+          display_name: null,
+          username: data.sender_username,
+        };
+        setChatActivityByChatId((current) =>
+          updateChatActivityState(
+            updateChatActivityState(
+              current,
+              data.chat_id,
+              activityUser,
+              "typing",
+              false,
+            ),
+            data.chat_id,
+            activityUser,
+            "recording",
+            false,
+          ),
+        );
+      }
     });
 
     socket.on("chat_updated", (data: ChatUpdatedEvent) => {
       setChats((current) => updateChatPreview(current, data.last_message));
+      if (data.last_message.sender_id !== null) {
+        const activityUser = {
+          user_id: data.last_message.sender_id,
+          display_name: null,
+          username: data.last_message.sender_username,
+        };
+        setChatActivityByChatId((current) =>
+          updateChatActivityState(
+            updateChatActivityState(
+              current,
+              data.chat_id,
+              activityUser,
+              "typing",
+              false,
+            ),
+            data.chat_id,
+            activityUser,
+            "recording",
+            false,
+          ),
+        );
+      }
       if (
         data.chat_id === activeChatIdRef.current &&
         data.last_message.sender_id !== user.userId
@@ -1420,12 +1592,59 @@ function ChatScreen({
         });
     });
 
+    socket.on("typing", (data: ChatTypingEvent) => {
+      if (data.user_id === user.userId) {
+        return;
+      }
+
+      setChatActivityByChatId((current) =>
+        updateChatActivityState(
+          current,
+          data.chat_id,
+          {
+            user_id: data.user_id,
+            display_name: data.display_name ?? null,
+            username: data.username,
+          },
+          "typing",
+          data.is_typing,
+        ),
+      );
+    });
+
+    socket.on("recording_voice", (data: ChatRecordingVoiceEvent) => {
+      if (data.user_id === user.userId) {
+        return;
+      }
+
+      setChatActivityByChatId((current) =>
+        updateChatActivityState(
+          current,
+          data.chat_id,
+          {
+            user_id: data.user_id,
+            display_name: data.display_name ?? null,
+            username: data.username,
+          },
+          "recording",
+          data.is_recording,
+        ),
+      );
+    });
+
     socket.on("disconnect", (reason) => {
       if (reason === "io server disconnect") {
         onSessionExpired();
         return;
       }
 
+      if (typingTimeoutRef.current !== null) {
+        window.clearTimeout(typingTimeoutRef.current);
+        typingTimeoutRef.current = null;
+      }
+      isTypingRef.current = false;
+      typingChatIdRef.current = null;
+      setChatActivityByChatId({});
       setStatus(reason);
     });
 
@@ -1444,6 +1663,21 @@ function ChatScreen({
     });
 
     return () => {
+      if (typingTimeoutRef.current !== null) {
+        window.clearTimeout(typingTimeoutRef.current);
+      }
+      if (isTypingRef.current && typingChatIdRef.current !== null) {
+        socket.emit("typing", {
+          chat_id: typingChatIdRef.current,
+          is_typing: false,
+        });
+      }
+      if (voiceRecordingChatIdRef.current !== null) {
+        socket.emit("recording_voice", {
+          chat_id: voiceRecordingChatIdRef.current,
+          is_recording: false,
+        });
+      }
       socket.disconnect();
       socketRef.current = null;
     };
@@ -1482,6 +1716,7 @@ function ChatScreen({
           };
           activeChatIdRef.current = selectedChat.id;
           saveActiveChatId(selectedChat.id);
+          socketRef.current?.emit("join_room", String(selectedChat.id));
           setActiveChatId(selectedChat.id);
           restoreComposerDraft(selectedChat.id, []);
         }
@@ -1541,6 +1776,7 @@ function ChatScreen({
   }, [activeChatId]);
 
   useEffect(() => {
+    stopTypingActivity();
     setMessageSearchQuery("");
     setMessageSearchResults([]);
     setMessageSearchError(null);
@@ -1858,17 +2094,34 @@ function ChatScreen({
       setMessageMenuPosition(null);
     };
 
+    const handlePointerDown = (event: MouseEvent | PointerEvent) => {
+      if (Date.now() - messageMenuOpenedAtRef.current < 250) {
+        return;
+      }
+
+      if (
+        event.target instanceof Element &&
+        event.target.closest(".message-context-menu")
+      ) {
+        return;
+      }
+
+      closeMessageMenu();
+    };
+
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         closeMessageMenu();
       }
     };
 
-    window.addEventListener("click", closeMessageMenu);
+    window.addEventListener("pointerdown", handlePointerDown, true);
+    window.addEventListener("mousedown", handlePointerDown, true);
     window.addEventListener("keydown", handleKeyDown);
 
     return () => {
-      window.removeEventListener("click", closeMessageMenu);
+      window.removeEventListener("pointerdown", handlePointerDown, true);
+      window.removeEventListener("mousedown", handlePointerDown, true);
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [openMessageMenuId]);
@@ -1968,6 +2221,7 @@ function ChatScreen({
       setVoiceRecordingStartedAt(startedAt);
       setVoiceRecordingTickMs(startedAt);
       voiceRecorderRef.current = recorder;
+      voiceRecordingChatIdRef.current = activeChatId;
       setVoiceRecorder(recorder);
       if (voiceRecordingTimerRef.current !== null) {
         window.clearInterval(voiceRecordingTimerRef.current);
@@ -1975,6 +2229,8 @@ function ChatScreen({
       voiceRecordingTimerRef.current = window.setInterval(() => {
         setVoiceRecordingTickMs(Date.now());
       }, 250);
+      stopTypingActivity(activeChatId);
+      emitRecordingVoiceActivity(activeChatId, true);
       setChatError(null);
     } catch (error) {
       const message =
@@ -1992,18 +2248,21 @@ function ChatScreen({
       return;
     }
 
+    const recordingChatId = voiceRecordingChatIdRef.current;
     const durationMs = voiceRecordingStartedAt
       ? Date.now() - voiceRecordingStartedAt
       : 0;
 
     setVoiceRecorder(null);
     voiceRecorderRef.current = null;
+    voiceRecordingChatIdRef.current = null;
     setVoiceRecordingStartedAt(null);
     setVoiceRecordingTickMs(0);
     if (voiceRecordingTimerRef.current !== null) {
       window.clearInterval(voiceRecordingTimerRef.current);
       voiceRecordingTimerRef.current = null;
     }
+    emitRecordingVoiceActivity(recordingChatId, false);
 
     const blob = await new Promise<Blob>((resolve) => {
       recorder.onstop = () => {
@@ -2138,6 +2397,7 @@ function ChatScreen({
     }
 
     const outgoingMessage = message.trim();
+    stopTypingActivity();
     const replyTarget = draftRecipient ? null : replyToMessage;
     const tempId = crypto.randomUUID();
     const optimisticMessage: ChatMessage = {
@@ -2296,6 +2556,10 @@ function ChatScreen({
     const socket = socketRef.current;
     const chatId = chat.id;
 
+    stopTypingActivity();
+    if (voiceRecorderRef.current !== null) {
+      void stopVoiceRecording(false);
+    }
     if (socket && activeChatIdRef.current !== null) {
       socket.emit("leave_room", String(activeChatIdRef.current));
     }
@@ -3689,7 +3953,57 @@ function ChatScreen({
     return chat.display_title || chat.title || "Chat";
   };
 
+  const formatActivityNames = (chat: Chat | undefined, users: ChatActivityUser[]) => {
+    if (chat?.type !== "group") {
+      return null;
+    }
+
+    return users
+      .slice(0, 2)
+      .map(
+        (activityUser) =>
+          activityUser.display_name ??
+          activityUser.username ??
+          `User ${activityUser.user_id}`,
+      )
+      .join(", ");
+  };
+
+  const getChatActivitySubtitle = (chat: Chat | undefined) => {
+    if (!chat) {
+      return null;
+    }
+
+    const activity = chatActivityByChatId[chat.id];
+    if (!activity) {
+      return null;
+    }
+
+    if (activity.recording.length > 0) {
+      return chat.type === "group"
+        ? `${formatActivityNames(chat, activity.recording)} ${
+            activity.recording.length === 1 ? "is" : "are"
+          } recording a voice message...`
+        : "recording a voice message...";
+    }
+
+    if (activity.typing.length > 0) {
+      return chat.type === "group"
+        ? `${formatActivityNames(chat, activity.typing)} ${
+            activity.typing.length === 1 ? "is" : "are"
+          } typing...`
+        : "typing...";
+    }
+
+    return null;
+  };
+
   const getChatSubtitle = (chat: Chat) => {
+    const activitySubtitle = getChatActivitySubtitle(chat);
+    if (activitySubtitle) {
+      return activitySubtitle;
+    }
+
     if (chat.last_message_text) {
       const prefix =
         chat.last_message_sender_id === user.userId ? "You: " : "";
@@ -3838,7 +4152,8 @@ function ChatScreen({
     : activeChat
       ? activeChat.display_avatar_url || activeChat.avatar_url || "/favicon.svg"
       : "/favicon.svg";
-  const chatHeaderSubtitle = draftRecipient
+  const chatActivitySubtitle = getChatActivitySubtitle(activeChat);
+  const chatHeaderSubtitle = chatActivitySubtitle ?? (draftRecipient
     ? `@${draftRecipient.username}`
     : activeChat?.type === "group"
       ? `${activeChat.member_count} ${
@@ -3848,7 +4163,7 @@ function ChatScreen({
         ? ""
         : activeChat?.type === "self"
           ? "Private notes"
-          : "Select a chat";
+          : "Select a chat");
   const chatHeaderClickable =
     Boolean(activeChat) &&
     activeChat?.type !== "self" &&
@@ -5563,6 +5878,7 @@ function ChatScreen({
                           maxY,
                         ),
                       });
+                      messageMenuOpenedAtRef.current = Date.now();
                       setOpenMessageMenuId(entry.id);
                     }}
                   >
@@ -5799,7 +6115,7 @@ function ChatScreen({
             value={message}
             placeholder="Write a message..."
             disabled={voiceRecorder !== null}
-            onChange={(event) => setMessage(event.target.value)}
+            onChange={(event) => handleMessageInputChange(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
                 handleSend();

@@ -6,7 +6,7 @@ from sqlmodel import Session, col, select
 from app.db import engine
 from app.dependencies import decode_access_token, get_cookie_from_environ
 from app.models import Chat, ChatParticipant, Message, User
-from app.services.chats import require_chat_permission
+from app.services.chats import require_active_participant, require_chat_permission
 from app.services.messages import (
     build_message_reply_preview,
     get_reply_target,
@@ -35,11 +35,16 @@ async def connect(sid, environ, auth):
         if user is None:
             raise ConnectionRefusedError("User not found")
 
+        display_name = (
+            f"{user.first_name} {user.last_name}" if user.last_name else user.first_name
+        )
+
         await sio.save_session(
             sid,
             {
                 "user_id": user.id,
                 "username": user.username,
+                "display_name": display_name,
                 "avatar_url": user.avatar_url,
                 "token_expires_at": token_expires_at,
             },
@@ -101,6 +106,71 @@ async def leave_room(sid, room):
 
     await sio.leave_room(sid, str(chat_id))
     return {"ok": True}
+
+
+async def emit_chat_activity(sid, data, event_name, activity):
+    session = await sio.get_session(sid)
+    user_id = session["user_id"]
+
+    if datetime.now(timezone.utc).timestamp() >= session["token_expires_at"]:
+        await sio.disconnect(sid)
+        return {"ok": False, "error": "Session expired"}
+
+    try:
+        chat_id = int(data.get("chat_id"))
+    except (AttributeError, TypeError, ValueError):
+        return {"ok": False, "error": "Invalid chat"}
+
+    is_active = data.get(activity)
+    if not isinstance(is_active, bool):
+        return {"ok": False, "error": f"Invalid {activity}"}
+
+    with Session(engine) as db:
+        try:
+            require_active_participant(db, chat_id, user_id)
+        except HTTPException as exc:
+            return {"ok": False, "error": exc.detail}
+        participant_ids = db.exec(
+            select(col(ChatParticipant.user_id)).where(
+                col(ChatParticipant.chat_id) == chat_id,
+                col(ChatParticipant.left_at).is_(None),
+            )
+        ).all()
+
+    activity_payload = {
+        "chat_id": chat_id,
+        "user_id": user_id,
+        "username": session["username"],
+        "display_name": session["display_name"],
+        activity: is_active,
+    }
+
+    for participant_id in participant_ids:
+        if participant_id == user_id:
+            continue
+
+        await sio.emit(
+            event_name,
+            activity_payload,
+            room=f"user:{participant_id}",
+        )
+
+    return {"ok": True}
+
+
+@sio.event
+async def typing(sid, data):
+    return await emit_chat_activity(sid, data, "typing", "is_typing")
+
+
+@sio.event
+async def recording_voice(sid, data):
+    return await emit_chat_activity(
+        sid,
+        data,
+        "recording_voice",
+        "is_recording",
+    )
 
 
 @sio.event
