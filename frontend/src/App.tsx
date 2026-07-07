@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useRef, useState } from "react";
-import { Check, CheckCheck, ClockArrowUp, Mic, Pin } from "lucide-react";
+import { Check, CheckCheck, ClockArrowUp, Mic, Paperclip, Pin } from "lucide-react";
 import { io, Socket } from "socket.io-client";
 
 import { API_URL, apiFetch } from "@/lib/api";
@@ -375,6 +375,22 @@ function getChatMessagePreviewText(message: Pick<ChatMessage, "content" | "messa
     return "Voice message";
   }
 
+  if (message.message_type === "image") {
+    return "Photo";
+  }
+
+  if (message.message_type === "video") {
+    return "Video";
+  }
+
+  if (message.message_type === "audio") {
+    return "Audio file";
+  }
+
+  if (message.message_type === "file") {
+    return "File";
+  }
+
   return message.message_type === "text" ? null : message.message_type;
 }
 
@@ -647,10 +663,12 @@ function ChatScreen({
   >(null);
   const [voiceRecordingTickMs, setVoiceRecordingTickMs] = useState(0);
   const [voiceSending, setVoiceSending] = useState(false);
+  const [fileSending, setFileSending] = useState(false);
   const voiceChunksRef = useRef<Blob[]>([]);
   const voiceRecorderRef = useRef<MediaRecorder | null>(null);
   const voiceRecordingChatIdRef = useRef<number | null>(null);
   const voiceRecordingTimerRef = useRef<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const typingTimeoutRef = useRef<number | null>(null);
   const typingChatIdRef = useRef<number | null>(null);
   const isTypingRef = useRef(false);
@@ -1070,6 +1088,22 @@ function ChatScreen({
       return "Voice message";
     }
 
+    if (entry.message_type === "image") {
+      return "Photo";
+    }
+
+    if (entry.message_type === "video") {
+      return "Video";
+    }
+
+    if (entry.message_type === "audio") {
+      return "Audio file";
+    }
+
+    if (entry.message_type === "file") {
+      return "File";
+    }
+
     return entry.message_type === "text" ? "Message" : entry.message_type;
   }
 
@@ -1085,6 +1119,22 @@ function ChatScreen({
 
     if (reply.message_type === "voice") {
       return "Voice message";
+    }
+
+    if (reply.message_type === "image") {
+      return "Photo";
+    }
+
+    if (reply.message_type === "video") {
+      return "Video";
+    }
+
+    if (reply.message_type === "audio") {
+      return "Audio file";
+    }
+
+    if (reply.message_type === "file") {
+      return "File";
     }
 
     return reply.message_type === "text" ? "Message" : reply.message_type;
@@ -1128,6 +1178,61 @@ function ChatScreen({
     }
 
     return `${API_URL}${audioUrl}`;
+  }
+
+  function getUploadedFileUrl(entry: ChatMessage) {
+    const fileUrl = entry.metadata?.file_url;
+
+    if (typeof fileUrl !== "string" || !fileUrl) {
+      return null;
+    }
+
+    if (fileUrl.startsWith("blob:") || fileUrl.startsWith("http")) {
+      return fileUrl;
+    }
+
+    return `${API_URL}${fileUrl}`;
+  }
+
+  function getUploadedFileName(entry: ChatMessage) {
+    const originalName = entry.metadata?.original_name;
+    return typeof originalName === "string" && originalName
+      ? originalName
+      : "Download file";
+  }
+
+  function formatFileSize(sizeBytes: unknown) {
+    if (typeof sizeBytes !== "number" || !Number.isFinite(sizeBytes)) {
+      return null;
+    }
+
+    if (sizeBytes < 1024) {
+      return `${sizeBytes} B`;
+    }
+
+    const kilobytes = sizeBytes / 1024;
+    if (kilobytes < 1024) {
+      return `${kilobytes.toFixed(kilobytes >= 10 ? 0 : 1)} KB`;
+    }
+
+    const megabytes = kilobytes / 1024;
+    return `${megabytes.toFixed(megabytes >= 10 ? 0 : 1)} MB`;
+  }
+
+  function getFileMessageType(file: File) {
+    if (file.type.startsWith("image/")) {
+      return "image";
+    }
+
+    if (file.type.startsWith("video/")) {
+      return "video";
+    }
+
+    if (file.type.startsWith("audio/")) {
+      return "audio";
+    }
+
+    return "file";
   }
 
   function formatVoiceDuration(durationMs: number) {
@@ -2388,6 +2493,117 @@ function ChatScreen({
     } finally {
       setVoiceSending(false);
     }
+  };
+
+  const sendFileMessage = async (file: File) => {
+    if (draftRecipient) {
+      setChatError("Send a text message first before attaching files.");
+      return;
+    }
+
+    if (activeChatId === null || file.size === 0) {
+      return;
+    }
+
+    const replyTarget = replyToMessage;
+    const tempId = crypto.randomUUID();
+    const objectUrl = URL.createObjectURL(file);
+    const optimisticMessage: ChatMessage = {
+      id: Date.now(),
+      chat_id: activeChatId,
+      sender_id: user.userId,
+      sender_username: user.username,
+      sender_avatar_url: user.avatarUrl,
+      content: null,
+      message_type: getFileMessageType(file),
+      reply_to_message_id: replyTarget?.id ?? null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      edited_at: null,
+      deleted_at: null,
+      pinned_at: null,
+      pinned_by: null,
+      is_pinned_for_me: false,
+      metadata: {
+        file_url: objectUrl,
+        original_name: file.name,
+        mime_type: file.type,
+        size_bytes: file.size,
+      },
+      isOwn: true,
+      delivery_status: "sending",
+      temp_id: tempId,
+      reply_to: replyTarget ? toReplyPreview(replyTarget) : null,
+    };
+
+    setFileSending(true);
+    setMessages((current) => [...current, optimisticMessage]);
+    setChats((current) => updateChatPreview(current, optimisticMessage));
+    setReplyToMessage(null);
+    setOpenMessageMenuId(null);
+    setMessageActionDialog(null);
+    clearComposerDraft(activeChatId);
+
+    const formData = new FormData();
+    formData.append("file", file);
+    if (replyTarget) {
+      formData.append("reply_to_message_id", String(replyTarget.id));
+    }
+
+    try {
+      const responseMessage = await apiFetch<ChatMessage>(
+        `/chats/${activeChatId}/messages/file`,
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
+      const confirmedMessage: ChatMessage = {
+        ...responseMessage,
+        isOwn: true,
+        delivery_status: activeChat?.type === "self" ? "read" : "sent",
+      };
+
+      setMessages((current) =>
+        replaceTemporaryMessage(current, tempId, confirmedMessage),
+      );
+      setChats((current) => updateChatPreview(current, confirmedMessage));
+      markChatReadThrough(activeChatId, confirmedMessage.id, {
+        resetUnread: true,
+      });
+      URL.revokeObjectURL(objectUrl);
+    } catch (error) {
+      setMessages((current) =>
+        current.map((entry) =>
+          entry.temp_id === tempId
+            ? { ...entry, delivery_status: "failed" }
+            : entry,
+        ),
+      );
+
+      const errorMessage =
+        error instanceof Error ? error.message : "Unable to send file.";
+
+      if (errorMessage === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setChatError(errorMessage);
+    } finally {
+      setFileSending(false);
+    }
+  };
+
+  const handleFileInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+
+    if (!file) {
+      return;
+    }
+
+    void sendFileMessage(file);
   };
 
   const handleSend = async () => {
@@ -3871,6 +4087,58 @@ function ChatScreen({
           ) : (
             <span className="voice-message-missing">Audio unavailable</span>
           )}
+        </span>
+      );
+    }
+
+    if (
+      entry.message_type === "image" ||
+      entry.message_type === "video" ||
+      entry.message_type === "audio" ||
+      entry.message_type === "file"
+    ) {
+      const fileUrl = getUploadedFileUrl(entry);
+      const fileName = getUploadedFileName(entry);
+      const fileSize = formatFileSize(entry.metadata?.size_bytes);
+
+      return (
+        <span className="file-message">
+          {entry.message_type === "image" && fileUrl ? (
+            <a href={fileUrl} target="_blank" rel="noreferrer">
+              <img src={fileUrl} alt={fileName} />
+            </a>
+          ) : null}
+          {entry.message_type === "video" && fileUrl ? (
+            <video controls preload="metadata" src={fileUrl} />
+          ) : null}
+          {entry.message_type === "audio" && fileUrl ? (
+            <audio controls preload="metadata" src={fileUrl} />
+          ) : null}
+          <a
+            className="file-message-card"
+            href={fileUrl ?? undefined}
+            download={fileName}
+            target="_blank"
+            rel="noreferrer"
+            aria-disabled={!fileUrl}
+          >
+            <span>{fileName}</span>
+            <small>
+              {entry.message_type === "image"
+                ? "Photo"
+                : entry.message_type === "video"
+                  ? "Video"
+                  : entry.message_type === "audio"
+                    ? "Audio file"
+                    : "File"}
+              {fileSize ? ` · ${fileSize}` : ""}
+            </small>
+          </a>
+          {entry.content ? (
+            <span className="file-message-caption">
+              {renderMessageContent(entry)}
+            </span>
+          ) : null}
         </span>
       );
     }
@@ -6062,6 +6330,13 @@ function ChatScreen({
         </ul>
 
         <div className="composer">
+          <input
+            ref={fileInputRef}
+            className="file-input"
+            type="file"
+            accept="image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/mp4,audio/ogg,audio/wav,audio/webm,application/pdf,text/plain,text/csv,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            onChange={handleFileInputChange}
+          />
           {replyToMessage ? (
             <div className="composer-reply-preview">
               <button
@@ -6122,6 +6397,27 @@ function ChatScreen({
               }
             }}
           />
+          <button
+            type="button"
+            className="attachment-button"
+            aria-label={fileSending ? "Uploading file" : "Attach file"}
+            title={fileSending ? "Uploading file" : "Attach file"}
+            disabled={
+              activeChatId === null ||
+              draftRecipient !== null ||
+              voiceRecorder !== null ||
+              fileSending
+            }
+            onClick={() => {
+              fileInputRef.current?.click();
+            }}
+          >
+            {fileSending ? (
+              <ClockArrowUp aria-hidden="true" size={18} />
+            ) : (
+              <Paperclip aria-hidden="true" size={18} />
+            )}
+          </button>
           <button
             type="button"
             className="voice-record-button"

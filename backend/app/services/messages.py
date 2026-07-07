@@ -11,6 +11,23 @@ from sqlmodel import Session, col, exists, select
 DELETED_MESSAGE_PREVIEW_CONTENT = "message deleted"
 DELETED_MESSAGE_PREVIEW_TYPE = "deleted"
 VOICE_MESSAGE_PREVIEW_CONTENT = "Voice message"
+FILE_MESSAGE_PREVIEW_LABELS = {
+    "audio": "Audio file",
+    "file": "File",
+    "image": "Photo",
+    "video": "Video",
+}
+
+
+def get_uploaded_file_message_type_and_permission(content_type: str) -> tuple[str, str]:
+    if content_type.startswith("image/"):
+        return "image", "send_photos"
+    if content_type.startswith("video/"):
+        return "video", "send_video_files"
+    if content_type.startswith("audio/"):
+        return "audio", "send_music"
+
+    return "file", "send_files"
 
 
 def get_message_preview_text(message: Message) -> str | None:
@@ -20,6 +37,11 @@ def get_message_preview_text(message: Message) -> str | None:
 
     if message.message_type == "voice":
         return VOICE_MESSAGE_PREVIEW_CONTENT
+
+    if message.message_type in FILE_MESSAGE_PREVIEW_LABELS:
+        original_name = message.metadata_.get("original_name")
+        label = FILE_MESSAGE_PREVIEW_LABELS[message.message_type]
+        return f"{label}: {original_name}" if original_name else label
 
     return message.message_type if message.message_type != "text" else None
 
