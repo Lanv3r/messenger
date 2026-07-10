@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { Socket } from "socket.io-client";
 
 import { AttachmentPreviewDialog } from "@/components/chat/AttachmentPreviewDialog";
+import { ChatAccountRail } from "@/components/chat/ChatAccountRail";
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
@@ -706,6 +707,13 @@ export function ChatScreen({
   return (
     <main className="chat-shell">
       <div className="chat-layout">
+        <ChatAccountRail
+          user={user}
+          themeMode={themeMode}
+          onToggleProfileEditor={openProfileEditor}
+          onSignOut={onSignOut}
+          onToggleTheme={onToggleTheme}
+        />
         {messageSearchOpen ? (
           <aside className="chat-sidebar search-mode" aria-label="Search messages">
             <MessageSearch
@@ -726,8 +734,6 @@ export function ChatScreen({
           </aside>
         ) : (
           <ChatSidebar
-            user={user}
-            themeMode={themeMode}
             profileQuery={profileQuery}
             profileResult={profileResult}
             profileError={profileError}
@@ -735,9 +741,6 @@ export function ChatScreen({
             chats={chats}
             activeChatId={activeChatId}
             draftRecipient={draftRecipient}
-            onToggleTheme={onToggleTheme}
-            onToggleProfileEditor={openProfileEditor}
-            onSignOut={onSignOut}
             onProfileQueryChange={setProfileQuery}
             onClearProfileSearch={clearProfileSearch}
             onMessageProfile={(profile) => {

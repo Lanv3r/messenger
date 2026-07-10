@@ -1,8 +1,7 @@
 .chat-shell {
   height: 100svh;
   display: grid;
-  place-items: center;
-  padding: 32px 20px;
+  padding: 0;
   box-sizing: border-box;
   overflow: hidden;
   background:
@@ -11,12 +10,12 @@
 }
 
 .chat-layout {
-  width: min(100%, 1080px);
-  height: min(100%, 760px);
+  width: 100%;
+  height: 100%;
   min-height: 0;
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
-  gap: 18px;
+  grid-template-columns: 68px 300px minmax(0, 1fr);
+  gap: 0;
 }
 
 .chat-card {
@@ -28,7 +27,7 @@
   padding: 28px;
   box-sizing: border-box;
   border: 1px solid rgba(163, 88, 66, 0.15);
-  border-radius: 28px;
+  border-radius: 0;
   background: rgba(255, 255, 255, 0.92);
   box-shadow: 0 24px 80px rgba(106, 58, 45, 0.12);
 }
@@ -906,20 +905,76 @@
   transform: translateY(12px);
 }
 
+.chat-account-rail,
 .chat-sidebar {
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto auto auto auto 1fr;
-  gap: 16px;
-  padding: 20px;
   box-sizing: border-box;
   border: 1px solid rgba(163, 88, 66, 0.15);
-  border-radius: 28px;
-  text-align: left;
+  border-radius: 0;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.9), rgba(255, 249, 244, 0.9)),
     radial-gradient(circle at top left, rgba(244, 111, 84, 0.16), transparent 36%);
   box-shadow: 0 24px 80px rgba(106, 58, 45, 0.1);
+}
+
+.chat-account-rail {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  justify-items: center;
+  gap: 14px;
+  padding: 14px 10px;
+}
+
+.account-rail-avatar-button,
+.account-rail-button {
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(163, 88, 66, 0.14);
+  border-radius: 999px;
+  color: #8b5e34;
+  background: rgba(255, 255, 255, 0.74);
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 160ms ease;
+}
+
+.account-rail-avatar-button {
+  padding: 2px;
+}
+
+.account-rail-avatar-button img {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(133, 144, 167, 0.14);
+}
+
+.account-rail-button:hover,
+.account-rail-avatar-button:hover {
+  transform: translateY(-1px);
+  border-color: rgba(244, 111, 84, 0.32);
+  color: #d64c2f;
+  background: rgba(255, 245, 238, 0.96);
+}
+
+.account-rail-button.theme-toggle-button {
+  align-self: end;
+  gap: 0;
+  padding: 0;
+}
+
+.chat-sidebar {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 16px;
+  padding: 20px;
+  text-align: left;
   overflow: hidden;
 }
 
@@ -929,59 +984,7 @@
 }
 
 .chat-sidebar.profile-search-mode {
-  grid-template-rows: auto auto auto minmax(0, 1fr);
-}
-
-.sidebar-profile {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 10px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid rgba(163, 88, 66, 0.12);
-}
-
-.sidebar-profile-main {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.sidebar-profile-main img {
-  width: 46px;
-  height: 46px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-  object-fit: cover;
-  background: rgba(133, 144, 167, 0.14);
-}
-
-.sidebar-profile-main p {
-  margin: 0;
-  font-size: 15px;
-  font-weight: 800;
-  color: #1f2937;
-}
-
-.sidebar-profile-main span {
-  display: block;
-  margin-top: 2px;
-  font-size: 12px;
-  color: #8b5e34;
-}
-
-.sidebar-profile-actions {
-  display: grid;
-  gap: 6px;
-  justify-items: end;
-}
-
-.sidebar-profile-actions button {
-  min-height: 30px;
-  padding-inline: 10px;
-  font-size: 12px;
-  white-space: nowrap;
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .theme-toggle-button {
@@ -2833,6 +2836,7 @@ html[data-theme="dark"] .chat-shell {
 }
 
 html[data-theme="dark"] .chat-card,
+html[data-theme="dark"] .chat-account-rail,
 html[data-theme="dark"] .chat-sidebar {
   border-color: rgba(255, 255, 255, 0.1);
   background:
@@ -2856,12 +2860,10 @@ html[data-theme="dark"] .subtle-scrollbar.is-scrolling::-webkit-scrollbar-thumb:
   background-color: rgba(231, 207, 184, 0.38);
 }
 
-html[data-theme="dark"] .sidebar-profile,
 html[data-theme="dark"] .profile-editor-header {
   border-bottom-color: rgba(255, 255, 255, 0.1);
 }
 
-html[data-theme="dark"] .sidebar-profile-main p,
 html[data-theme="dark"] .chat-window-header-button strong,
 html[data-theme="dark"] .chat-open-button strong,
 html[data-theme="dark"] .profile-search-results .profile-card h2,
@@ -2873,7 +2875,6 @@ html[data-theme="dark"] #messages li.media-message {
   color: #f7efe7;
 }
 
-html[data-theme="dark"] .sidebar-profile-main span,
 html[data-theme="dark"] .chat-window-header-button small,
 html[data-theme="dark"] .chat-open-button small,
 html[data-theme="dark"] .chat-open-button time,
@@ -2901,7 +2902,8 @@ html[data-theme="dark"] .chat-info-nested-panel,
 html[data-theme="dark"] .message-copy,
 html[data-theme="dark"] .file-message-caption,
 html[data-theme="dark"] .theme-toggle-button,
-html[data-theme="dark"] .sidebar-profile-actions button,
+html[data-theme="dark"] .account-rail-button,
+html[data-theme="dark"] .account-rail-avatar-button,
 html[data-theme="dark"] .profile-editor-close {
   border-color: rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.055);
@@ -2910,7 +2912,7 @@ html[data-theme="dark"] .profile-editor-close {
 html[data-theme="dark"] .chat-window-header-button,
 html[data-theme="dark"] .chat-header-search-button,
 html[data-theme="dark"] .theme-toggle-button,
-html[data-theme="dark"] .sidebar-profile-actions button,
+html[data-theme="dark"] .account-rail-button,
 html[data-theme="dark"] .profile-editor-close,
 html[data-theme="dark"] .profile-search-clear,
 html[data-theme="dark"] .chat-pin-button,
@@ -2922,7 +2924,8 @@ html[data-theme="dark"] .chat-window-header-button:not(:disabled):hover,
 html[data-theme="dark"] .chat-header-search-button:hover:not(:disabled),
 html[data-theme="dark"] .chat-header-search-button.active,
 html[data-theme="dark"] .theme-toggle-button:hover,
-html[data-theme="dark"] .sidebar-profile-actions button:hover,
+html[data-theme="dark"] .account-rail-button:hover,
+html[data-theme="dark"] .account-rail-avatar-button:hover,
 html[data-theme="dark"] .profile-editor-close:hover {
   border-color: rgba(244, 111, 84, 0.36);
   color: #ff9d84;
@@ -3018,20 +3021,29 @@ html[data-theme="dark"] .status {
   .chat-shell {
     min-height: 100svh;
     height: auto;
-    padding: 16px;
+    padding: 0;
     overflow: auto;
   }
 
   .chat-layout {
     min-height: 0;
     height: auto;
-    grid-template-columns: 1fr;
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .chat-account-rail {
+    min-height: 300px;
+    border-radius: 0;
   }
 
   .chat-sidebar {
     min-height: auto;
     max-height: 300px;
-    border-radius: 24px;
+    border-radius: 0;
+  }
+
+  .chat-card {
+    grid-column: 1 / -1;
   }
 
   .group-form {
@@ -3039,19 +3051,10 @@ html[data-theme="dark"] .status {
   }
 
   .chat-card {
-    height: calc(100svh - 32px);
+    height: 100svh;
     min-height: 0;
     padding: 22px 18px;
-    border-radius: 24px;
-  }
-
-  .sidebar-profile {
-    grid-template-columns: 1fr;
-  }
-
-  .sidebar-profile-actions {
-    grid-template-columns: repeat(3, 1fr);
-    justify-items: stretch;
+    border-radius: 0;
   }
 
   .status-copy {
