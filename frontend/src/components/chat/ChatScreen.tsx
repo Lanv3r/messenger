@@ -5,6 +5,7 @@ import { AttachmentPreviewDialog } from "@/components/chat/AttachmentPreviewDial
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
+import { CreateGroupPanel } from "@/components/chat/CreateGroupPanel";
 import { GroupInfoPanel } from "@/components/chat/GroupInfoPanel";
 import { MemberProfileDialog } from "@/components/chat/MemberProfileDialog";
 import { MemberRemovalDialog } from "@/components/chat/MemberRemovalDialog";
@@ -728,16 +729,6 @@ export function ChatScreen({
             chats={chats}
             activeChatId={activeChatId}
             draftRecipient={draftRecipient}
-            creatingGroup={creatingGroup}
-            groupTitle={groupTitle}
-            groupDescription={groupDescription}
-            groupAvatarUrl={groupAvatarUrl}
-            groupMemberQuery={groupMemberQuery}
-            groupSelectedMembers={groupSelectedMembers}
-            groupMemberLoading={groupMemberLoading}
-            groupCreating={groupCreating}
-            groupError={groupError}
-            groupMessage={groupMessage}
             onToggleProfileEditor={openProfileEditor}
             onSignOut={onSignOut}
             onProfileQueryChange={setProfileQuery}
@@ -752,16 +743,6 @@ export function ChatScreen({
             getChatTitle={getChatTitle}
             getChatSubtitle={getChatSubtitle}
             onOpenCreateGroup={openCreateGroup}
-            onCloseCreateGroup={closeCreateGroup}
-            onGroupTitleChange={setGroupTitle}
-            onGroupDescriptionChange={setGroupDescription}
-            onGroupAvatarUrlChange={setGroupAvatarUrl}
-            onGroupMemberQueryChange={setGroupMemberQuery}
-            onAddSelectedGroupMember={() => {
-              void handleAddSelectedGroupMember();
-            }}
-            onRemoveSelectedGroupMember={removeSelectedGroupMember}
-            onCreateGroup={handleCreateGroup}
           />
         )}
         <section className="chat-card">
@@ -787,7 +768,30 @@ export function ChatScreen({
             }}
           />
 
-          {editingProfile ? (
+          {creatingGroup ? (
+            <CreateGroupPanel
+              isOpen={creatingGroup}
+              title={groupTitle}
+              description={groupDescription}
+              avatarUrl={groupAvatarUrl}
+              memberQuery={groupMemberQuery}
+              selectedMembers={groupSelectedMembers}
+              memberLoading={groupMemberLoading}
+              creating={groupCreating}
+              error={groupError}
+              message={groupMessage}
+              onClose={closeCreateGroup}
+              onTitleChange={setGroupTitle}
+              onDescriptionChange={setGroupDescription}
+              onAvatarUrlChange={setGroupAvatarUrl}
+              onMemberQueryChange={setGroupMemberQuery}
+              onAddMember={() => {
+                void handleAddSelectedGroupMember();
+              }}
+              onRemoveMember={removeSelectedGroupMember}
+              onSubmit={handleCreateGroup}
+            />
+          ) : editingProfile ? (
             <ProfileEditor
               username={user.username}
               firstName={profileFirstName}

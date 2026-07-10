@@ -1,7 +1,6 @@
 import { Pin, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
-import { CreateGroupPanel } from "@/components/chat/CreateGroupPanel";
 import { formatChatTime } from "@/lib/date-format";
 import { keepSubtleScrollbarVisible } from "@/lib/scrollbar";
 import type { AuthUser, Chat, UserProfile } from "@/types";
@@ -15,16 +14,6 @@ type ChatSidebarProps = {
   chats: Chat[];
   activeChatId: number | null;
   draftRecipient: UserProfile | null;
-  creatingGroup: boolean;
-  groupTitle: string;
-  groupDescription: string;
-  groupAvatarUrl: string;
-  groupMemberQuery: string;
-  groupSelectedMembers: UserProfile[];
-  groupMemberLoading: boolean;
-  groupCreating: boolean;
-  groupError: string | null;
-  groupMessage: string | null;
   onToggleProfileEditor: () => void;
   onSignOut: () => void;
   onProfileQueryChange: (value: string) => void;
@@ -35,14 +24,6 @@ type ChatSidebarProps = {
   getChatTitle: (chat: Chat) => string;
   getChatSubtitle: (chat: Chat) => string;
   onOpenCreateGroup: () => void;
-  onCloseCreateGroup: () => void;
-  onGroupTitleChange: (value: string) => void;
-  onGroupDescriptionChange: (value: string) => void;
-  onGroupAvatarUrlChange: (value: string) => void;
-  onGroupMemberQueryChange: (value: string) => void;
-  onAddSelectedGroupMember: () => void;
-  onRemoveSelectedGroupMember: (memberId: number) => void;
-  onCreateGroup: (event: React.FormEvent) => void;
 };
 
 function getProfileDisplayName(profile: UserProfile) {
@@ -58,16 +39,6 @@ export function ChatSidebar({
   chats,
   activeChatId,
   draftRecipient,
-  creatingGroup,
-  groupTitle,
-  groupDescription,
-  groupAvatarUrl,
-  groupMemberQuery,
-  groupSelectedMembers,
-  groupMemberLoading,
-  groupCreating,
-  groupError,
-  groupMessage,
   onToggleProfileEditor,
   onSignOut,
   onProfileQueryChange,
@@ -78,14 +49,6 @@ export function ChatSidebar({
   getChatTitle,
   getChatSubtitle,
   onOpenCreateGroup,
-  onCloseCreateGroup,
-  onGroupTitleChange,
-  onGroupDescriptionChange,
-  onGroupAvatarUrlChange,
-  onGroupMemberQueryChange,
-  onAddSelectedGroupMember,
-  onRemoveSelectedGroupMember,
-  onCreateGroup,
 }: ChatSidebarProps) {
   const profileSearchActive = profileQuery.trim().length > 0;
 
@@ -185,28 +148,18 @@ export function ChatSidebar({
         </>
       ) : (
         <>
-          <CreateGroupPanel
-            isOpen={creatingGroup}
-            title={groupTitle}
-            description={groupDescription}
-            avatarUrl={groupAvatarUrl}
-            memberQuery={groupMemberQuery}
-            selectedMembers={groupSelectedMembers}
-            memberLoading={groupMemberLoading}
-            creating={groupCreating}
-            error={groupError}
-            message={groupMessage}
-            onOpen={onOpenCreateGroup}
-            onClose={onCloseCreateGroup}
-            onTitleChange={onGroupTitleChange}
-            onDescriptionChange={onGroupDescriptionChange}
-            onAvatarUrlChange={onGroupAvatarUrlChange}
-            onMemberQueryChange={onGroupMemberQueryChange}
-            onAddMember={onAddSelectedGroupMember}
-            onRemoveMember={onRemoveSelectedGroupMember}
-            onSubmit={onCreateGroup}
-          />
-          <div className="sidebar-section-label">Chats</div>
+          <div className="sidebar-section-header">
+            <div className="sidebar-section-label">Chats</div>
+            <button
+              type="button"
+              className="sidebar-add-chat-button"
+              aria-label="New group"
+              title="New group"
+              onClick={onOpenCreateGroup}
+            >
+              +
+            </button>
+          </div>
           <div
             className="chat-list subtle-scrollbar"
             onScroll={keepSubtleScrollbarVisible}
