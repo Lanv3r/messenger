@@ -61,6 +61,7 @@ type UseChatNavigationOptions = {
   clearProfileSearchResult: () => void;
   setProfileSearchError: (message: string) => void;
   applyLocalReadState: (chat: Chat) => Chat;
+  onChatChange?: () => void;
   onSessionExpired: () => void;
 };
 
@@ -98,6 +99,7 @@ export function useChatNavigation({
   clearProfileSearchResult,
   setProfileSearchError,
   applyLocalReadState,
+  onChatChange,
   onSessionExpired,
 }: UseChatNavigationOptions) {
   function joinChat(chat: Chat) {
@@ -105,6 +107,7 @@ export function useChatNavigation({
     const chatId = chat.id;
 
     stopTypingActivity();
+    onChatChange?.();
     if (isVoiceRecording) {
       stopVoiceRecording(false);
     }
@@ -225,6 +228,7 @@ export function useChatNavigation({
 
     const socket = socketRef.current;
 
+    onChatChange?.();
     if (activeChatIdRef.current !== null) {
       socket?.emit("leave_room", String(activeChatIdRef.current));
     }

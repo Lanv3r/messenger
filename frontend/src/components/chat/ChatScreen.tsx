@@ -74,6 +74,8 @@ export function ChatScreen({
   const [chatError, setChatError] = useState<string | null>(
     null,
   );
+  const [messageSearchOpen, setMessageSearchOpen] = useState(false);
+  const searchHighlightTimeoutRef = useRef<number | null>(null);
   const {
     drafts: attachmentDrafts,
     caption: attachmentCaption,
@@ -112,7 +114,8 @@ export function ChatScreen({
     setLastName: setProfileLastName,
     setBio: setProfileBio,
     setAvatarUrl: setProfileAvatarUrl,
-    toggleEditing: toggleProfileEditor,
+    openEditing: openProfileEditor,
+    closeEditing: closeProfileEditor,
     submit: handleProfileUpdate,
   } = useProfileEditor({
     user,
@@ -552,6 +555,10 @@ export function ChatScreen({
     clearProfileSearchResult,
     setProfileSearchError,
     applyLocalReadState,
+    onChatChange: () => {
+      setMessageSearchOpen(false);
+      resetMessageSearch();
+    },
     onSessionExpired,
   });
 
@@ -617,7 +624,17 @@ export function ChatScreen({
   });
 
   const revealMessageById = (messageId: number) => {
+    if (searchHighlightTimeoutRef.current !== null) {
+      window.clearTimeout(searchHighlightTimeoutRef.current);
+    }
+
     setActiveSearchResultId(messageId);
+    searchHighlightTimeoutRef.current = window.setTimeout(() => {
+      setActiveSearchResultId((current) =>
+        current === messageId ? null : current,
+      );
+      searchHighlightTimeoutRef.current = null;
+    }, 2600);
 
     const target = messagesRef.current?.querySelector(
       `[data-message-id="${messageId}"]`,
@@ -634,6 +651,19 @@ export function ChatScreen({
   const revealMessageSearchResult = (entry: ChatMessage) => {
     revealMessageById(entry.id);
   };
+
+  const closeMessageSearch = () => {
+    setMessageSearchOpen(false);
+    resetMessageSearch();
+  };
+
+  useEffect(() => {
+    return () => {
+      if (searchHighlightTimeoutRef.current !== null) {
+        window.clearTimeout(searchHighlightTimeoutRef.current);
+      }
+    };
+  }, []);
 
   const startReplyingToMessage = (entry: ChatMessage) => {
     setReplyToMessage(entry);
@@ -670,60 +700,112 @@ export function ChatScreen({
   return (
     <main className="chat-shell">
       <div className="chat-layout">
-        <ChatSidebar
-          user={user}
-          editingProfile={editingProfile}
-          profileQuery={profileQuery}
-          profileResult={profileResult}
-          profileError={profileError}
-          profileLoading={profileLoading}
-          chats={chats}
-          activeChatId={activeChatId}
-          draftRecipient={draftRecipient}
-          creatingGroup={creatingGroup}
-          groupTitle={groupTitle}
-          groupDescription={groupDescription}
-          groupAvatarUrl={groupAvatarUrl}
-          groupMemberQuery={groupMemberQuery}
-          groupSelectedMembers={groupSelectedMembers}
-          groupMemberLoading={groupMemberLoading}
-          groupCreating={groupCreating}
-          groupError={groupError}
-          groupMessage={groupMessage}
-          onToggleProfileEditor={toggleProfileEditor}
-          onSignOut={onSignOut}
-          onProfileSearch={handleProfileSearch}
-          onProfileQueryChange={setProfileQuery}
-          onMessageProfile={(profile) => {
-            void openDraftChat(profile);
-          }}
-          onJoinChat={joinChat}
-          onToggleChatPin={(chat) => {
-            void toggleChatPin(chat);
-          }}
-          getChatTitle={getChatTitle}
-          getChatSubtitle={getChatSubtitle}
-          onOpenCreateGroup={openCreateGroup}
-          onCloseCreateGroup={closeCreateGroup}
-          onGroupTitleChange={setGroupTitle}
-          onGroupDescriptionChange={setGroupDescription}
-          onGroupAvatarUrlChange={setGroupAvatarUrl}
-          onGroupMemberQueryChange={setGroupMemberQuery}
-          onAddSelectedGroupMember={() => {
-            void handleAddSelectedGroupMember();
-          }}
-          onRemoveSelectedGroupMember={removeSelectedGroupMember}
-          onCreateGroup={handleCreateGroup}
-        />
+        {messageSearchOpen ? (
+          <aside className="chat-sidebar search-mode" aria-label="Search messages">
+            <MessageSearch
+              activeChatId={activeChatId}
+              query={messageSearchQuery}
+              results={messageSearchResults}
+              loading={messageSearchLoading}
+              error={messageSearchError}
+              hasSearched={messageSearchHasSearched}
+              activeResultId={activeSearchResultId}
+              autoFocus
+              onQueryChange={setMessageSearchQuery}
+              onClearSearchState={clearMessageSearchState}
+              onCloseSearch={closeMessageSearch}
+              onRevealResult={revealMessageSearchResult}
+              getSenderName={getSenderName}
+            />
+          </aside>
+        ) : (
+          <ChatSidebar
+            user={user}
+            profileQuery={profileQuery}
+            profileResult={profileResult}
+            profileError={profileError}
+            profileLoading={profileLoading}
+            chats={chats}
+            activeChatId={activeChatId}
+            draftRecipient={draftRecipient}
+            creatingGroup={creatingGroup}
+            groupTitle={groupTitle}
+            groupDescription={groupDescription}
+            groupAvatarUrl={groupAvatarUrl}
+            groupMemberQuery={groupMemberQuery}
+            groupSelectedMembers={groupSelectedMembers}
+            groupMemberLoading={groupMemberLoading}
+            groupCreating={groupCreating}
+            groupError={groupError}
+            groupMessage={groupMessage}
+            onToggleProfileEditor={openProfileEditor}
+            onSignOut={onSignOut}
+            onProfileSearch={handleProfileSearch}
+            onProfileQueryChange={setProfileQuery}
+            onMessageProfile={(profile) => {
+              void openDraftChat(profile);
+            }}
+            onJoinChat={joinChat}
+            onToggleChatPin={(chat) => {
+              void toggleChatPin(chat);
+            }}
+            getChatTitle={getChatTitle}
+            getChatSubtitle={getChatSubtitle}
+            onOpenCreateGroup={openCreateGroup}
+            onCloseCreateGroup={closeCreateGroup}
+            onGroupTitleChange={setGroupTitle}
+            onGroupDescriptionChange={setGroupDescription}
+            onGroupAvatarUrlChange={setGroupAvatarUrl}
+            onGroupMemberQueryChange={setGroupMemberQuery}
+            onAddSelectedGroupMember={() => {
+              void handleAddSelectedGroupMember();
+            }}
+            onRemoveSelectedGroupMember={removeSelectedGroupMember}
+            onCreateGroup={handleCreateGroup}
+          />
+        )}
         <section className="chat-card">
-        <ChatHeader
-          title={chatHeaderTitle}
-          subtitle={chatHeaderSubtitle}
-          avatarUrl={chatHeaderAvatar}
-          clickable={chatHeaderClickable}
-          onClick={handleChatHeaderClick}
-        />
+          <ChatHeader
+            title={chatHeaderTitle}
+            subtitle={chatHeaderSubtitle}
+            avatarUrl={chatHeaderAvatar}
+            clickable={chatHeaderClickable}
+            onClick={handleChatHeaderClick}
+            searchEnabled={activeChatId !== null && draftRecipient === null}
+            searchActive={messageSearchOpen}
+            onSearchClick={() => {
+              if (activeChatId === null || draftRecipient !== null) {
+                return;
+              }
 
+              setMessageSearchOpen((current) => {
+                if (current) {
+                  resetMessageSearch();
+                }
+                return !current;
+              });
+            }}
+          />
+
+          {editingProfile ? (
+            <ProfileEditor
+              username={user.username}
+              firstName={profileFirstName}
+              lastName={profileLastName}
+              bio={profileBio}
+              avatarUrl={profileAvatarUrl}
+              saving={profileSaving}
+              error={profileSaveError}
+              message={profileSaveMessage}
+              onFirstNameChange={setProfileFirstName}
+              onLastNameChange={setProfileLastName}
+              onBioChange={setProfileBio}
+              onAvatarUrlChange={setProfileAvatarUrl}
+              onClose={closeProfileEditor}
+              onSubmit={handleProfileUpdate}
+            />
+          ) : (
+            <>
         {chatInfoOpen && activeChat && activeChat.type === "group" ? (
           <GroupInfoPanel
             chat={activeChat}
@@ -886,38 +968,6 @@ export function ChatScreen({
           />
         ) : null}
 
-        {editingProfile ? (
-          <ProfileEditor
-            username={user.username}
-            firstName={profileFirstName}
-            lastName={profileLastName}
-            bio={profileBio}
-            avatarUrl={profileAvatarUrl}
-            saving={profileSaving}
-            error={profileSaveError}
-            message={profileSaveMessage}
-            onFirstNameChange={setProfileFirstName}
-            onLastNameChange={setProfileLastName}
-            onBioChange={setProfileBio}
-            onAvatarUrlChange={setProfileAvatarUrl}
-            onSubmit={handleProfileUpdate}
-          />
-        ) : null}
-
-        <MessageSearch
-          activeChatId={activeChatId}
-          query={messageSearchQuery}
-          results={messageSearchResults}
-          loading={messageSearchLoading}
-          error={messageSearchError}
-          hasSearched={messageSearchHasSearched}
-          activeResultId={activeSearchResultId}
-          onQueryChange={setMessageSearchQuery}
-          onClearSearchState={clearMessageSearchState}
-          onRevealResult={revealMessageSearchResult}
-          getSenderName={getSenderName}
-        />
-
         {chatError ? (
           <p className="profile-error">{chatError}</p>
         ) : null}
@@ -997,6 +1047,8 @@ export function ChatScreen({
             </button>
           </div>
         ) : null}
+            </>
+          )}
         </section>
       </div>
     </main>

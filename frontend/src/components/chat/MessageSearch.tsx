@@ -1,5 +1,8 @@
+import { X } from "lucide-react";
+
 import { formatMessageTime } from "@/lib/date-format";
 import { getSearchExcerpt, highlightSearchText } from "@/lib/message-helpers";
+import { keepSubtleScrollbarVisible } from "@/lib/scrollbar";
 import type { ChatMessage } from "@/types";
 
 type MessageSearchProps = {
@@ -10,8 +13,10 @@ type MessageSearchProps = {
   error: string | null;
   hasSearched: boolean;
   activeResultId: number | null;
+  autoFocus?: boolean;
   onQueryChange: (value: string) => void;
   onClearSearchState: () => void;
+  onCloseSearch?: () => void;
   onRevealResult: (entry: ChatMessage) => void;
   getSenderName: (entry: ChatMessage) => string;
 };
@@ -24,13 +29,23 @@ export function MessageSearch({
   error,
   hasSearched,
   activeResultId,
+  autoFocus = false,
   onQueryChange,
   onClearSearchState,
+  onCloseSearch,
   onRevealResult,
   getSenderName,
 }: MessageSearchProps) {
   return (
-    <section className="message-search" aria-label="Search messages">
+    <section
+      className={[
+        "message-search",
+        onCloseSearch ? "sidebar-message-search" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      aria-label="Search messages"
+    >
       <form
         className="message-search-form"
         onSubmit={(event) => event.preventDefault()}
@@ -40,6 +55,7 @@ export function MessageSearch({
           value={query}
           placeholder="Search in this chat"
           autoComplete="off"
+          autoFocus={autoFocus}
           disabled={activeChatId === null}
           onChange={(event) => {
             const value = event.target.value;
@@ -47,6 +63,16 @@ export function MessageSearch({
             onClearSearchState();
           }}
         />
+        {onCloseSearch ? (
+          <button
+            type="button"
+            className="message-search-close"
+            aria-label="Close message search"
+            onClick={onCloseSearch}
+          >
+            <X size={16} aria-hidden="true" />
+          </button>
+        ) : null}
       </form>
 
       {error ? <p className="profile-error">{error}</p> : null}
@@ -54,7 +80,10 @@ export function MessageSearch({
       {loading ? <p className="message-search-empty">Searching...</p> : null}
 
       {results.length > 0 ? (
-        <div className="message-search-results">
+        <div
+          className="message-search-results subtle-scrollbar"
+          onScroll={keepSubtleScrollbarVisible}
+        >
           {results.map((result) => (
             <button
               key={result.id}

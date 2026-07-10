@@ -8,7 +8,6 @@ import type { AuthUser, Chat, UserProfile } from "@/types";
 
 type ChatSidebarProps = {
   user: AuthUser;
-  editingProfile: boolean;
   profileQuery: string;
   profileResult: UserProfile | null;
   profileError: string | null;
@@ -52,7 +51,6 @@ function getProfileDisplayName(profile: UserProfile) {
 
 export function ChatSidebar({
   user,
-  editingProfile,
   profileQuery,
   profileResult,
   profileError,
@@ -107,7 +105,7 @@ export function ChatSidebar({
         </div>
         <div className="sidebar-profile-actions">
           <Button variant="outline" size="sm" onClick={onToggleProfileEditor}>
-            {editingProfile ? "Close" : "Edit profile"}
+            Edit profile
           </Button>
           <Button variant="outline" size="sm" onClick={onSignOut}>
             Sign out

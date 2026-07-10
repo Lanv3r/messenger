@@ -1,3 +1,5 @@
+import { X } from "lucide-react";
+
 import { Button } from "@/components/ui/button";
 
 type ProfileEditorProps = {
@@ -13,6 +15,7 @@ type ProfileEditorProps = {
   onLastNameChange: (value: string) => void;
   onBioChange: (value: string) => void;
   onAvatarUrlChange: (value: string) => void;
+  onClose: () => void;
   onSubmit: (event: React.FormEvent) => void;
 };
 
@@ -29,18 +32,26 @@ export function ProfileEditor({
   onLastNameChange,
   onBioChange,
   onAvatarUrlChange,
+  onClose,
   onSubmit,
 }: ProfileEditorProps) {
   return (
     <section className="profile-editor" aria-label="Edit your profile">
       <div className="profile-editor-header">
-        <img src={avatarUrl} alt="" className="profile-avatar" />
-        <div>
-          <h2>Edit profile</h2>
+        <span>
+          <img src={avatarUrl} alt="" className="profile-avatar" />
           <p>@{username}</p>
-        </div>
+        </span>
+        <button
+          type="button"
+          className="profile-editor-close"
+          aria-label="Close profile editor"
+          onClick={onClose}
+        >
+          <X size={18} aria-hidden="true" />
+        </button>
       </div>
-      <form className="profile-editor-form" onSubmit={onSubmit}>
+      <form className="profile-editor-form subtle-scrollbar" onSubmit={onSubmit}>
         <label>
           First name
           <input

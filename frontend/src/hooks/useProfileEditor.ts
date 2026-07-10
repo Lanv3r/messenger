@@ -40,6 +40,18 @@ export function useProfileEditor({
     setMessage(null);
   };
 
+  const openEditing = () => {
+    setEditing(true);
+    setError(null);
+    setMessage(null);
+  };
+
+  const closeEditing = () => {
+    setEditing(false);
+    setError(null);
+    setMessage(null);
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
 
@@ -66,7 +78,6 @@ export function useProfileEditor({
 
       onUserUpdated(updatedUser);
       setMessage("Profile updated.");
-      setEditing(false);
     } catch (requestError) {
       const requestMessage =
         requestError instanceof Error
@@ -98,6 +109,8 @@ export function useProfileEditor({
     setBio,
     setAvatarUrl,
     toggleEditing,
+    openEditing,
+    closeEditing,
     submit,
   };
 }
