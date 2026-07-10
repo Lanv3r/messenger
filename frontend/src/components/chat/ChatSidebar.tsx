@@ -2,6 +2,7 @@ import { Pin, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { formatChatTime } from "@/lib/date-format";
+import { getAssetUrl } from "@/lib/message-helpers";
 import { keepSubtleScrollbarVisible } from "@/lib/scrollbar";
 import type { Chat, UserProfile } from "@/types";
 
@@ -94,7 +95,7 @@ export function ChatSidebar({
             {profileResult ? (
               <article className="profile-card">
                 <img
-                  src={profileResult.avatar_url}
+                  src={getAssetUrl(profileResult.avatar_url)}
                   alt=""
                   className="profile-avatar"
                 />
@@ -157,7 +158,7 @@ export function ChatSidebar({
                 onClick={() => onJoinChat(chat)}
               >
                 <img
-                  src={chat.display_avatar_url || chat.avatar_url || "/favicon.svg"}
+                  src={getAssetUrl(chat.display_avatar_url || chat.avatar_url)}
                   alt=""
                   onError={(event) => {
                     event.currentTarget.src = "/favicon.svg";
@@ -204,7 +205,7 @@ export function ChatSidebar({
           <div className="chat-list-item active">
             <button className="chat-open-button" type="button">
               <img
-                src={draftRecipient.avatar_url}
+                src={getAssetUrl(draftRecipient.avatar_url)}
                 alt=""
                 onError={(event) => {
                   event.currentTarget.src = "/favicon.svg";

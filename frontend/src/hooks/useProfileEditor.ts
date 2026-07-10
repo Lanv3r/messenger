@@ -18,7 +18,8 @@ export function useProfileEditor({
   const [firstName, setFirstName] = useState(user.firstName);
   const [lastName, setLastName] = useState(user.lastName ?? "");
   const [bio, setBio] = useState(user.bio ?? "");
-  const [avatarUrl, setAvatarUrl] = useState(user.avatarUrl);
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState(user.avatarUrl);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -31,8 +32,20 @@ export function useProfileEditor({
     setFirstName(user.firstName);
     setLastName(user.lastName ?? "");
     setBio(user.bio ?? "");
-    setAvatarUrl(user.avatarUrl);
+    setAvatarFile(null);
+    setAvatarPreviewUrl(user.avatarUrl);
   }, [editing, user.avatarUrl, user.bio, user.firstName, user.lastName]);
+
+  useEffect(() => {
+    if (!avatarFile) {
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(avatarFile);
+    setAvatarPreviewUrl(objectUrl);
+
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [avatarFile]);
 
   const toggleEditing = () => {
     setEditing((current) => !current);
@@ -66,17 +79,22 @@ export function useProfileEditor({
     setMessage(null);
 
     try {
+      const formData = new FormData();
+      formData.append("first_name", firstName.trim());
+      formData.append("last_name", lastName.trim());
+      formData.append("bio", bio.trim());
+      if (avatarFile) {
+        formData.append("avatar", avatarFile);
+      }
+
       const updatedUser = await apiFetch<AuthResponse>("/users/me/", {
         method: "PATCH",
-        body: JSON.stringify({
-          first_name: firstName.trim(),
-          last_name: lastName.trim() || null,
-          bio: bio.trim() || null,
-          avatar_url: avatarUrl.trim() || "/favicon.svg",
-        }),
+        body: formData,
       });
 
       onUserUpdated(updatedUser);
+      setAvatarFile(null);
+      setAvatarPreviewUrl(updatedUser.avatar_url ?? "/favicon.svg");
       setMessage("Profile updated.");
     } catch (requestError) {
       const requestMessage =
@@ -100,14 +118,14 @@ export function useProfileEditor({
     firstName,
     lastName,
     bio,
-    avatarUrl,
+    avatarPreviewUrl,
     error,
     message,
     saving,
     setFirstName,
     setLastName,
     setBio,
-    setAvatarUrl,
+    setAvatarFile,
     toggleEditing,
     openEditing,
     closeEditing,

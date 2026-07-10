@@ -17,7 +17,8 @@ export function useCreateGroup({
   const [isOpen, setIsOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [avatarUrl, setAvatarUrl] = useState("/favicon.svg");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState("/favicon.svg");
   const [memberQuery, setMemberQuery] = useState("");
   const [selectedMembers, setSelectedMembers] = useState<UserProfile[]>([]);
   const [memberLoading, setMemberLoading] = useState(false);
@@ -28,11 +29,28 @@ export function useCreateGroup({
   const reset = () => {
     setTitle("");
     setDescription("");
-    setAvatarUrl("/favicon.svg");
+    setAvatarFile(null);
+    setAvatarPreviewUrl("/favicon.svg");
     setMemberQuery("");
     setSelectedMembers([]);
     setError(null);
     setMessage(null);
+  };
+
+  const updateAvatarFile = (file: File | null) => {
+    setAvatarFile(file);
+    if (!file) {
+      setAvatarPreviewUrl("/favicon.svg");
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(file);
+    setAvatarPreviewUrl((current) => {
+      if (current.startsWith("blob:")) {
+        URL.revokeObjectURL(current);
+      }
+      return objectUrl;
+    });
   };
 
   const open = () => {
@@ -114,14 +132,19 @@ export function useCreateGroup({
     setMessage(null);
 
     try {
+      const formData = new FormData();
+      formData.append("title", title.trim());
+      formData.append("description", description.trim());
+      for (const member of selectedMembers) {
+        formData.append("member_ids", String(member.id));
+      }
+      if (avatarFile) {
+        formData.append("avatar", avatarFile);
+      }
+
       const createdChat = await apiFetch<Chat>("/chats/group", {
         method: "POST",
-        body: JSON.stringify({
-          title: title.trim(),
-          description: description.trim() || null,
-          avatar_url: avatarUrl.trim() || "/favicon.svg",
-          member_ids: selectedMembers.map((member) => member.id),
-        }),
+        body: formData,
       });
 
       onCreatedGroup(createdChat);
@@ -148,7 +171,7 @@ export function useCreateGroup({
     isOpen,
     title,
     description,
-    avatarUrl,
+    avatarPreviewUrl,
     memberQuery,
     selectedMembers,
     memberLoading,
@@ -157,7 +180,7 @@ export function useCreateGroup({
     message,
     setTitle,
     setDescription,
-    setAvatarUrl,
+    setAvatarFile: updateAvatarFile,
     setMemberQuery,
     open,
     close,

@@ -74,9 +74,34 @@ export function toAuthUser(authUser: AuthResponse): AuthUser {
     firstName: authUser.first_name,
     lastName: authUser.last_name,
     bio: authUser.bio ?? null,
-    avatarUrl: authUser.avatar_url ?? "/favicon.svg",
+    avatarUrl: getAssetUrl(authUser.avatar_url),
     status: authUser.status ?? "online",
   };
+}
+
+export function getAssetUrl(
+  value: string | null | undefined,
+  fallback = "/favicon.svg",
+) {
+  const url = value?.trim();
+
+  if (!url) {
+    return fallback;
+  }
+
+  if (
+    url.startsWith("blob:") ||
+    url.startsWith("data:") ||
+    url.startsWith("http")
+  ) {
+    return url;
+  }
+
+  if (url.startsWith("/uploads/")) {
+    return `${API_URL}${url}`;
+  }
+
+  return url;
 }
 
 export function getMessagePreviewText(entry: ChatMessage) {

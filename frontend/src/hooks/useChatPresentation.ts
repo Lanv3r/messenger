@@ -1,3 +1,4 @@
+import { getAssetUrl } from "@/lib/message-helpers";
 import type {
   AuthUser,
   Chat,
@@ -60,9 +61,9 @@ export function useChatPresentation({
       ? getChatTitle(activeChat)
       : "Chat";
   const chatHeaderAvatar = draftRecipient
-    ? draftRecipient.avatar_url
+    ? getAssetUrl(draftRecipient.avatar_url)
     : activeChat
-      ? activeChat.display_avatar_url || activeChat.avatar_url || "/favicon.svg"
+      ? getAssetUrl(activeChat.display_avatar_url || activeChat.avatar_url)
       : "/favicon.svg";
   const chatActivitySubtitle = getChatActivitySubtitle(activeChat);
   const chatHeaderSubtitle =

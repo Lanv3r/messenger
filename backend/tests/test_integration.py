@@ -105,14 +105,12 @@ class MessengerIntegrationTest(unittest.TestCase):
         username = f"{username_prefix}_{uuid4().hex[:8]}".lower()
         response = client.post(
             "/signup",
-            json={
+            data={
                 "username": username,
                 "password": "password123",
                 "first_name": username_prefix.title(),
-                "last_name": None,
-                "bio": None,
-                "avatar_url": "/favicon.svg",
-                "status": "online",
+                "last_name": "",
+                "bio": "",
             },
         )
         self.assertEqual(response.status_code, 200, response.text)
@@ -121,11 +119,10 @@ class MessengerIntegrationTest(unittest.TestCase):
     def create_group(self, owner_client: TestClient, member_ids: list[int]):
         response = owner_client.post(
             "/chats/group",
-            json={
+            data={
                 "title": f"group-{uuid4().hex[:8]}",
-                "description": None,
-                "avatar_url": "/favicon.svg",
-                "member_ids": member_ids,
+                "description": "",
+                "member_ids": [str(member_id) for member_id in member_ids],
             },
         )
         self.assertEqual(response.status_code, 200, response.text)
@@ -478,27 +475,23 @@ class MessengerIntegrationTest(unittest.TestCase):
             first_signup_client = self.client()
             first_signup = first_signup_client.post(
                 "/signup",
-                json={
+                data={
                     "username": f"limited_{uuid4().hex[:8]}",
                     "password": "password123",
                     "first_name": "Limited",
-                    "last_name": None,
-                    "bio": None,
-                    "avatar_url": "/favicon.svg",
-                    "status": "online",
+                    "last_name": "",
+                    "bio": "",
                 },
             )
             self.assertEqual(first_signup.status_code, 200, first_signup.text)
             second_signup = self.client().post(
                 "/signup",
-                json={
+                data={
                     "username": f"limited_{uuid4().hex[:8]}",
                     "password": "password123",
                     "first_name": "Limited",
-                    "last_name": None,
-                    "bio": None,
-                    "avatar_url": "/favicon.svg",
-                    "status": "online",
+                    "last_name": "",
+                    "bio": "",
                 },
             )
             self.assertEqual(second_signup.status_code, 429, second_signup.text)

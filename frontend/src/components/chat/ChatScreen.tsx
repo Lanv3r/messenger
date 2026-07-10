@@ -113,14 +113,14 @@ export function ChatScreen({
     firstName: profileFirstName,
     lastName: profileLastName,
     bio: profileBio,
-    avatarUrl: profileAvatarUrl,
+    avatarPreviewUrl: profileAvatarPreviewUrl,
     error: profileSaveError,
     message: profileSaveMessage,
     saving: profileSaving,
     setFirstName: setProfileFirstName,
     setLastName: setProfileLastName,
     setBio: setProfileBio,
-    setAvatarUrl: setProfileAvatarUrl,
+    setAvatarFile: setProfileAvatarFile,
     openEditing: openProfileEditor,
     closeEditing: closeProfileEditor,
     submit: handleProfileUpdate,
@@ -573,7 +573,7 @@ export function ChatScreen({
     isOpen: creatingGroup,
     title: groupTitle,
     description: groupDescription,
-    avatarUrl: groupAvatarUrl,
+    avatarPreviewUrl: groupAvatarPreviewUrl,
     memberQuery: groupMemberQuery,
     selectedMembers: groupSelectedMembers,
     memberLoading: groupMemberLoading,
@@ -582,7 +582,7 @@ export function ChatScreen({
     message: groupMessage,
     setTitle: setGroupTitle,
     setDescription: setGroupDescription,
-    setAvatarUrl: setGroupAvatarUrl,
+    setAvatarFile: setGroupAvatarFile,
     setMemberQuery: setGroupMemberQuery,
     open: openCreateGroup,
     close: closeCreateGroup,
@@ -783,7 +783,7 @@ export function ChatScreen({
               isOpen={creatingGroup}
               title={groupTitle}
               description={groupDescription}
-              avatarUrl={groupAvatarUrl}
+              avatarPreviewUrl={groupAvatarPreviewUrl}
               memberQuery={groupMemberQuery}
               selectedMembers={groupSelectedMembers}
               memberLoading={groupMemberLoading}
@@ -793,30 +793,13 @@ export function ChatScreen({
               onClose={closeCreateGroup}
               onTitleChange={setGroupTitle}
               onDescriptionChange={setGroupDescription}
-              onAvatarUrlChange={setGroupAvatarUrl}
+              onAvatarFileChange={setGroupAvatarFile}
               onMemberQueryChange={setGroupMemberQuery}
               onAddMember={() => {
                 void handleAddSelectedGroupMember();
               }}
               onRemoveMember={removeSelectedGroupMember}
               onSubmit={handleCreateGroup}
-            />
-          ) : editingProfile ? (
-            <ProfileEditor
-              username={user.username}
-              firstName={profileFirstName}
-              lastName={profileLastName}
-              bio={profileBio}
-              avatarUrl={profileAvatarUrl}
-              saving={profileSaving}
-              error={profileSaveError}
-              message={profileSaveMessage}
-              onFirstNameChange={setProfileFirstName}
-              onLastNameChange={setProfileLastName}
-              onBioChange={setProfileBio}
-              onAvatarUrlChange={setProfileAvatarUrl}
-              onClose={closeProfileEditor}
-              onSubmit={handleProfileUpdate}
             />
           ) : (
             <>
@@ -1065,6 +1048,26 @@ export function ChatScreen({
           )}
         </section>
       </div>
+      {editingProfile ? (
+        <div className="profile-editor-backdrop">
+          <ProfileEditor
+            username={user.username}
+            firstName={profileFirstName}
+            lastName={profileLastName}
+            bio={profileBio}
+            avatarPreviewUrl={profileAvatarPreviewUrl}
+            saving={profileSaving}
+            error={profileSaveError}
+            message={profileSaveMessage}
+            onFirstNameChange={setProfileFirstName}
+            onLastNameChange={setProfileLastName}
+            onBioChange={setProfileBio}
+            onAvatarFileChange={setProfileAvatarFile}
+            onClose={closeProfileEditor}
+            onSubmit={handleProfileUpdate}
+          />
+        </div>
+      ) : null}
     </main>
   );
 }

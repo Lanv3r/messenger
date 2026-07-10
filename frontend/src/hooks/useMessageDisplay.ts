@@ -1,5 +1,6 @@
 import { getVisibleMessages } from "@/lib/chat-helpers";
 import { formatChatTime } from "@/lib/date-format";
+import { getAssetUrl } from "@/lib/message-helpers";
 import type {
   AuthUser,
   Chat,
@@ -75,7 +76,7 @@ export function useMessageDisplay({
       return user.avatarUrl;
     }
 
-    return entry.sender_avatar_url ?? "/favicon.svg";
+    return getAssetUrl(entry.sender_avatar_url);
   }
 
   function getMessageDeliveryStatus(

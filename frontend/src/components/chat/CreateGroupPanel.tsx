@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 
+import { AvatarUploadField } from "@/components/AvatarUploadField";
 import { Button } from "@/components/ui/button";
 import type { UserProfile } from "@/types";
 
@@ -7,7 +8,7 @@ type CreateGroupPanelProps = {
   isOpen: boolean;
   title: string;
   description: string;
-  avatarUrl: string;
+  avatarPreviewUrl: string;
   memberQuery: string;
   selectedMembers: UserProfile[];
   memberLoading: boolean;
@@ -17,7 +18,7 @@ type CreateGroupPanelProps = {
   onClose: () => void;
   onTitleChange: (value: string) => void;
   onDescriptionChange: (value: string) => void;
-  onAvatarUrlChange: (value: string) => void;
+  onAvatarFileChange: (file: File | null) => void;
   onMemberQueryChange: (value: string) => void;
   onAddMember: () => void;
   onRemoveMember: (memberId: number) => void;
@@ -32,7 +33,7 @@ export function CreateGroupPanel({
   isOpen,
   title,
   description,
-  avatarUrl,
+  avatarPreviewUrl,
   memberQuery,
   selectedMembers,
   memberLoading,
@@ -42,7 +43,7 @@ export function CreateGroupPanel({
   onClose,
   onTitleChange,
   onDescriptionChange,
-  onAvatarUrlChange,
+  onAvatarFileChange,
   onMemberQueryChange,
   onAddMember,
   onRemoveMember,
@@ -85,15 +86,13 @@ export function CreateGroupPanel({
             onChange={(event) => onDescriptionChange(event.target.value)}
           />
         </label>
-        <label>
-          Avatar URL
-          <input
-            type="text"
-            value={avatarUrl}
-            placeholder="/favicon.svg"
-            onChange={(event) => onAvatarUrlChange(event.target.value)}
-          />
-        </label>
+        <AvatarUploadField
+          id="group-avatar-file"
+          label="Group avatar"
+          previewUrl={avatarPreviewUrl}
+          helperText="Optional. PNG, JPEG, WebP, or GIF."
+          onFileChange={onAvatarFileChange}
+        />
         <label>
           Add members
           <span className="group-inline-form">

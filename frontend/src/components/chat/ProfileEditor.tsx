@@ -1,5 +1,6 @@
 import { X } from "lucide-react";
 
+import { AvatarUploadField } from "@/components/AvatarUploadField";
 import { Button } from "@/components/ui/button";
 
 type ProfileEditorProps = {
@@ -7,14 +8,14 @@ type ProfileEditorProps = {
   firstName: string;
   lastName: string;
   bio: string;
-  avatarUrl: string;
+  avatarPreviewUrl: string;
   saving: boolean;
   error: string | null;
   message: string | null;
   onFirstNameChange: (value: string) => void;
   onLastNameChange: (value: string) => void;
   onBioChange: (value: string) => void;
-  onAvatarUrlChange: (value: string) => void;
+  onAvatarFileChange: (file: File | null) => void;
   onClose: () => void;
   onSubmit: (event: React.FormEvent) => void;
 };
@@ -24,22 +25,33 @@ export function ProfileEditor({
   firstName,
   lastName,
   bio,
-  avatarUrl,
+  avatarPreviewUrl,
   saving,
   error,
   message,
   onFirstNameChange,
   onLastNameChange,
   onBioChange,
-  onAvatarUrlChange,
+  onAvatarFileChange,
   onClose,
   onSubmit,
 }: ProfileEditorProps) {
   return (
-    <section className="profile-editor" aria-label="Edit your profile">
+    <section
+      className="profile-editor"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Edit your profile"
+    >
       <div className="profile-editor-header">
         <span>
-          <img src={avatarUrl} alt="" className="profile-avatar" />
+          <AvatarUploadField
+            id="profile-avatar-file"
+            label="Change avatar"
+            previewUrl={avatarPreviewUrl}
+            variant="avatar"
+            onFileChange={onAvatarFileChange}
+          />
           <p>@{username}</p>
         </span>
         <button
@@ -80,15 +92,6 @@ export function ProfileEditor({
             onChange={(event) => onBioChange(event.target.value)}
           />
           <span>{bio.length}/70</span>
-        </label>
-        <label>
-          Avatar URL
-          <input
-            type="text"
-            value={avatarUrl}
-            placeholder="/favicon.svg"
-            onChange={(event) => onAvatarUrlChange(event.target.value)}
-          />
         </label>
         {error ? <p className="profile-error">{error}</p> : null}
         {message ? <p className="profile-success">{message}</p> : null}

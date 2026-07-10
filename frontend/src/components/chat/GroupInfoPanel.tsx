@@ -2,6 +2,7 @@ import type { FormEvent } from "react";
 
 import { Button } from "@/components/ui/button";
 import { GroupSettingsPanel } from "@/components/chat/GroupSettingsPanel";
+import { getAssetUrl } from "@/lib/message-helpers";
 import type { AuthUser, Chat, ChatMember, MemberPermissions } from "@/types";
 
 type GroupInfoPanelProps = {
@@ -102,7 +103,7 @@ export function GroupInfoPanel({
 
         <div className="chat-info-hero">
           <img
-            src={chat.display_avatar_url || chat.avatar_url || "/favicon.svg"}
+            src={getAssetUrl(chat.display_avatar_url || chat.avatar_url)}
             alt=""
             onError={(event) => {
               event.currentTarget.src = "/favicon.svg";
@@ -174,7 +175,7 @@ export function GroupInfoPanel({
                     onClick={() => onOpenMemberProfile(member)}
                   >
                     <img
-                      src={member.avatar_url}
+                      src={getAssetUrl(member.avatar_url)}
                       alt=""
                       onError={(event) => {
                         event.currentTarget.src = "/favicon.svg";

@@ -1,12 +1,13 @@
 from datetime import datetime, timezone
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlmodel import col, select
 
 from app.db import SessionDep
 from app.dependencies import get_current_user
 from app.models import User, UserProfileUpdate, UserPublic
+from app.services.uploads import save_avatar_upload
 from app.services.users import is_valid_username
 
 router = APIRouter(tags=["users"])
@@ -73,16 +74,20 @@ async def read_users_me(
 
 
 @router.patch("/users/me/", response_model=UserPublic)
-def update_me(
-    payload: UserProfileUpdate,
+async def update_me(
     session: SessionDep,
     current_user: Annotated[User, Depends(get_current_user)],
+    payload: Annotated[UserProfileUpdate, Form()],
+    avatar: Annotated[UploadFile | None, File()] = None,
 ):
-    update_data = payload.model_dump(exclude_unset=True)
+    update_data: dict[str, str | None] = {}
 
-    first_name = update_data.get("first_name", None)
-    last_name = update_data.get("last_name", None)
-    bio = update_data.get("bio", None)
+    first_name = payload.first_name
+    last_name = payload.last_name
+    bio = payload.bio
+
+    if first_name is not None and not first_name.strip():
+        raise HTTPException(status_code=400, detail="First name is required.")
 
     if first_name is not None and len(first_name.strip()) > 64:
         raise HTTPException(
@@ -101,6 +106,17 @@ def update_me(
             status_code=400,
             detail="Bio must be at most 70 characters.",
         )
+
+    if first_name is not None:
+        update_data["first_name"] = first_name.strip()
+    if last_name is not None:
+        update_data["last_name"] = last_name.strip() or None
+    if bio is not None:
+        update_data["bio"] = bio.strip() or None
+
+    avatar_url = await save_avatar_upload(avatar)
+    if avatar_url is not None:
+        update_data["avatar_url"] = avatar_url
 
     for key, value in update_data.items():
         setattr(current_user, key, value)

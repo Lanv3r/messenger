@@ -1,4 +1,5 @@
 import { MemberManagementPanel } from "@/components/chat/MemberManagementPanel";
+import { getAssetUrl } from "@/lib/message-helpers";
 import type {
   AdminPermissions,
   ChatMember,
@@ -106,7 +107,7 @@ export function MemberProfileDialog({
           &times;
         </button>
         <img
-          src={member.avatar_url}
+          src={getAssetUrl(member.avatar_url)}
           alt=""
           onError={(event) => {
             event.currentTarget.src = "/favicon.svg";

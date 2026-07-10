@@ -33,8 +33,9 @@ from app.services.chats import (
     require_chat_permission,
 )
 from app.services.messages import get_message_preview_text
+from app.services.uploads import save_avatar_upload
 from app.socket import sio
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import func
 from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import col, exists, select
@@ -502,19 +503,37 @@ def pin_chat(
 
 @router.post("/chats/group", response_model=ChatListItem)
 async def create_group_chat(
-    payload: GroupCreate,
     session: SessionDep,
     current_user: Annotated[User, Depends(get_current_user)],
+    payload: Annotated[GroupCreate, Form()],
+    avatar: Annotated[UploadFile | None, File()] = None,
 ):
     user_id = current_user.id
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
 
+    normalized_title = payload.title.strip()
+    normalized_description = payload.description.strip() if payload.description else None
+    if not normalized_title:
+        raise HTTPException(status_code=400, detail="Group name is required")
+    if len(normalized_title) > 128:
+        raise HTTPException(
+            status_code=400,
+            detail="Group name must be at most 128 characters.",
+        )
+    if normalized_description is not None and len(normalized_description) > 255:
+        raise HTTPException(
+            status_code=400,
+            detail="Description must be at most 255 characters.",
+        )
+
+    avatar_url = await save_avatar_upload(avatar)
+
     chat = Chat(
         type="group",
-        title=payload.title,
-        description=payload.description,
-        avatar_url=payload.avatar_url,
+        title=normalized_title,
+        description=normalized_description or None,
+        avatar_url=avatar_url,
     )
     session.add(chat)
     session.flush()
@@ -566,7 +585,7 @@ async def create_group_chat(
         title=chat.title,
         description=chat.description,
         avatar_url=chat.avatar_url,
-        display_title=payload.title,
+        display_title=normalized_title,
         display_avatar_url=chat.avatar_url or "/favicon.svg",
         member_ids=member_ids,
         member_count=len(member_ids),

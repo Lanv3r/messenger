@@ -8,14 +8,12 @@ async function createUser(
   firstName: string,
 ) {
   const response = await request.post(`${API_URL}/signup`, {
-    data: {
+    form: {
       username,
       password: "password123",
       first_name: firstName,
-      last_name: null,
-      bio: null,
-      avatar_url: "/favicon.svg",
-      status: "online",
+      last_name: "",
+      bio: "",
     },
   });
 

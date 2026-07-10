@@ -42,8 +42,18 @@ class UserPublic(UserBase):
     id: int
 
 
-class UserCreate(UserBase):
+class UserCreate(SQLModel):
+    username: str = Field(max_length=32)
     password: str
+    first_name: str = Field(max_length=64)
+    last_name: str | None = Field(default=None, max_length=64)
+    bio: str | None = Field(default=None, max_length=70)
+
+
+class UserProfileUpdate(SQLModel):
+    first_name: str | None = Field(default=None, max_length=64)
+    last_name: str | None = Field(default=None, max_length=64)
+    bio: str | None = Field(default=None, max_length=70)
 
 
 class UserUpdate(UserBase):
@@ -55,13 +65,6 @@ class UserUpdate(UserBase):
     status: str | None = None
     password_hash: str | None = None
     deleted_at: datetime | None = None
-
-
-class UserProfileUpdate(SQLModel):
-    first_name: str | None = Field(default=None, max_length=64)
-    last_name: str | None = Field(default=None, max_length=64)
-    bio: str | None = Field(default=None, max_length=70)
-    avatar_url: str | None = None
 
 
 class LoginRequest(SQLModel):
@@ -106,6 +109,12 @@ class ChatPublic(ChatBase):
 
 class ChatCreate(ChatBase):
     pass
+
+
+class GroupCreate(SQLModel):
+    title: str = Field(max_length=128)
+    description: str | None = Field(default=None, max_length=255)
+    member_ids: list[int] = Field(default_factory=list)
 
 
 class ChatUpdate(ChatBase):
@@ -309,13 +318,6 @@ class ChatSettingsUpdate(SQLModel):
     is_pinned: bool | None = None
     is_archived: bool | None = None
     muted_until: datetime | None = None
-
-
-class GroupCreate(SQLModel):
-    title: str
-    description: str | None = None
-    avatar_url: str
-    member_ids: list[int] = Field(default_factory=list)
 
 
 class AddGroupMembers(SQLModel):

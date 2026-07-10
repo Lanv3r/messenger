@@ -17,10 +17,11 @@ class Settings(BaseSettings):
         env_file=BACKEND_DIR / ".env",
         extra="ignore",
         enable_decoding=False,
+        validate_default=True,
     )
 
-    database_url: str
-    secret_key: str
+    database_url: str = ""
+    secret_key: str = ""
     access_token_expire_minutes: int = 60
 
     cookie_secure: bool = False
@@ -29,8 +30,10 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
 
     uploads_dir: Path = BACKEND_DIR / "uploads"
+    avatar_upload_url_prefix: str = "/uploads/avatars"
     voice_upload_url_prefix: str = "/uploads/voice"
     file_upload_url_prefix: str = "/uploads/files"
+    avatar_image_max_bytes: int = 5 * 1024 * 1024
     voice_message_max_bytes: int = 10 * 1024 * 1024
     file_message_max_bytes: int = 25 * 1024 * 1024
 
@@ -74,6 +77,13 @@ class Settings(BaseSettings):
         if normalized_value not in {"lax", "strict", "none"}:
             raise ValueError("COOKIE_SAMESITE must be lax, strict, or none")
         return cast(Literal["lax", "strict", "none"], normalized_value)
+
+    @field_validator("database_url", mode="after")
+    @classmethod
+    def validate_database_url(cls, value: str) -> str:
+        if not value:
+            raise ValueError("DATABASE_URL is required")
+        return value
 
     @field_validator("secret_key", mode="after")
     @classmethod

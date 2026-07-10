@@ -18,6 +18,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { AvatarUploadField } from "@/components/AvatarUploadField";
 import PasswordField from "@/components/PasswordField";
 import { apiFetch } from "@/lib/api";
 
@@ -48,7 +49,8 @@ export default function Signup({ onSuccess, onGoToLogin }: SignupProps) {
   const [firstName, setFirstName] = useState("");
   const [lastName, setLastName] = useState("");
   const [bio, setBio] = useState("");
-  const [avatarUrl, setAvatarUrl] = useState("");
+  const [avatarFile, setAvatarFile] = useState<File | null>(null);
+  const [avatarPreviewUrl, setAvatarPreviewUrl] = useState("/favicon.svg");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const passwordsMatch = password === confirmPassword && password.length > 0;
@@ -95,6 +97,18 @@ export default function Signup({ onSuccess, onGoToLogin }: SignupProps) {
     };
   }, [username]);
 
+  useEffect(() => {
+    if (!avatarFile) {
+      setAvatarPreviewUrl("/favicon.svg");
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(avatarFile);
+    setAvatarPreviewUrl(objectUrl);
+
+    return () => URL.revokeObjectURL(objectUrl);
+  }, [avatarFile]);
+
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -123,17 +137,19 @@ export default function Signup({ onSuccess, onGoToLogin }: SignupProps) {
         throw new Error("Passwords must match.");
       }
 
+      const formData = new FormData();
+      formData.append("username", username.trim());
+      formData.append("password", password);
+      formData.append("first_name", firstName.trim());
+      formData.append("last_name", lastName.trim());
+      formData.append("bio", bio.trim());
+      if (avatarFile) {
+        formData.append("avatar", avatarFile);
+      }
+
       const response = await apiFetch<SignupResponse>("/signup", {
         method: "POST",
-        body: JSON.stringify({
-          username: username.trim(),
-          first_name: firstName.trim(),
-          last_name: lastName || null,
-          bio: bio || null,
-          avatar_url: avatarUrl || "/favicon.svg",
-          status: "online",
-          password,
-        }),
+        body: formData,
       });
       onSuccess(response);
     } catch (err) {
@@ -251,20 +267,17 @@ export default function Signup({ onSuccess, onGoToLogin }: SignupProps) {
                     <FieldDescription>Up to 70 characters.</FieldDescription>
                   </Field>
                   <Field>
-                    <FieldLabel htmlFor="avatar-url">
-                      Avatar URL{" "}
+                    <FieldLabel htmlFor="avatar-file">
+                      Avatar image{" "}
                       <span className="text-muted-foreground">(optional)</span>
                     </FieldLabel>
-                    <Input
-                      id="avatar-url"
-                      type="url"
-                      value={avatarUrl}
-                      placeholder="/favicon.svg"
-                      onChange={(event) => setAvatarUrl(event.target.value)}
+                    <AvatarUploadField
+                      id="avatar-file"
+                      label="Profile picture"
+                      previewUrl={avatarPreviewUrl}
+                      helperText="Optional. PNG, JPEG, WebP, or GIF."
+                      onFileChange={setAvatarFile}
                     />
-                    <FieldDescription>
-                      Optional. Defaults to the Messenger icon.
-                    </FieldDescription>
                   </Field>
                   <Field>
                     <PasswordField

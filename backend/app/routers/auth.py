@@ -1,6 +1,7 @@
 from datetime import timedelta
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from sqlmodel import col, select
 
 from app.constants import SAVED_MESSAGES_AVATAR_URL
@@ -11,9 +12,17 @@ from app.dependencies import (
     get_password_hash,
     verify_password,
 )
-from app.models import Chat, ChatParticipant, LoginRequest, User, UserCreate, UserPublic
+from app.models import (
+    Chat,
+    ChatParticipant,
+    LoginRequest,
+    User,
+    UserCreate,
+    UserPublic,
+)
 from app.rate_limit import login_rate_limiter, signup_rate_limiter
 from app.settings import settings
+from app.services.uploads import save_avatar_upload
 from app.services.users import is_valid_username
 
 router = APIRouter(tags=["auth"])
@@ -62,55 +71,72 @@ def login(payload: LoginRequest, response: Response, session: SessionDep):
     response_model=UserPublic,
     dependencies=[Depends(signup_rate_limiter)],
 )
-def signup(user_create: UserCreate, response: Response, session: SessionDep):
-    if not user_create.username:
+async def signup(
+    response: Response,
+    session: SessionDep,
+    payload: Annotated[UserCreate, Form()],
+    avatar: Annotated[UploadFile | None, File()] = None,
+):
+    normalized_username = payload.username.strip().lower()
+    normalized_first_name = payload.first_name.strip()
+    normalized_last_name = payload.last_name.strip() if payload.last_name else None
+    normalized_bio = payload.bio.strip() if payload.bio else None
+
+    if not normalized_username:
         raise HTTPException(status_code=400, detail="Username is invalid")
-    if len(user_create.username) < 5:
+    if len(normalized_username) < 5:
         raise HTTPException(
             status_code=400, detail="Username must be at least 5 characters"
         )
-    if len(user_create.username) > 32:
+    if len(normalized_username) > 32:
         raise HTTPException(
             status_code=400, detail="Maximum username length is 32 characters"
         )
-    if not is_valid_username(user_create.username.lower()):
+    if not is_valid_username(normalized_username):
         raise HTTPException(
             status_code=400,
             detail="Username can include only a-z, 0-9, and underscores.",
         )
 
-    if user_create.first_name is not None and len(user_create.first_name.strip()) > 64:
+    if not normalized_first_name:
+        raise HTTPException(status_code=400, detail="First name is required.")
+
+    if len(normalized_first_name) > 64:
         raise HTTPException(
             status_code=400,
             detail="First name must be at most 64 characters.",
         )
 
-    if user_create.last_name is not None and len(user_create.last_name.strip()) > 64:
+    if normalized_last_name is not None and len(normalized_last_name) > 64:
         raise HTTPException(
             status_code=400,
             detail="Last name must be at most 64 characters.",
         )
 
-    if user_create.bio is not None and len(user_create.bio.strip()) > 70:
+    if normalized_bio is not None and len(normalized_bio) > 70:
         raise HTTPException(
             status_code=400,
             detail="Bio must be at most 70 characters.",
         )
 
-    stmt = select(User).where(col(User.username) == user_create.username.lower())
+    stmt = select(User).where(col(User.username) == normalized_username)
     existing_user = session.exec(stmt).first()
     if existing_user is not None:
         raise HTTPException(status_code=409, detail="Username already registered")
 
-    if len(user_create.password) < 8:
+    if len(payload.password) < 8:
         raise HTTPException(status_code=400, detail="Password is too short")
 
-    user = User.model_validate(
-        user_create,
-        update={
-            "username": user_create.username.lower(),
-            "password_hash": get_password_hash(user_create.password),
-        },
+    avatar_url = await save_avatar_upload(avatar)
+
+    user = User(
+        username=normalized_username,
+        first_name=normalized_first_name,
+        last_name=normalized_last_name or None,
+        bio=normalized_bio or None,
+        avatar_url=avatar_url or "/favicon.svg",
+        status="online",
+        password_hash=get_password_hash(payload.password),
     )
     session.add(user)
     session.commit()
