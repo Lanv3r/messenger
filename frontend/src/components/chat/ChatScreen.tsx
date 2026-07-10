@@ -47,16 +47,21 @@ import type {
   AuthUser,
   Chat,
   ChatMessage,
+  ThemeMode,
   UserProfile,
 } from "@/types";
 
 export function ChatScreen({
   user,
+  themeMode,
+  onToggleTheme,
   onSignOut,
   onSessionExpired,
   onUserUpdated,
 }: {
   user: AuthUser;
+  themeMode: ThemeMode;
+  onToggleTheme: () => void;
   onSignOut: () => void;
   onSessionExpired: () => void;
   onUserUpdated: (user: AuthResponse) => void;
@@ -722,6 +727,7 @@ export function ChatScreen({
         ) : (
           <ChatSidebar
             user={user}
+            themeMode={themeMode}
             profileQuery={profileQuery}
             profileResult={profileResult}
             profileError={profileError}
@@ -729,6 +735,7 @@ export function ChatScreen({
             chats={chats}
             activeChatId={activeChatId}
             draftRecipient={draftRecipient}
+            onToggleTheme={onToggleTheme}
             onToggleProfileEditor={openProfileEditor}
             onSignOut={onSignOut}
             onProfileQueryChange={setProfileQuery}

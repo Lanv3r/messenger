@@ -1,12 +1,13 @@
-import { Pin, X } from "lucide-react";
+import { Moon, Pin, Sun, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { formatChatTime } from "@/lib/date-format";
 import { keepSubtleScrollbarVisible } from "@/lib/scrollbar";
-import type { AuthUser, Chat, UserProfile } from "@/types";
+import type { AuthUser, Chat, ThemeMode, UserProfile } from "@/types";
 
 type ChatSidebarProps = {
   user: AuthUser;
+  themeMode: ThemeMode;
   profileQuery: string;
   profileResult: UserProfile | null;
   profileError: string | null;
@@ -14,6 +15,7 @@ type ChatSidebarProps = {
   chats: Chat[];
   activeChatId: number | null;
   draftRecipient: UserProfile | null;
+  onToggleTheme: () => void;
   onToggleProfileEditor: () => void;
   onSignOut: () => void;
   onProfileQueryChange: (value: string) => void;
@@ -32,6 +34,7 @@ function getProfileDisplayName(profile: UserProfile) {
 
 export function ChatSidebar({
   user,
+  themeMode,
   profileQuery,
   profileResult,
   profileError,
@@ -39,6 +42,7 @@ export function ChatSidebar({
   chats,
   activeChatId,
   draftRecipient,
+  onToggleTheme,
   onToggleProfileEditor,
   onSignOut,
   onProfileQueryChange,
@@ -80,6 +84,24 @@ export function ChatSidebar({
           <Button variant="outline" size="sm" onClick={onToggleProfileEditor}>
             Edit profile
           </Button>
+          <button
+            type="button"
+            className="theme-toggle-button"
+            aria-label={
+              themeMode === "dark"
+                ? "Switch to light theme"
+                : "Switch to dark theme"
+            }
+            aria-pressed={themeMode === "dark"}
+            onClick={onToggleTheme}
+          >
+            {themeMode === "dark" ? (
+              <Sun size={14} aria-hidden="true" />
+            ) : (
+              <Moon size={14} aria-hidden="true" />
+            )}
+            {themeMode === "dark" ? "Light" : "Dark"}
+          </button>
           <Button variant="outline" size="sm" onClick={onSignOut}>
             Sign out
           </Button>

@@ -1,3 +1,5 @@
+export type ThemeMode = "light" | "dark";
+
 export type MessageReplyPreview = {
   id: number;
   sender_id: number | null;
