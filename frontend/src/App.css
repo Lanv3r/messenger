@@ -2164,8 +2164,7 @@
   border: 2px solid rgba(255, 255, 255, 0.86);
   border-radius: 50%;
   object-fit: cover;
-  background: rgba(133, 144, 167, 0.16);
-  box-shadow: 0 10px 22px rgba(106, 58, 45, 0.12);
+  background: transparent;
 }
 
 .message-copy {
@@ -2176,13 +2175,13 @@
   border: 1px solid rgba(163, 88, 66, 0.1);
   border-radius: 18px;
   background: #fff5ef;
-  box-shadow: 0 14px 34px rgba(106, 58, 45, 0.08);
+  box-shadow: none;
 }
 
 #messages li.you .message-copy {
   border-color: rgba(255, 255, 255, 0.16);
   background: linear-gradient(135deg, #f46f54, #d64c2f);
-  box-shadow: 0 16px 38px rgba(214, 76, 47, 0.18);
+  box-shadow: none;
 }
 
 #messages li.media-message {
