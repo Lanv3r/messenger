@@ -3,6 +3,7 @@ import { Pin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CreateGroupPanel } from "@/components/chat/CreateGroupPanel";
 import { formatChatTime } from "@/lib/date-format";
+import { keepSubtleScrollbarVisible } from "@/lib/scrollbar";
 import type { AuthUser, Chat, UserProfile } from "@/types";
 
 type ChatSidebarProps = {
@@ -170,7 +171,10 @@ export function ChatSidebar({
         onSubmit={onCreateGroup}
       />
       <div className="sidebar-section-label">Chats</div>
-      <div className="chat-list">
+      <div
+        className="chat-list subtle-scrollbar"
+        onScroll={keepSubtleScrollbarVisible}
+      >
         {chats.map((chat) => {
           const sentAt = formatChatTime(chat.last_message_created_at);
           const unreadCount = chat.unread_count > 99 ? "99+" : chat.unread_count;

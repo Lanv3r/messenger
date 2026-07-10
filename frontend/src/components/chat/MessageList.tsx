@@ -6,6 +6,7 @@ import {
   formatMessageTime,
   isSameMessageDay,
 } from "@/lib/date-format";
+import { keepSubtleScrollbarVisible } from "@/lib/scrollbar";
 import type {
   Chat,
   ChatMessage,
@@ -87,7 +88,12 @@ export function MessageList({
   onOpenActionDialog,
 }: MessageListProps) {
   return (
-    <ul id="messages" ref={messagesRef}>
+    <ul
+      id="messages"
+      ref={messagesRef}
+      className="subtle-scrollbar"
+      onScroll={keepSubtleScrollbarVisible}
+    >
       {messages.length === 0 ? (
         <li className="empty-state">No messages yet in this chat.</li>
       ) : (
