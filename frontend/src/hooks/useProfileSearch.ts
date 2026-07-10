@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState } from "react";
 
 import { apiFetch } from "@/lib/api";
 import type { UserProfile } from "@/types";
@@ -8,48 +8,88 @@ type UseProfileSearchOptions = {
 };
 
 export function useProfileSearch({ onSessionExpired }: UseProfileSearchOptions) {
-  const [query, setQuery] = useState("");
+  const [query, setQueryState] = useState("");
   const [result, setResult] = useState<UserProfile | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const search = async (event: FormEvent) => {
-    event.preventDefault();
-
+  useEffect(() => {
     const username = query.trim();
 
     if (!username) {
-      setResult(null);
-      setError("Enter a username to search.");
-      return;
+      return undefined;
     }
 
-    setLoading(true);
+    const controller = new AbortController();
+    let cancelled = false;
+    const timeoutId = window.setTimeout(() => {
+      setLoading(true);
+
+      void (async () => {
+        try {
+          const profile = await apiFetch<UserProfile | null>(
+            `/users/by-username/${encodeURIComponent(username)}`,
+            { signal: controller.signal },
+          );
+
+          if (cancelled) {
+            return;
+          }
+
+          setResult(profile);
+          setError(profile ? null : "No user found.");
+        } catch (requestError) {
+          if (
+            cancelled ||
+            (requestError instanceof DOMException &&
+              requestError.name === "AbortError")
+          ) {
+            return;
+          }
+
+          setResult(null);
+
+          const requestMessage =
+            requestError instanceof Error
+              ? requestError.message
+              : "Unable to find that user.";
+
+          if (requestMessage === "Could not validate credentials") {
+            onSessionExpired();
+            return;
+          }
+
+          setError(requestMessage);
+        } finally {
+          if (!cancelled) {
+            setLoading(false);
+          }
+        }
+      })();
+    }, 250);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [query, onSessionExpired]);
+
+  const setQuery = (value: string) => {
+    const normalizedValue = value.replace(/^@+/, "");
+    const hasQuery = Boolean(normalizedValue.trim());
+
+    setQueryState(normalizedValue);
+    setResult(null);
     setError(null);
+    setLoading(hasQuery);
+  };
 
-    try {
-      const profile = await apiFetch<UserProfile>(
-        `/users/by-username/${encodeURIComponent(username)}`,
-      );
-
-      setResult(profile);
-    } catch (requestError) {
-      setResult(null);
-
-      const requestMessage =
-        requestError instanceof Error
-          ? requestError.message
-          : "Unable to find that user.";
-
-      if (requestMessage === "Could not validate credentials") {
-        onSessionExpired();
-        return;
-      }
-
-      setError(requestMessage);
-    } finally {
-      setLoading(false);
-    }
+  const clearSearch = () => {
+    setQueryState("");
+    setResult(null);
+    setError(null);
+    setLoading(false);
   };
 
   const clearResult = () => {
@@ -65,6 +105,6 @@ export function useProfileSearch({ onSessionExpired }: UseProfileSearchOptions) 
     setQuery,
     setError,
     clearResult,
-    search,
+    clearSearch,
   };
 }

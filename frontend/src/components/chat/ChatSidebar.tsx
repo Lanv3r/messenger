@@ -1,4 +1,4 @@
-import { Pin } from "lucide-react";
+import { Pin, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { CreateGroupPanel } from "@/components/chat/CreateGroupPanel";
@@ -27,8 +27,8 @@ type ChatSidebarProps = {
   groupMessage: string | null;
   onToggleProfileEditor: () => void;
   onSignOut: () => void;
-  onProfileSearch: (event: React.FormEvent) => void;
   onProfileQueryChange: (value: string) => void;
+  onClearProfileSearch: () => void;
   onMessageProfile: (profile: UserProfile) => void;
   onJoinChat: (chat: Chat) => void;
   onToggleChatPin: (chat: Chat) => void;
@@ -70,8 +70,8 @@ export function ChatSidebar({
   groupMessage,
   onToggleProfileEditor,
   onSignOut,
-  onProfileSearch,
   onProfileQueryChange,
+  onClearProfileSearch,
   onMessageProfile,
   onJoinChat,
   onToggleChatPin,
@@ -87,8 +87,18 @@ export function ChatSidebar({
   onRemoveSelectedGroupMember,
   onCreateGroup,
 }: ChatSidebarProps) {
+  const profileSearchActive = profileQuery.trim().length > 0;
+
   return (
-    <aside className="chat-sidebar" aria-label="Chats">
+    <aside
+      className={[
+        "chat-sidebar",
+        profileSearchActive ? "profile-search-mode" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      aria-label="Chats"
+    >
       <div className="sidebar-profile">
         <div className="sidebar-profile-main">
           <img
@@ -113,69 +123,98 @@ export function ChatSidebar({
         </div>
       </div>
       <section className="profile-search" aria-label="Search user profiles">
-        <form className="profile-search-form" onSubmit={onProfileSearch}>
+        <div className="profile-search-form">
+          <span className="profile-search-prefix" aria-hidden="true">
+            @
+          </span>
           <input
             type="search"
             value={profileQuery}
-            placeholder="Search username"
+            placeholder="Search users"
             autoComplete="off"
             onChange={(event) => onProfileQueryChange(event.target.value)}
           />
-          <Button type="submit" disabled={profileLoading}>
-            {profileLoading ? "Searching..." : "Search"}
-          </Button>
-        </form>
-        {profileError ? <p className="profile-error">{profileError}</p> : null}
-        {profileResult ? (
-          <article className="profile-card">
-            <img src={profileResult.avatar_url} alt="" className="profile-avatar" />
-            <div>
-              <h2>{getProfileDisplayName(profileResult)}</h2>
-              <p className="profile-username">@{profileResult.username}</p>
-              {profileResult.bio ? (
-                <p className="profile-bio">{profileResult.bio}</p>
-              ) : null}
-              <span className="profile-status">{profileResult.status}</span>
-            </div>
-            <Button
+          {profileQuery ? (
+            <button
               type="button"
-              size="sm"
-              onClick={() => onMessageProfile(profileResult)}
+              className="profile-search-clear"
+              aria-label="Clear user search"
+              onClick={onClearProfileSearch}
             >
-              Message
-            </Button>
-          </article>
-        ) : null}
+              <X size={16} aria-hidden="true" />
+            </button>
+          ) : null}
+        </div>
       </section>
-      <CreateGroupPanel
-        isOpen={creatingGroup}
-        title={groupTitle}
-        description={groupDescription}
-        avatarUrl={groupAvatarUrl}
-        memberQuery={groupMemberQuery}
-        selectedMembers={groupSelectedMembers}
-        memberLoading={groupMemberLoading}
-        creating={groupCreating}
-        error={groupError}
-        message={groupMessage}
-        onOpen={onOpenCreateGroup}
-        onClose={onCloseCreateGroup}
-        onTitleChange={onGroupTitleChange}
-        onDescriptionChange={onGroupDescriptionChange}
-        onAvatarUrlChange={onGroupAvatarUrlChange}
-        onMemberQueryChange={onGroupMemberQueryChange}
-        onAddMember={onAddSelectedGroupMember}
-        onRemoveMember={onRemoveSelectedGroupMember}
-        onSubmit={onCreateGroup}
-      />
-      <div className="sidebar-section-label">Chats</div>
-      <div
-        className="chat-list subtle-scrollbar"
-        onScroll={keepSubtleScrollbarVisible}
-      >
-        {chats.map((chat) => {
-          const sentAt = formatChatTime(chat.last_message_created_at);
-          const unreadCount = chat.unread_count > 99 ? "99+" : chat.unread_count;
+      {profileSearchActive ? (
+        <>
+          <div className="sidebar-section-label">Users</div>
+          <div
+            className="profile-search-results subtle-scrollbar"
+            onScroll={keepSubtleScrollbarVisible}
+          >
+            {profileLoading ? (
+              <p className="profile-search-status">Searching...</p>
+            ) : null}
+            {profileError ? <p className="profile-error">{profileError}</p> : null}
+            {profileResult ? (
+              <article className="profile-card">
+                <img
+                  src={profileResult.avatar_url}
+                  alt=""
+                  className="profile-avatar"
+                />
+                <div>
+                  <h2>{getProfileDisplayName(profileResult)}</h2>
+                  <p className="profile-username">@{profileResult.username}</p>
+                  <span className="profile-status">{profileResult.status}</span>
+                  {profileResult.bio ? (
+                    <p className="profile-bio">{profileResult.bio}</p>
+                  ) : null}
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={() => onMessageProfile(profileResult)}
+                >
+                  Message
+                </Button>
+              </article>
+            ) : null}
+          </div>
+        </>
+      ) : (
+        <>
+          <CreateGroupPanel
+            isOpen={creatingGroup}
+            title={groupTitle}
+            description={groupDescription}
+            avatarUrl={groupAvatarUrl}
+            memberQuery={groupMemberQuery}
+            selectedMembers={groupSelectedMembers}
+            memberLoading={groupMemberLoading}
+            creating={groupCreating}
+            error={groupError}
+            message={groupMessage}
+            onOpen={onOpenCreateGroup}
+            onClose={onCloseCreateGroup}
+            onTitleChange={onGroupTitleChange}
+            onDescriptionChange={onGroupDescriptionChange}
+            onAvatarUrlChange={onGroupAvatarUrlChange}
+            onMemberQueryChange={onGroupMemberQueryChange}
+            onAddMember={onAddSelectedGroupMember}
+            onRemoveMember={onRemoveSelectedGroupMember}
+            onSubmit={onCreateGroup}
+          />
+          <div className="sidebar-section-label">Chats</div>
+          <div
+            className="chat-list subtle-scrollbar"
+            onScroll={keepSubtleScrollbarVisible}
+          >
+            {chats.map((chat) => {
+              const sentAt = formatChatTime(chat.last_message_created_at);
+              const unreadCount =
+                chat.unread_count > 99 ? "99+" : chat.unread_count;
 
           return (
             <div
@@ -255,6 +294,8 @@ export function ChatSidebar({
           </div>
         ) : null}
       </div>
+        </>
+      )}
     </aside>
   );
 }

@@ -99,7 +99,7 @@ export function ChatScreen({
     setQuery: setProfileQuery,
     setError: setProfileSearchError,
     clearResult: clearProfileSearchResult,
-    search: handleProfileSearch,
+    clearSearch: clearProfileSearch,
   } = useProfileSearch({ onSessionExpired });
   const {
     editing: editingProfile,
@@ -740,8 +740,8 @@ export function ChatScreen({
             groupMessage={groupMessage}
             onToggleProfileEditor={openProfileEditor}
             onSignOut={onSignOut}
-            onProfileSearch={handleProfileSearch}
             onProfileQueryChange={setProfileQuery}
+            onClearProfileSearch={clearProfileSearch}
             onMessageProfile={(profile) => {
               void openDraftChat(profile);
             }}
