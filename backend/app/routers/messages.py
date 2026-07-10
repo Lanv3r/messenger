@@ -40,10 +40,29 @@ from app.upload_constants import (
     VOICE_UPLOADS_DIR,
 )
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from sqlalchemy import func
 from sqlmodel import col, exists, select
 
 router = APIRouter(tags=["messages"])
+
+
+def require_visible_message(
+    session: SessionDep,
+    message_id: int,
+    user_id: int,
+) -> Message:
+    message = session.get(Message, message_id)
+    if message is None or message.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    require_active_participant(session, message.chat_id, user_id)
+
+    message_user_state = session.get(MessageUserState, (message_id, user_id))
+    if message_user_state is not None and message_user_state.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    return message
 
 
 @router.get(
@@ -101,6 +120,40 @@ def get_chat_messages(
         )
 
     return public_messages
+
+
+@router.get("/messages/{message_id}/copy-image")
+def get_message_image_for_copy(
+    message_id: int,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    message = require_visible_message(session, message_id, user_id)
+    if message.message_type != "image":
+        raise HTTPException(status_code=400, detail="Message is not an image")
+
+    file_url = message.metadata_.get("file_url")
+    if not isinstance(file_url, str) or not file_url.startswith(
+        f"{FILE_UPLOAD_URL_PREFIX}/"
+    ):
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    image_path = FILE_UPLOADS_DIR / Path(file_url).name
+    if not image_path.is_file():
+        raise HTTPException(status_code=404, detail="Image not found")
+
+    mime_type = message.metadata_.get("mime_type")
+    media_type = (
+        mime_type.split(";", 1)[0].strip()
+        if isinstance(mime_type, str) and mime_type.startswith("image/")
+        else "image/png"
+    )
+
+    return FileResponse(image_path, media_type=media_type)
 
 
 @router.post(

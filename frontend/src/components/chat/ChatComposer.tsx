@@ -1,4 +1,4 @@
-import type { ChangeEvent, RefObject } from "react";
+import type { ChangeEvent, ClipboardEvent, RefObject } from "react";
 import { ClockArrowUp, Mic, Paperclip } from "lucide-react";
 
 import { VoiceRecorderControls } from "@/components/chat/VoiceRecorderControls";
@@ -19,6 +19,7 @@ type ChatComposerProps = {
   fileSending: boolean;
   voiceSending: boolean;
   onFileInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
+  onPasteImages: (event: ClipboardEvent<HTMLInputElement>) => void;
   onRevealMessage: (messageId: number) => void;
   onCancelReply: () => void;
   onCancelVoiceRecording: () => void;
@@ -40,6 +41,7 @@ export function ChatComposer({
   fileSending,
   voiceSending,
   onFileInputChange,
+  onPasteImages,
   onRevealMessage,
   onCancelReply,
   onCancelVoiceRecording,
@@ -95,6 +97,7 @@ export function ChatComposer({
         placeholder="Write a message..."
         disabled={voiceRecorder !== null}
         onChange={(event) => onMessageChange(event.target.value)}
+        onPaste={onPasteImages}
         onKeyDown={(event) => {
           if (event.key === "Enter") {
             onSend();

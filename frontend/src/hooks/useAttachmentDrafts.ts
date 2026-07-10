@@ -105,6 +105,7 @@ export function useAttachmentDrafts({
     setError,
     clearDrafts,
     removeDraft,
+    addDrafts,
     handleFileInputChange,
   };
 }

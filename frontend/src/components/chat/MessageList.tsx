@@ -6,6 +6,7 @@ import {
   formatMessageTime,
   isSameMessageDay,
 } from "@/lib/date-format";
+import { canCopyMessage } from "@/lib/message-helpers";
 import { keepSubtleScrollbarVisible } from "@/lib/scrollbar";
 import type {
   Chat,
@@ -36,6 +37,7 @@ type MessageListProps = {
   getSenderAvatar: (entry: ChatMessage) => string;
   getMessageDeliveryStatus: (entry: ChatMessage) => MessageDeliveryStatus;
   onOpenMessageMenu: (messageId: number, position: MessageMenuPosition) => void;
+  onCopyMessage: (entry: ChatMessage) => void;
   onStartReply: (entry: ChatMessage) => void;
   onStartEdit: (entry: ChatMessage) => void;
   onCancelEdit: () => void;
@@ -80,6 +82,7 @@ export function MessageList({
   getSenderAvatar,
   getMessageDeliveryStatus,
   onOpenMessageMenu,
+  onCopyMessage,
   onStartReply,
   onStartEdit,
   onCancelEdit,
@@ -250,6 +253,15 @@ export function MessageList({
                           }
                           onClick={(event) => event.stopPropagation()}
                         >
+                          {canCopyMessage(entry) ? (
+                            <button
+                              type="button"
+                              role="menuitem"
+                              onClick={() => onCopyMessage(entry)}
+                            >
+                              Copy
+                            </button>
+                          ) : null}
                           <button
                             type="button"
                             role="menuitem"

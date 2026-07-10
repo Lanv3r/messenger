@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ClipboardEvent } from "react";
 import type { Socket } from "socket.io-client";
 
 import { AttachmentPreviewDialog } from "@/components/chat/AttachmentPreviewDialog";
@@ -20,6 +20,7 @@ import {
   getChatMemberDisplayName,
   upsertChat,
 } from "@/lib/chat-helpers";
+import { copyMessageToClipboard } from "@/lib/message-helpers";
 import { useVoiceRecorder } from "@/hooks/useVoiceRecorder";
 import { useChatSocket } from "@/hooks/useChatSocket";
 import { useChatPersistence } from "@/hooks/useChatPersistence";
@@ -91,6 +92,7 @@ export function ChatScreen({
     setError: setAttachmentError,
     clearDrafts: clearAttachmentDrafts,
     removeDraft: removeAttachmentDraft,
+    addDrafts: addAttachmentDrafts,
     handleFileInputChange,
   } = useAttachmentDrafts({
     activeChatId,
@@ -678,6 +680,32 @@ export function ChatScreen({
     closeMessageMenu();
   };
 
+  const handlePasteImages = (event: ClipboardEvent<HTMLInputElement>) => {
+    const imageFiles = Array.from(event.clipboardData.files).filter((file) =>
+      file.type.startsWith("image/"),
+    );
+
+    if (imageFiles.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    addAttachmentDrafts(imageFiles);
+  };
+
+  const copyMessage = async (entry: ChatMessage) => {
+    closeMessageMenu();
+    setChatError(null);
+
+    try {
+      await copyMessageToClipboard(entry);
+    } catch (error) {
+      setChatError(
+        error instanceof Error ? error.message : "Unable to copy message.",
+      );
+    }
+  };
+
   const confirmPinAction = (scope: "me" | "chat" | "unpin") => {
     const entry = messageActionDialog?.entry;
     if (!entry) {
@@ -998,6 +1026,9 @@ export function ChatScreen({
           getSenderAvatar={getSenderAvatar}
           getMessageDeliveryStatus={getMessageDeliveryStatus}
           onOpenMessageMenu={openMessageMenu}
+          onCopyMessage={(entry) => {
+            void copyMessage(entry);
+          }}
           onStartReply={startReplyingToMessage}
           onStartEdit={startEditingMessage}
           onCancelEdit={cancelEditingMessage}
@@ -1019,6 +1050,7 @@ export function ChatScreen({
           fileSending={fileSending}
           voiceSending={voiceSending}
           onFileInputChange={handleFileInputChange}
+          onPasteImages={handlePasteImages}
           onRevealMessage={revealMessageById}
           onCancelReply={() => setReplyToMessage(null)}
           onCancelVoiceRecording={() => {
