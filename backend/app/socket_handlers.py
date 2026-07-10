@@ -6,6 +6,7 @@ from sqlmodel import Session, col, select
 from app.db import engine
 from app.dependencies import decode_access_token, get_cookie_from_environ
 from app.models import Chat, ChatParticipant, Message, User
+from app.rate_limit import message_rate_limiter
 from app.services.chats import require_active_participant, require_chat_permission
 from app.services.messages import (
     build_message_reply_preview,
@@ -79,8 +80,8 @@ async def join_room(sid, room):
     with Session(engine) as db:
         participant = db.exec(
             select(ChatParticipant).where(
-                ChatParticipant.chat_id == chat_id,
-                ChatParticipant.user_id == user_id,
+                col(ChatParticipant.chat_id) == chat_id,
+                col(ChatParticipant.user_id) == user_id,
                 col(ChatParticipant.left_at).is_(None),
             )
         ).first()
@@ -184,6 +185,11 @@ async def message(sid, data):
         await sio.disconnect(sid)
         return
 
+    try:
+        message_rate_limiter.hit_key(f"socket-message:{sender_id}")
+    except HTTPException as exc:
+        return {"ok": False, "error": exc.detail}
+
     content = data.get("content", "").strip()
 
     if not content:
@@ -244,8 +250,8 @@ async def message(sid, data):
         db.refresh(message)
 
         participant_ids = db.exec(
-            select(ChatParticipant.user_id).where(
-                ChatParticipant.chat_id == chat_id,
+            select(col(ChatParticipant.user_id)).where(
+                col(ChatParticipant.chat_id) == chat_id,
                 col(ChatParticipant.left_at).is_(None),
             )
         ).all()

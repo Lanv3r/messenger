@@ -15,6 +15,7 @@ from app.models import (
     ChatSettingsUpdate,
     GroupCreate,
     Message,
+    MessageUserState,
     User,
 )
 from app.permissions import SYSTEM_ROLE_DEFAULTS
@@ -35,9 +36,18 @@ from app.services.messages import get_message_preview_text
 from app.socket import sio
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func
-from sqlmodel import col, select
+from sqlalchemy.sql.elements import ColumnElement
+from sqlmodel import col, exists, select
 
 router = APIRouter(tags=["chats"])
+
+
+def message_is_visible_to_user(user_id: int) -> ColumnElement[bool]:
+    return ~exists().where(
+        col(MessageUserState.message_id) == col(Message.id),
+        col(MessageUserState.user_id) == user_id,
+        col(MessageUserState.deleted_at).is_not(None),
+    )
 
 
 def to_chat_member_public(
@@ -70,9 +80,9 @@ def get_chats(
 
     rows = session.exec(
         select(ChatParticipant, Chat)
-        .join(Chat, col(Chat.id) == ChatParticipant.chat_id)
+        .join(Chat, col(Chat.id) == col(ChatParticipant.chat_id))
         .where(
-            ChatParticipant.user_id == current_user_id,
+            col(ChatParticipant.user_id) == current_user_id,
             col(ChatParticipant.left_at).is_(None),
         )
     ).all()
@@ -102,8 +112,8 @@ def get_chats(
         elif chat.type == "direct":
             other_participant = session.exec(
                 select(ChatParticipant).where(
-                    ChatParticipant.chat_id == chat.id,
-                    ChatParticipant.user_id != current_user_id,
+                    col(ChatParticipant.chat_id) == chat.id,
+                    col(ChatParticipant.user_id) != current_user_id,
                     col(ChatParticipant.left_at).is_(None),
                 )
             ).first()
@@ -124,8 +134,8 @@ def get_chats(
         else:
             member_ids = list(
                 session.exec(
-                    select(ChatParticipant.user_id).where(
-                        ChatParticipant.chat_id == chat.id,
+                    select(col(ChatParticipant.user_id)).where(
+                        col(ChatParticipant.chat_id) == chat.id,
                         col(ChatParticipant.left_at).is_(None),
                     )
                 ).all()
@@ -136,8 +146,9 @@ def get_chats(
         last_message = session.exec(
             select(Message)
             .where(
-                Message.chat_id == chat.id,
+                col(Message.chat_id) == chat.id,
                 col(Message.deleted_at).is_(None),
+                message_is_visible_to_user(current_user_id),
             )
             .order_by(col(Message.created_at).desc())
         ).first()
@@ -152,9 +163,10 @@ def get_chats(
             last_read_message_id = last_message.id
 
         unread_statement = select(func.count(col(Message.id))).where(
-            Message.chat_id == chat.id,
-            Message.sender_id != current_user_id,
+            col(Message.chat_id) == chat.id,
+            col(Message.sender_id) != current_user_id,
             col(Message.deleted_at).is_(None),
+            message_is_visible_to_user(current_user_id),
         )
 
         if last_read_message_id is not None:
@@ -218,8 +230,8 @@ def get_direct_chat_by_user(
             select(Chat, ChatParticipant)
             .join(ChatParticipant, col(ChatParticipant.chat_id) == col(Chat.id))
             .where(
-                Chat.type == "self",
-                ChatParticipant.user_id == current_user_id,
+                col(Chat.type) == "self",
+                col(ChatParticipant.user_id) == current_user_id,
                 col(ChatParticipant.left_at).is_(None),
             )
         ).first()
@@ -237,8 +249,9 @@ def get_direct_chat_by_user(
         last_message = session.exec(
             select(Message)
             .where(
-                Message.chat_id == chat.id,
+                col(Message.chat_id) == chat.id,
                 col(Message.deleted_at).is_(None),
+                message_is_visible_to_user(current_user_id),
             )
             .order_by(col(Message.created_at).desc())
         ).first()
@@ -285,9 +298,9 @@ def get_direct_chat_by_user(
         select(Chat, ChatParticipant)
         .join(ChatParticipant, col(ChatParticipant.chat_id) == col(Chat.id))
         .where(
-            Chat.type == "direct",
+            col(Chat.type) == "direct",
             col(Chat.id).in_(matching_chat_ids),
-            ChatParticipant.user_id == current_user_id,
+            col(ChatParticipant.user_id) == current_user_id,
             col(ChatParticipant.left_at).is_(None),
         )
     ).first()
@@ -301,8 +314,8 @@ def get_direct_chat_by_user(
 
     other_participant = session.exec(
         select(ChatParticipant).where(
-            ChatParticipant.chat_id == chat.id,
-            ChatParticipant.user_id == user_id,
+            col(ChatParticipant.chat_id) == chat.id,
+            col(ChatParticipant.user_id) == user_id,
             col(ChatParticipant.left_at).is_(None),
         )
     ).first()
@@ -310,17 +323,19 @@ def get_direct_chat_by_user(
     last_message = session.exec(
         select(Message)
         .where(
-            Message.chat_id == chat.id,
+            col(Message.chat_id) == chat.id,
             col(Message.deleted_at).is_(None),
+            message_is_visible_to_user(current_user_id),
         )
         .order_by(col(Message.created_at).desc())
     ).first()
 
     last_read_message_id = current_participant.last_read_message_id
     unread_statement = select(func.count(col(Message.id))).where(
-        Message.chat_id == chat.id,
-        Message.sender_id != current_user_id,
+        col(Message.chat_id) == chat.id,
+        col(Message.sender_id) != current_user_id,
         col(Message.deleted_at).is_(None),
+        message_is_visible_to_user(current_user_id),
     )
 
     if last_read_message_id is not None:
@@ -374,6 +389,26 @@ async def chat_read(
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
     participant = require_active_participant(session, chat_id, user_id)
+    read_message = session.get(Message, payload.last_read_message_id)
+    if (
+        read_message is None
+        or read_message.chat_id != chat_id
+        or read_message.deleted_at is not None
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail="Read marker is invalid for this chat",
+        )
+    message_user_state = session.get(
+        MessageUserState,
+        (payload.last_read_message_id, user_id),
+    )
+    if message_user_state is not None and message_user_state.deleted_at is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="Read marker is invalid for this chat",
+        )
+
     participant.last_read_message_id = payload.last_read_message_id
     participant.last_read_at = datetime.now(timezone.utc)
 
@@ -391,8 +426,8 @@ async def chat_read(
     }
 
     participant_ids = session.exec(
-        select(ChatParticipant.user_id).where(
-            ChatParticipant.chat_id == chat_id,
+        select(col(ChatParticipant.user_id)).where(
+            col(ChatParticipant.chat_id) == chat_id,
             col(ChatParticipant.left_at).is_(None),
         )
     ).all()
@@ -420,7 +455,7 @@ def get_chat_members(
 
     participants = session.exec(
         select(ChatParticipant).where(
-            ChatParticipant.chat_id == chat_id,
+            col(ChatParticipant.chat_id) == chat_id,
             col(ChatParticipant.left_at).is_(None),
         )
     ).all()
@@ -586,7 +621,7 @@ async def add_group_members(
 
     participants = session.exec(
         select(ChatParticipant).where(
-            ChatParticipant.chat_id == chat_id,
+            col(ChatParticipant.chat_id) == chat_id,
             col(ChatParticipant.left_at).is_(None),
         )
     ).all()
@@ -711,7 +746,7 @@ def patch_chat_default_permissions(
 
     participants = session.exec(
         select(ChatParticipant).where(
-            ChatParticipant.chat_id == chat_id,
+            col(ChatParticipant.chat_id) == chat_id,
             col(ChatParticipant.left_at).is_(None),
         )
     ).all()
@@ -1002,7 +1037,7 @@ async def remove_user(
 
     remaining_participants = session.exec(
         select(ChatParticipant).where(
-            ChatParticipant.chat_id == chat_id,
+            col(ChatParticipant.chat_id) == chat_id,
             col(ChatParticipant.left_at).is_(None),
         )
     ).all()

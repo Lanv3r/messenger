@@ -1,14 +1,13 @@
-from pathlib import Path
+from app.settings import settings
 
 
-BACKEND_DIR = Path(__file__).resolve().parent.parent
-UPLOADS_DIR = BACKEND_DIR / "uploads"
+UPLOADS_DIR = settings.uploads_dir
 VOICE_UPLOADS_DIR = UPLOADS_DIR / "voice"
 FILE_UPLOADS_DIR = UPLOADS_DIR / "files"
-VOICE_UPLOAD_URL_PREFIX = "/uploads/voice"
-FILE_UPLOAD_URL_PREFIX = "/uploads/files"
-VOICE_MESSAGE_MAX_BYTES = 10 * 1024 * 1024
-FILE_MESSAGE_MAX_BYTES = 25 * 1024 * 1024
+VOICE_UPLOAD_URL_PREFIX = settings.voice_upload_url_prefix
+FILE_UPLOAD_URL_PREFIX = settings.file_upload_url_prefix
+VOICE_MESSAGE_MAX_BYTES = settings.voice_message_max_bytes
+FILE_MESSAGE_MAX_BYTES = settings.file_message_max_bytes
 VOICE_MESSAGE_ALLOWED_TYPES = {
     "audio/mp4": ".m4a",
     "audio/mpeg": ".mp3",

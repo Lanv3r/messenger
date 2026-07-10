@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlmodel import select
+from sqlmodel import col, select
 
 from app.db import SessionDep
 from app.dependencies import get_current_user
@@ -37,7 +37,7 @@ def check_username_availability(username: str, session: SessionDep):
             "message": "Username can include only a-z, 0-9, and underscores.",
         }
     user = session.exec(
-        select(User).where(User.username == normalized_username)
+        select(User).where(col(User.username) == normalized_username)
     ).first()
     if user is not None:
         return {
@@ -58,7 +58,7 @@ def get_user_by_username(
 ):
     normalized_username = username.strip().lower()
     user = session.exec(
-        select(User).where(User.username == normalized_username)
+        select(User).where(col(User.username) == normalized_username)
     ).first()
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")

@@ -1,4 +1,3 @@
-import os
 from datetime import datetime, timedelta, timezone
 from http.cookies import SimpleCookie
 from typing import Any
@@ -9,13 +8,10 @@ from pwdlib import PasswordHash
 
 from app.db import SessionDep
 from app.models import User
-
-SECRET_KEY = os.getenv("SECRET_KEY")
-if not SECRET_KEY:
-    raise ValueError("SECRET_KEY is not set")
+from app.settings import settings
 
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.access_token_expire_minutes
 
 password_hash = PasswordHash.recommended()
 
@@ -27,11 +23,11 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None) -> s
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=15)
     to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return jwt.encode(to_encode, settings.secret_key, algorithm=ALGORITHM)
 
 
 def decode_access_token(access_token: str) -> dict[str, Any]:
-    return jwt.decode(access_token, SECRET_KEY, algorithms=[ALGORITHM])
+    return jwt.decode(access_token, settings.secret_key, algorithms=[ALGORITHM])
 
 
 async def get_current_user(

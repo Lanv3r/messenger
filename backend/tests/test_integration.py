@@ -23,10 +23,17 @@ from sqlmodel import SQLModel, Session, create_engine  # noqa: E402
 from app.db import get_session  # noqa: E402
 from app.main import fastapi_app  # noqa: E402
 from app.permissions import ADMIN_PERMISSIONS, SYSTEM_ROLE_DEFAULTS  # noqa: E402
+from app.rate_limit import (  # noqa: E402
+    login_rate_limiter,
+    message_rate_limiter,
+    reset_all_rate_limiters,
+    signup_rate_limiter,
+    upload_rate_limiter,
+)
 from app.socket import sio  # noqa: E402
 
 
-async def noop_emit(*args, **kwargs):
+async def noop_emit(*args, **kwargs) -> None:
     return None
 
 
@@ -50,17 +57,19 @@ class MessengerIntegrationTest(unittest.TestCase):
             engine.dispose()
 
     def setUp(self):
-        self.test_database_url = os.getenv("TEST_DATABASE_URL")
-        if self.test_database_url is None:
+        reset_all_rate_limiters()
+        test_database_url = os.getenv("TEST_DATABASE_URL")
+        if test_database_url is None:
             raise unittest.SkipTest("TEST_DATABASE_URL is not set")
+        self.test_database_url = test_database_url
 
         self.schema = f"test_{uuid4().hex}"
-        self.admin_engine = create_engine(self.test_database_url, echo=False)
+        self.admin_engine = create_engine(test_database_url, echo=False)
         with self.admin_engine.begin() as connection:
             connection.execute(text(f'CREATE SCHEMA "{self.schema}"'))
 
         self.engine = create_engine(
-            self.test_database_url,
+            test_database_url,
             echo=False,
             connect_args={"options": f"-csearch_path={self.schema}"},
         )
@@ -76,6 +85,7 @@ class MessengerIntegrationTest(unittest.TestCase):
         self.clients: list[TestClient] = []
 
     def tearDown(self):
+        reset_all_rate_limiters()
         for client in self.clients:
             client.close()
         fastapi_app.dependency_overrides.clear()
@@ -143,6 +153,14 @@ class MessengerIntegrationTest(unittest.TestCase):
                 return message
         self.fail(f"Message {message_id} was not returned")
 
+    def admin_permissions(self, enabled: bool = False, **updates):
+        permissions = {permission: enabled for permission in ADMIN_PERMISSIONS}
+        for permission, value in SYSTEM_ROLE_DEFAULTS["member"].items():
+            if permission in permissions and value is True:
+                permissions[permission] = True
+        permissions.update(updates)
+        return permissions
+
     def test_auth_signup_login_and_protected_chats(self):
         signup_client, user = self.signup("auth")
 
@@ -180,6 +198,122 @@ class MessengerIntegrationTest(unittest.TestCase):
 
         outsider_response = outsider_client.get(f"/chats/{group['id']}/messages")
         self.assertEqual(outsider_response.status_code, 403)
+
+    def test_non_member_cannot_access_chat_or_message_endpoints(self):
+        owner_client, _owner = self.signup("owner")
+        member_client, member = self.signup("member")
+        outsider_client, _outsider = self.signup("outsider")
+        _candidate_client, candidate = self.signup("candidate")
+        group = self.create_group(owner_client, [member["id"]])
+
+        message_response = owner_client.post(
+            f"/chats/{group['id']}/messages",
+            json={"content": "private group message"},
+        )
+        self.assertEqual(message_response.status_code, 200, message_response.text)
+        message_id = message_response.json()["id"]
+
+        checks = [
+            outsider_client.get(f"/chats/{group['id']}/members"),
+            outsider_client.patch(
+                f"/chats/{group['id']}/settings",
+                json={"is_pinned": True},
+            ),
+            outsider_client.post(
+                f"/chats/{group['id']}/messages",
+                json={"content": "intrusion"},
+            ),
+            outsider_client.get(
+                f"/chats/{group['id']}/messages/search",
+                params={"query": "private"},
+            ),
+            outsider_client.post(
+                f"/chats/{group['id']}/read",
+                json={"last_read_message_id": message_id},
+            ),
+            outsider_client.post(
+                f"/chats/{group['id']}/members",
+                json={"member_ids": [candidate["id"]]},
+            ),
+            outsider_client.post(
+                f"/messages/{message_id}/pin",
+                json={"scope": "chat"},
+            ),
+            outsider_client.request(
+                "DELETE",
+                f"/messages/{message_id}/unpin",
+            ),
+            outsider_client.patch(
+                f"/messages/{message_id}",
+                json={"content": "edited by outsider"},
+            ),
+            outsider_client.request(
+                "DELETE",
+                f"/messages/{message_id}",
+                json={"scope": "chat"},
+            ),
+            outsider_client.post(
+                f"/chats/{group['id']}/messages/voice",
+                data={"duration_ms": "1000"},
+                files={"file": ("voice.webm", b"audio", "audio/webm")},
+            ),
+            outsider_client.post(
+                f"/chats/{group['id']}/messages/file",
+                files={"file": ("note.txt", b"note", "text/plain")},
+            ),
+            outsider_client.get(
+                f"/chats/{group['id']}/member-default-permissions",
+            ),
+            outsider_client.patch(
+                f"/chats/{group['id']}/member-default-permissions",
+                json=SYSTEM_ROLE_DEFAULTS["member"],
+            ),
+            outsider_client.patch(
+                f"/chats/{group['id']}/members/{member['id']}/permissions",
+                json=SYSTEM_ROLE_DEFAULTS["member"],
+            ),
+            outsider_client.get(
+                f"/chats/{group['id']}/admins/{member['id']}/permissions",
+            ),
+            outsider_client.patch(
+                f"/chats/{group['id']}/admins/{member['id']}/permissions",
+                json=self.admin_permissions(True),
+            ),
+            outsider_client.post(
+                f"/chats/{group['id']}/admins/{member['id']}/promote",
+                json=self.admin_permissions(True),
+            ),
+            outsider_client.post(
+                f"/chats/{group['id']}/admins/{member['id']}/dismiss",
+            ),
+            outsider_client.request(
+                "DELETE",
+                f"/chats/{group['id']}/members/{member['id']}",
+            ),
+        ]
+
+        for response in checks:
+            self.assertEqual(response.status_code, 403, response.text)
+
+    def test_read_marker_must_belong_to_chat(self):
+        owner_client, _owner = self.signup("owner")
+        _member_client, member = self.signup("member")
+        group = self.create_group(owner_client, [member["id"]])
+        chats = owner_client.get("/chats")
+        self.assertEqual(chats.status_code, 200, chats.text)
+        self_chat_id = next(chat["id"] for chat in chats.json() if chat["type"] == "self")
+
+        self_message = owner_client.post(
+            f"/chats/{self_chat_id}/messages",
+            json={"content": "self only"},
+        )
+        self.assertEqual(self_message.status_code, 200, self_message.text)
+
+        response = owner_client.post(
+            f"/chats/{group['id']}/read",
+            json={"last_read_message_id": self_message.json()["id"]},
+        )
+        self.assertEqual(response.status_code, 400, response.text)
 
     def test_message_permission_blocks_group_sending(self):
         owner_client, _owner = self.signup("owner")
@@ -260,6 +394,179 @@ class MessengerIntegrationTest(unittest.TestCase):
         )
         self.assertEqual(blocked_response.status_code, 403)
 
+    def test_admin_with_manage_admins_cannot_grant_rights_they_do_not_have(self):
+        owner_client, _owner = self.signup("owner")
+        admin_client, admin = self.signup("admin")
+        _candidate_client, candidate = self.signup("candidate")
+        group = self.create_group(owner_client, [admin["id"], candidate["id"]])
+
+        limited_permissions = self.admin_permissions(
+            False,
+            manage_admins=True,
+            delete_messages=False,
+        )
+        promote_admin = owner_client.post(
+            f"/chats/{group['id']}/admins/{admin['id']}/promote",
+            json=limited_permissions,
+        )
+        self.assertEqual(promote_admin.status_code, 200, promote_admin.text)
+
+        candidate_permissions = limited_permissions.copy()
+        candidate_permissions["delete_messages"] = True
+        blocked_response = admin_client.post(
+            f"/chats/{group['id']}/admins/{candidate['id']}/promote",
+            json=candidate_permissions,
+        )
+        self.assertEqual(blocked_response.status_code, 403, blocked_response.text)
+
+    def test_admin_hierarchy_requires_strictly_higher_permissions(self):
+        owner_client, _owner = self.signup("owner")
+        superior_client, superior = self.signup("superior")
+        inferior_client, inferior = self.signup("inferior")
+        equal_client, equal = self.signup("equal")
+        group = self.create_group(
+            owner_client,
+            [superior["id"], inferior["id"], equal["id"]],
+        )
+
+        full_permissions = self.admin_permissions(True)
+        inferior_permissions = self.admin_permissions(False, manage_admins=True)
+
+        for user, permissions in [
+            (superior, full_permissions),
+            (inferior, inferior_permissions),
+            (equal, full_permissions),
+        ]:
+            response = owner_client.post(
+                f"/chats/{group['id']}/admins/{user['id']}/promote",
+                json=permissions,
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+
+        equal_dismiss = superior_client.post(
+            f"/chats/{group['id']}/admins/{equal['id']}/dismiss",
+        )
+        self.assertEqual(equal_dismiss.status_code, 403, equal_dismiss.text)
+
+        inferior_dismiss_equal = inferior_client.post(
+            f"/chats/{group['id']}/admins/{equal['id']}/dismiss",
+        )
+        self.assertEqual(
+            inferior_dismiss_equal.status_code,
+            403,
+            inferior_dismiss_equal.text,
+        )
+
+        superior_dismiss_inferior = superior_client.post(
+            f"/chats/{group['id']}/admins/{inferior['id']}/dismiss",
+        )
+        self.assertEqual(
+            superior_dismiss_inferior.status_code,
+            200,
+            superior_dismiss_inferior.text,
+        )
+
+    def test_login_signup_message_and_upload_rate_limits(self):
+        old_signup_limit = signup_rate_limiter.limit
+        old_login_limit = login_rate_limiter.limit
+        old_message_limit = message_rate_limiter.limit
+        old_upload_limit = upload_rate_limiter.limit
+
+        try:
+            signup_rate_limiter.limit = 1
+            signup_rate_limiter.reset()
+            first_signup_client = self.client()
+            first_signup = first_signup_client.post(
+                "/signup",
+                json={
+                    "username": f"limited_{uuid4().hex[:8]}",
+                    "password": "password123",
+                    "first_name": "Limited",
+                    "last_name": None,
+                    "bio": None,
+                    "avatar_url": "/favicon.svg",
+                    "status": "online",
+                },
+            )
+            self.assertEqual(first_signup.status_code, 200, first_signup.text)
+            second_signup = self.client().post(
+                "/signup",
+                json={
+                    "username": f"limited_{uuid4().hex[:8]}",
+                    "password": "password123",
+                    "first_name": "Limited",
+                    "last_name": None,
+                    "bio": None,
+                    "avatar_url": "/favicon.svg",
+                    "status": "online",
+                },
+            )
+            self.assertEqual(second_signup.status_code, 429, second_signup.text)
+
+            signup_rate_limiter.limit = old_signup_limit
+            signup_rate_limiter.reset()
+
+            login_rate_limiter.limit = 2
+            login_rate_limiter.reset()
+            for _index in range(2):
+                response = self.client().post(
+                    "/login",
+                    json={"username": "missing", "password": "wrong"},
+                )
+                self.assertEqual(response.status_code, 401, response.text)
+            blocked_login = self.client().post(
+                "/login",
+                json={"username": "missing", "password": "wrong"},
+            )
+            self.assertEqual(blocked_login.status_code, 429, blocked_login.text)
+
+            login_rate_limiter.limit = old_login_limit
+            login_rate_limiter.reset()
+
+            sender_client, _sender = self.signup("sender")
+            _recipient_client, recipient = self.signup("recipient")
+            message_rate_limiter.limit = 1
+            message_rate_limiter.reset()
+            first_message = sender_client.post(
+                "/messages/direct",
+                json={"recipient_id": recipient["id"], "content": "first"},
+            )
+            self.assertEqual(first_message.status_code, 200, first_message.text)
+            second_message = sender_client.post(
+                f"/chats/{first_message.json()['chat']['id']}/messages",
+                json={"content": "second"},
+            )
+            self.assertEqual(second_message.status_code, 429, second_message.text)
+
+            message_rate_limiter.limit = old_message_limit
+            message_rate_limiter.reset()
+
+            chats = sender_client.get("/chats")
+            self.assertEqual(chats.status_code, 200, chats.text)
+            self_chat_id = next(
+                chat["id"] for chat in chats.json() if chat["type"] == "self"
+            )
+            upload_rate_limiter.limit = 1
+            upload_rate_limiter.reset()
+            first_upload = sender_client.post(
+                f"/chats/{self_chat_id}/messages/voice",
+                data={"duration_ms": "1000"},
+                files={"file": ("voice.txt", b"not-audio", "text/plain")},
+            )
+            self.assertEqual(first_upload.status_code, 400, first_upload.text)
+            blocked_upload = sender_client.post(
+                f"/chats/{self_chat_id}/messages/voice",
+                data={"duration_ms": "1000"},
+                files={"file": ("voice.txt", b"not-audio", "text/plain")},
+            )
+            self.assertEqual(blocked_upload.status_code, 429, blocked_upload.text)
+        finally:
+            signup_rate_limiter.limit = old_signup_limit
+            login_rate_limiter.limit = old_login_limit
+            message_rate_limiter.limit = old_message_limit
+            upload_rate_limiter.limit = old_upload_limit
+            reset_all_rate_limiters()
+
     def test_edit_delete_and_pin_message_rules(self):
         sender_client, sender = self.signup("sender")
         recipient_client, recipient = self.signup("recipient")
@@ -301,6 +608,19 @@ class MessengerIntegrationTest(unittest.TestCase):
         recipient_messages = recipient_client.get(f"/chats/{chat_id}/messages")
         self.assertEqual(recipient_messages.status_code, 200, recipient_messages.text)
         self.assertEqual(recipient_messages.json(), [])
+
+        recipient_chats = recipient_client.get("/chats")
+        self.assertEqual(recipient_chats.status_code, 200, recipient_chats.text)
+        self.assertNotIn(
+            chat_id,
+            [chat["id"] for chat in recipient_chats.json()],
+        )
+
+        read_deleted_message = recipient_client.post(
+            f"/chats/{chat_id}/read",
+            json={"last_read_message_id": first_message_id},
+        )
+        self.assertEqual(read_deleted_message.status_code, 400)
 
         second_response = sender_client.post(
             f"/chats/{chat_id}/messages",

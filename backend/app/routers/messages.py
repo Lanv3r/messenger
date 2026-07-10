@@ -20,6 +20,7 @@ from app.models import (
     MessageUserState,
     User,
 )
+from app.rate_limit import message_rate_limiter, upload_rate_limiter
 from app.services.chats import require_active_participant, require_chat_permission
 from app.services.messages import (
     build_message_reply_preview,
@@ -62,7 +63,7 @@ def get_chat_messages(
     messages = session.exec(
         select(Message)
         .where(
-            Message.chat_id == chat_id,
+            col(Message.chat_id) == chat_id,
             col(Message.deleted_at).is_(None),
             ~exists().where(
                 col(MessageUserState.message_id) == col(Message.id),
@@ -102,7 +103,11 @@ def get_chat_messages(
     return public_messages
 
 
-@router.post("/messages/direct", response_model=DirectMessageResponse)
+@router.post(
+    "/messages/direct",
+    response_model=DirectMessageResponse,
+    dependencies=[Depends(message_rate_limiter)],
+)
 async def create_direct_message(
     payload: DirectMessageCreate,
     session: SessionDep,
@@ -140,7 +145,7 @@ async def create_direct_message(
 
     direct_chat = session.exec(
         select(Chat).where(
-            Chat.type == "direct",
+            col(Chat.type) == "direct",
             col(Chat.id).in_(matching_chat_ids),
         )
     ).first()
@@ -234,7 +239,11 @@ async def create_direct_message(
     }
 
 
-@router.post("/chats/{chat_id}/messages", response_model=MessagePublic)
+@router.post(
+    "/chats/{chat_id}/messages",
+    response_model=MessagePublic,
+    dependencies=[Depends(message_rate_limiter)],
+)
 async def create_message(
     chat_id: int,
     payload: MessageCreate,
@@ -294,8 +303,8 @@ async def create_message(
     public_message = to_message_public(message, current_user, reply_to=reply_to)
 
     participant_ids = session.exec(
-        select(ChatParticipant.user_id).where(
-            ChatParticipant.chat_id == chat_id,
+        select(col(ChatParticipant.user_id)).where(
+            col(ChatParticipant.chat_id) == chat_id,
             col(ChatParticipant.left_at).is_(None),
         )
     ).all()
@@ -318,7 +327,11 @@ async def create_message(
     return public_message
 
 
-@router.post("/chats/{chat_id}/messages/voice", response_model=MessagePublic)
+@router.post(
+    "/chats/{chat_id}/messages/voice",
+    response_model=MessagePublic,
+    dependencies=[Depends(upload_rate_limiter)],
+)
 async def create_voice_message(
     chat_id: int,
     file: Annotated[UploadFile, File()],
@@ -410,8 +423,8 @@ async def create_voice_message(
     public_message = to_message_public(message, current_user, reply_to=reply_to)
 
     participant_ids = session.exec(
-        select(ChatParticipant.user_id).where(
-            ChatParticipant.chat_id == chat_id,
+        select(col(ChatParticipant.user_id)).where(
+            col(ChatParticipant.chat_id) == chat_id,
             col(ChatParticipant.left_at).is_(None),
         )
     ).all()
@@ -434,7 +447,11 @@ async def create_voice_message(
     return public_message
 
 
-@router.post("/chats/{chat_id}/messages/file", response_model=MessagePublic)
+@router.post(
+    "/chats/{chat_id}/messages/file",
+    response_model=MessagePublic,
+    dependencies=[Depends(upload_rate_limiter)],
+)
 async def create_file_message(
     chat_id: int,
     file: Annotated[UploadFile, File()],
@@ -464,6 +481,10 @@ async def create_file_message(
     if len(file_bytes) > FILE_MESSAGE_MAX_BYTES:
         raise HTTPException(status_code=413, detail="File is too large")
 
+    caption = content.strip() if content and content.strip() else None
+    if caption is not None and len(caption) > 4000:
+        raise HTTPException(status_code=400, detail="Caption is too long")
+
     chat = session.get(Chat, chat_id)
     if chat is None:
         raise HTTPException(status_code=404, detail="Chat not found")
@@ -485,7 +506,7 @@ async def create_file_message(
     message = Message(
         chat_id=chat_id,
         sender_id=user_id,
-        content=content.strip() if content and content.strip() else None,
+        content=caption,
         message_type=message_type,
         reply_to_message_id=reply_target.id if reply_target else None,
         metadata={
@@ -562,7 +583,7 @@ def search_chat_messages(
     messages = session.exec(
         select(Message)
         .where(
-            Message.chat_id == chat_id,
+            col(Message.chat_id) == chat_id,
             col(Message.deleted_at).is_(None),
             col(Message.content).ilike(f"%{normalized_query}%"),
             ~exists().where(
@@ -634,8 +655,8 @@ async def pin_message(
         session.commit()
 
         participant_ids = session.exec(
-            select(ChatParticipant.user_id).where(
-                ChatParticipant.chat_id == chat.id,
+            select(col(ChatParticipant.user_id)).where(
+                col(ChatParticipant.chat_id) == chat.id,
                 col(ChatParticipant.left_at).is_(None),
             )
         ).all()
@@ -689,8 +710,8 @@ async def unpin_message(
         session.add(message)
         session.commit()
         participant_ids = session.exec(
-            select(ChatParticipant.user_id).where(
-                ChatParticipant.chat_id == chat.id,
+            select(col(ChatParticipant.user_id)).where(
+                col(ChatParticipant.chat_id) == chat.id,
                 col(ChatParticipant.left_at).is_(None),
             )
         ).all()
@@ -718,8 +739,8 @@ async def unpin_message(
         session.commit()
 
         participant_ids = session.exec(
-            select(ChatParticipant.user_id).where(
-                ChatParticipant.chat_id == chat.id,
+            select(col(ChatParticipant.user_id)).where(
+                col(ChatParticipant.chat_id) == chat.id,
                 col(ChatParticipant.left_at).is_(None),
             )
         ).all()
@@ -782,8 +803,8 @@ async def delete_message(
             session.commit()
 
             participant_ids = session.exec(
-                select(ChatParticipant.user_id).where(
-                    ChatParticipant.chat_id == chat.id,
+                select(col(ChatParticipant.user_id)).where(
+                    col(ChatParticipant.chat_id) == chat.id,
                     col(ChatParticipant.left_at).is_(None),
                 )
             ).all()
@@ -821,8 +842,8 @@ async def delete_message(
             session.commit()
 
             participant_ids = session.exec(
-                select(ChatParticipant.user_id).where(
-                    ChatParticipant.chat_id == chat.id,
+                select(col(ChatParticipant.user_id)).where(
+                    col(ChatParticipant.chat_id) == chat.id,
                     col(ChatParticipant.left_at).is_(None),
                 )
             ).all()
@@ -883,8 +904,8 @@ async def edit_message(
     )
 
     participant_ids = session.exec(
-        select(ChatParticipant.user_id).where(
-            ChatParticipant.chat_id == message.chat_id,
+        select(col(ChatParticipant.user_id)).where(
+            col(ChatParticipant.chat_id) == message.chat_id,
             col(ChatParticipant.left_at).is_(None),
         )
     ).all()

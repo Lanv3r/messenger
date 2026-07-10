@@ -240,8 +240,8 @@ def require_active_participant(
 ) -> ChatParticipant:
     participant = session.exec(
         select(ChatParticipant).where(
-            ChatParticipant.chat_id == chat_id,
-            ChatParticipant.user_id == user_id,
+            col(ChatParticipant.chat_id) == chat_id,
+            col(ChatParticipant.user_id) == user_id,
             col(ChatParticipant.left_at).is_(None),
         )
     ).first()

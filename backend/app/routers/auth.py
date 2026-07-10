@@ -1,7 +1,7 @@
 from datetime import timedelta
 
-from fastapi import APIRouter, HTTPException, Response
-from sqlmodel import select
+from fastapi import APIRouter, Depends, HTTPException, Response
+from sqlmodel import col, select
 
 from app.constants import SAVED_MESSAGES_AVATAR_URL
 from app.db import SessionDep
@@ -12,6 +12,8 @@ from app.dependencies import (
     verify_password,
 )
 from app.models import Chat, ChatParticipant, LoginRequest, User, UserCreate, UserPublic
+from app.rate_limit import login_rate_limiter, signup_rate_limiter
+from app.settings import settings
 from app.services.users import is_valid_username
 
 router = APIRouter(tags=["auth"])
@@ -19,13 +21,21 @@ router = APIRouter(tags=["auth"])
 
 @router.post("/logout")
 def logout(response: Response):
-    response.delete_cookie("access_token")
+    response.delete_cookie(
+        "access_token",
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
+    )
     return {"ok": True}
 
 
-@router.post("/login", response_model=UserPublic)
+@router.post(
+    "/login",
+    response_model=UserPublic,
+    dependencies=[Depends(login_rate_limiter)],
+)
 def login(payload: LoginRequest, response: Response, session: SessionDep):
-    stmt = select(User).where(User.username == payload.username.lower())
+    stmt = select(User).where(col(User.username) == payload.username.lower())
     user = session.exec(stmt).first()
 
     if user is None or not verify_password(payload.password, user.password_hash):
@@ -40,14 +50,18 @@ def login(payload: LoginRequest, response: Response, session: SessionDep):
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=False,  # True in production with HTTPS
-        samesite="lax",  # "none" only if cross-site + HTTPS
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
     return user
 
 
-@router.post("/signup", response_model=UserPublic)
+@router.post(
+    "/signup",
+    response_model=UserPublic,
+    dependencies=[Depends(signup_rate_limiter)],
+)
 def signup(user_create: UserCreate, response: Response, session: SessionDep):
     if not user_create.username:
         raise HTTPException(status_code=400, detail="Username is invalid")
@@ -83,7 +97,7 @@ def signup(user_create: UserCreate, response: Response, session: SessionDep):
             detail="Bio must be at most 70 characters.",
         )
 
-    stmt = select(User).where(User.username == user_create.username.lower())
+    stmt = select(User).where(col(User.username) == user_create.username.lower())
     existing_user = session.exec(stmt).first()
     if existing_user is not None:
         raise HTTPException(status_code=409, detail="Username already registered")
@@ -138,8 +152,8 @@ def signup(user_create: UserCreate, response: Response, session: SessionDep):
         key="access_token",
         value=access_token,
         httponly=True,
-        secure=False,  # True in production with HTTPS
-        samesite="lax",  # "none" only if cross-site + HTTPS
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
         max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
     )
 

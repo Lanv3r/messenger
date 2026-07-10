@@ -293,11 +293,11 @@ class ChatListItem(SQLModel):
 
 class DirectMessageCreate(SQLModel):
     recipient_id: int
-    content: str
+    content: str = Field(min_length=1, max_length=4000)
 
 
 class MessageCreate(SQLModel):
-    content: str
+    content: str = Field(min_length=1, max_length=4000)
     reply_to_message_id: int | None = None
 
 
