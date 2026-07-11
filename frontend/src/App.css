@@ -990,16 +990,21 @@
   border-radius: 999px;
   color: #8b5e34;
   background: rgba(255, 255, 255, 0.74);
+  box-sizing: border-box;
   cursor: pointer;
   transition:
     background 160ms ease,
     border-color 160ms ease,
     color 160ms ease,
+    box-shadow 160ms ease,
     transform 160ms ease;
 }
 
 .account-rail-avatar-button {
-  padding: 2px;
+  position: relative;
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .account-rail-avatar-button img {
@@ -1010,12 +1015,33 @@
   background: rgba(133, 144, 167, 0.14);
 }
 
+.account-rail-avatar-button::after {
+  content: "";
+  position: absolute;
+  inset: -3px;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  pointer-events: none;
+  transition: border-color 160ms ease;
+}
+
 .account-rail-button:hover,
 .account-rail-avatar-button:hover {
   transform: translateY(-1px);
   border-color: rgba(244, 111, 84, 0.32);
   color: #d64c2f;
   background: rgba(255, 245, 238, 0.96);
+}
+
+.account-rail-avatar-button:hover {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.account-rail-avatar-button:hover::after,
+.account-rail-avatar-button:focus-visible::after {
+  border-color: rgba(244, 111, 84, 0.76);
 }
 
 .account-rail-button.theme-toggle-button {
@@ -2454,7 +2480,6 @@
   width: 38px;
   height: 38px;
   margin-bottom: 3px;
-  border: 2px solid rgba(255, 255, 255, 0.86);
   border-radius: 50%;
   object-fit: cover;
   background: transparent;
@@ -3319,6 +3344,16 @@ html[data-theme="dark"] .profile-editor-close:hover {
   border-color: rgba(244, 111, 84, 0.36);
   color: #ff9d84;
   background: rgba(244, 111, 84, 0.11);
+}
+
+html[data-theme="dark"] .account-rail-avatar-button:hover {
+  border-color: transparent;
+  background: transparent;
+}
+
+html[data-theme="dark"] .account-rail-avatar-button:hover::after,
+html[data-theme="dark"] .account-rail-avatar-button:focus-visible::after {
+  border-color: rgba(255, 157, 132, 0.82);
 }
 
 html[data-theme="dark"] .chat-list-item:hover {
