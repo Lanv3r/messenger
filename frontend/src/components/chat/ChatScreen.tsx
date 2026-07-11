@@ -8,6 +8,7 @@ import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { CreateGroupPanel } from "@/components/chat/CreateGroupPanel";
 import { GroupInfoPanel } from "@/components/chat/GroupInfoPanel";
+import { ImageViewerDialog } from "@/components/chat/ImageViewerDialog";
 import { MemberProfileDialog } from "@/components/chat/MemberProfileDialog";
 import { MemberRemovalDialog } from "@/components/chat/MemberRemovalDialog";
 import { MessageActionDialog } from "@/components/chat/MessageActionDialog";
@@ -20,7 +21,10 @@ import {
   getChatMemberDisplayName,
   upsertChat,
 } from "@/lib/chat-helpers";
-import { copyMessageToClipboard } from "@/lib/message-helpers";
+import {
+  copyMessageImageToClipboard,
+  copyMessageToClipboard,
+} from "@/lib/message-helpers";
 import { useVoiceRecorder } from "@/hooks/useVoiceRecorder";
 import { useChatSocket } from "@/hooks/useChatSocket";
 import { useChatPersistence } from "@/hooks/useChatPersistence";
@@ -83,6 +87,12 @@ export function ChatScreen({
     null,
   );
   const [messageSearchOpen, setMessageSearchOpen] = useState(false);
+  const [imageViewer, setImageViewer] = useState<{
+    src: string;
+    alt: string;
+    entry: ChatMessage;
+    attachmentIndex: number;
+  } | null>(null);
   const searchHighlightTimeoutRef = useRef<number | null>(null);
   const {
     drafts: attachmentDrafts,
@@ -708,6 +718,39 @@ export function ChatScreen({
     }
   };
 
+  const copyViewerImage = async (
+    entry: ChatMessage,
+    attachmentIndex: number,
+  ) => {
+    setChatError(null);
+
+    try {
+      await copyMessageImageToClipboard(entry, attachmentIndex);
+    } catch (error) {
+      setChatError(
+        error instanceof Error ? error.message : "Unable to copy image.",
+      );
+    }
+  };
+
+  const canDeleteViewerMessage = (entry: ChatMessage) => {
+    if (
+      entry.temp_id ||
+      entry.delivery_status === "sending" ||
+      entry.delivery_status === "failed"
+    ) {
+      return false;
+    }
+
+    if (activeChat?.type === "group") {
+      return (
+        entry.sender_id === user.userId || currentUserCanDeleteGroupMessages
+      );
+    }
+
+    return true;
+  };
+
   const confirmPinAction = (scope: "me" | "chat" | "unpin") => {
     const entry = messageActionDialog?.entry;
     if (!entry) {
@@ -996,6 +1039,28 @@ export function ChatScreen({
           />
         ) : null}
 
+        {imageViewer ? (
+          <ImageViewerDialog
+            src={imageViewer.src}
+            alt={imageViewer.alt}
+            entry={imageViewer.entry}
+            attachmentIndex={imageViewer.attachmentIndex}
+            canDelete={canDeleteViewerMessage(imageViewer.entry)}
+            onClose={() => setImageViewer(null)}
+            onGoToMessage={(entry) => {
+              setImageViewer(null);
+              requestAnimationFrame(() => revealMessageById(entry.id));
+            }}
+            onCopyImage={(entry, attachmentIndex) => {
+              void copyViewerImage(entry, attachmentIndex);
+            }}
+            onDelete={(entry) => {
+              setImageViewer(null);
+              openMessageActionDialog("delete", entry);
+            }}
+          />
+        ) : null}
+
         {chatError ? (
           <p className="profile-error">{chatError}</p>
         ) : null}
@@ -1017,6 +1082,9 @@ export function ChatScreen({
               entry={entry}
               searchQuery={messageSearchQuery}
               activeSearchResultId={activeSearchResultId}
+              onOpenImage={(src, alt, attachmentIndex) =>
+                setImageViewer({ src, alt, entry, attachmentIndex })
+              }
             />
           )}
           renderReplyPreview={(reply) => (

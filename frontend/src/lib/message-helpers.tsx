@@ -309,6 +309,10 @@ export function canCopyMessage(entry: ChatMessage) {
     return true;
   }
 
+  return canCopyImageMessage(entry);
+}
+
+export function canCopyImageMessage(entry: ChatMessage) {
   const attachments = getMessageAttachments(entry);
   return (
     attachments.length === 1 &&
@@ -413,43 +417,52 @@ async function loadImageAsPngBlob(imageUrl: string) {
   }
 }
 
-async function copyImageToClipboard(entry: ChatMessage, imageUrl: string) {
+export async function copyMessageImageToClipboard(
+  entry: ChatMessage,
+  attachmentIndex?: number,
+) {
   if (!navigator.clipboard) {
     throw new Error("Clipboard is not supported by this browser.");
   }
 
+  const attachments = getMessageAttachments(entry);
+  const attachment = attachments[attachmentIndex ?? 0];
+  if (!attachment || attachment.message_type !== "image") {
+    throw new Error("Image is unavailable.");
+  }
+
   if (!navigator.clipboard.write || typeof ClipboardItem === "undefined") {
+    const imageUrl = getAttachmentFileUrl(attachment);
     await navigator.clipboard.writeText(imageUrl);
     throw new Error(
       "Image copying is not supported by this browser, so the image link was copied instead.",
     );
   }
 
-  const copyImageUrl = `${API_URL}/messages/${entry.id}/copy-image`;
+  const hasAttachmentList = Array.isArray(entry.metadata?.attachments);
+  const query =
+    hasAttachmentList && attachmentIndex !== undefined
+      ? `?attachment_index=${attachmentIndex}`
+      : "";
+  const copyImageUrl = `${API_URL}/messages/${entry.id}/copy-image${query}`;
 
-  // Call clipboard.write during the click event's user activation window.
   await navigator.clipboard.write([
     new ClipboardItem({ "image/png": loadImageAsPngBlob(copyImageUrl) }),
   ]);
 }
 
 export async function copyMessageToClipboard(entry: ChatMessage) {
+  if (canCopyImageMessage(entry)) {
+    await copyMessageImageToClipboard(entry);
+    return;
+  }
+
   if (entry.content) {
     await navigator.clipboard.writeText(entry.content);
     return;
   }
 
-  const attachments = getMessageAttachments(entry);
-  if (attachments.length !== 1 || attachments[0].message_type !== "image") {
-    throw new Error("This message has nothing copyable.");
-  }
-
-  const imageUrl = getAttachmentFileUrl(attachments[0]);
-  if (!imageUrl) {
-    throw new Error("Image is unavailable.");
-  }
-
-  await copyImageToClipboard(entry, imageUrl);
+  throw new Error("This message has nothing copyable.");
 }
 
 export function getUploadedFileName(entry: ChatMessage) {

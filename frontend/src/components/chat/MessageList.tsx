@@ -6,7 +6,11 @@ import {
   formatMessageTime,
   isSameMessageDay,
 } from "@/lib/date-format";
-import { canCopyMessage, getMessageAttachments } from "@/lib/message-helpers";
+import {
+  canCopyImageMessage,
+  canCopyMessage,
+  getMessageAttachments,
+} from "@/lib/message-helpers";
 import { keepSubtleScrollbarVisible } from "@/lib/scrollbar";
 import type {
   Chat,
@@ -265,7 +269,7 @@ export function MessageList({
                               role="menuitem"
                               onClick={() => onCopyMessage(entry)}
                             >
-                              Copy
+                              {canCopyImageMessage(entry) ? "Copy Image" : "Copy"}
                             </button>
                           ) : null}
                           <button

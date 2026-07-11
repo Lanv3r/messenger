@@ -39,7 +39,7 @@ from app.upload_constants import (
     VOICE_UPLOAD_URL_PREFIX,
     VOICE_UPLOADS_DIR,
 )
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from sqlalchemy import func
 from sqlmodel import col, exists, select
@@ -190,16 +190,37 @@ def get_message_image_for_copy(
     message_id: int,
     session: SessionDep,
     current_user: Annotated[User, Depends(get_current_user)],
+    attachment_index: Annotated[int | None, Query(ge=0)] = None,
 ):
     user_id = current_user.id
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
 
     message = require_visible_message(session, message_id, user_id)
-    if message.message_type != "image":
+
+    metadata = message.metadata_
+    if attachment_index is not None:
+        attachments = message.metadata_.get("attachments")
+        if not isinstance(attachments, list):
+            if attachment_index == 0 and message.message_type == "image":
+                attachments = []
+            else:
+                raise HTTPException(status_code=404, detail="Image not found")
+        if attachments and attachment_index >= len(attachments):
+            raise HTTPException(status_code=404, detail="Image not found")
+
+        if attachments:
+            attachment_metadata = attachments[attachment_index]
+            if not isinstance(attachment_metadata, dict):
+                raise HTTPException(status_code=404, detail="Image not found")
+            if attachment_metadata.get("message_type") != "image":
+                raise HTTPException(status_code=400, detail="Message is not an image")
+
+            metadata = attachment_metadata
+    elif message.message_type != "image":
         raise HTTPException(status_code=400, detail="Message is not an image")
 
-    file_url = message.metadata_.get("file_url")
+    file_url = metadata.get("file_url")
     if not isinstance(file_url, str) or not file_url.startswith(
         f"{FILE_UPLOAD_URL_PREFIX}/"
     ):
@@ -209,7 +230,7 @@ def get_message_image_for_copy(
     if not image_path.is_file():
         raise HTTPException(status_code=404, detail="Image not found")
 
-    mime_type = message.metadata_.get("mime_type")
+    mime_type = metadata.get("mime_type")
     media_type = (
         mime_type.split(";", 1)[0].strip()
         if isinstance(mime_type, str) and mime_type.startswith("image/")

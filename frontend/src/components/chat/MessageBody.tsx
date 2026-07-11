@@ -13,6 +13,7 @@ type MessageBodyProps = {
   entry: ChatMessage;
   searchQuery: string;
   activeSearchResultId: number | null;
+  onOpenImage: (src: string, alt: string, attachmentIndex: number) => void;
 };
 
 function renderMessageContent(
@@ -34,6 +35,7 @@ export function MessageBody({
   entry,
   searchQuery,
   activeSearchResultId,
+  onOpenImage,
 }: MessageBodyProps) {
   if (entry.message_type === "voice") {
     const audioUrl = getVoiceAudioUrl(entry);
@@ -74,9 +76,13 @@ export function MessageBody({
 
       if (attachment.message_type === "image") {
         return fileUrl ? (
-          <a href={fileUrl} target="_blank" rel="noreferrer">
+          <button
+            type="button"
+            className="file-message-image-button"
+            onClick={() => onOpenImage(fileUrl, fileName, index)}
+          >
             <img src={fileUrl} alt={fileName} />
-          </a>
+          </button>
         ) : (
           <span className="file-message-missing">File unavailable</span>
         );
