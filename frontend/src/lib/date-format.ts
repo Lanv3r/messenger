@@ -62,6 +62,27 @@ export function formatMessageTime(value: string | null) {
   }).format(date);
 }
 
+export function formatMessageFullTimestamp(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat(undefined, {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+  }).format(date);
+}
+
 export function formatMessageDay(value: string | null) {
   if (!value) {
     return null;

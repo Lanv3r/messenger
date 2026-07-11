@@ -1,7 +1,8 @@
-import { Fragment, type ReactNode, type RefObject } from "react";
+import { Fragment, useState, type ReactNode, type RefObject } from "react";
 import { Check, CheckCheck, ClockArrowUp, Pin } from "lucide-react";
 
 import {
+  formatMessageFullTimestamp,
   formatMessageDay,
   formatMessageTime,
   isSameMessageDay,
@@ -24,6 +25,12 @@ type MessageMenuPosition = {
   y: number;
 };
 
+type MessageMetaTooltipPlacement =
+  | "below-right"
+  | "below-left"
+  | "above-right"
+  | "above-left";
+
 type MessageListProps = {
   messagesRef: RefObject<HTMLUListElement | null>;
   messages: ChatMessage[];
@@ -45,6 +52,9 @@ type MessageListProps = {
 };
 
 const GROUPED_MESSAGE_WINDOW_MS = 5 * 60 * 1000;
+const TOOLTIP_GAP_PX = 8;
+const TOOLTIP_OFFSET_PX = 4;
+const TOOLTIP_VIEWPORT_PADDING_PX = 12;
 
 function getMessageTimestamp(value: string | null) {
   if (!value) {
@@ -81,6 +91,64 @@ function isGroupedWithPreviousMessage(
 
   const distanceMs = currentTimestamp - previousTimestamp;
   return distanceMs >= 0 && distanceMs <= GROUPED_MESSAGE_WINDOW_MS;
+}
+
+function getTooltipBoundaryRect(boundaryElement: HTMLElement | null) {
+  if (boundaryElement) {
+    return boundaryElement.getBoundingClientRect();
+  }
+
+  return {
+    top: 0,
+    right: window.innerWidth,
+    bottom: window.innerHeight,
+    left: 0,
+  };
+}
+
+function getMessageMetaTooltipPlacement(
+  metaElement: HTMLElement,
+  boundaryElement: HTMLElement | null,
+): MessageMetaTooltipPlacement {
+  const tooltip = metaElement.querySelector<HTMLElement>(
+    ".message-meta-tooltip",
+  );
+
+  if (!tooltip) {
+    return "below-right";
+  }
+
+  const metaRect = metaElement.getBoundingClientRect();
+  const tooltipRect = tooltip.getBoundingClientRect();
+  const boundaryRect = getTooltipBoundaryRect(boundaryElement);
+  const belowSpace =
+    boundaryRect.bottom -
+    metaRect.bottom -
+    TOOLTIP_GAP_PX -
+    TOOLTIP_VIEWPORT_PADDING_PX;
+  const aboveSpace =
+    metaRect.top -
+    boundaryRect.top -
+    TOOLTIP_GAP_PX -
+    TOOLTIP_VIEWPORT_PADDING_PX;
+  const rightSpace =
+    boundaryRect.right -
+    metaRect.left -
+    TOOLTIP_OFFSET_PX -
+    TOOLTIP_VIEWPORT_PADDING_PX;
+  const leftSpace =
+    metaRect.right -
+    boundaryRect.left -
+    TOOLTIP_OFFSET_PX -
+    TOOLTIP_VIEWPORT_PADDING_PX;
+  const verticalPlacement =
+    belowSpace < tooltipRect.height && aboveSpace > belowSpace
+      ? "above"
+      : "below";
+  const horizontalPlacement =
+    rightSpace < tooltipRect.width && leftSpace > rightSpace ? "left" : "right";
+
+  return `${verticalPlacement}-${horizontalPlacement}`;
 }
 
 function getMessageMenuPosition(clientX: number, clientY: number) {
@@ -121,6 +189,26 @@ export function MessageList({
   onStartEdit,
   onOpenActionDialog,
 }: MessageListProps) {
+  const [tooltipPlacements, setTooltipPlacements] = useState<
+    Record<number, MessageMetaTooltipPlacement>
+  >({});
+
+  function updateTooltipPlacement(
+    messageId: number,
+    metaElement: HTMLElement,
+  ) {
+    const placement = getMessageMetaTooltipPlacement(
+      metaElement,
+      messagesRef.current,
+    );
+
+    setTooltipPlacements((current) =>
+      current[messageId] === placement
+        ? current
+        : { ...current, [messageId]: placement },
+    );
+  }
+
   return (
     <ul
       id="messages"
@@ -135,11 +223,15 @@ export function MessageList({
           const previousEntry = messages[index - 1];
           const nextEntry = messages[index + 1];
           const sentAt = formatMessageTime(entry.created_at);
+          const sentAtFull = formatMessageFullTimestamp(entry.created_at);
+          const editedAtFull = formatMessageFullTimestamp(entry.edited_at);
           const dayLabel = formatMessageDay(entry.created_at);
           const showDaySeparator =
             !previousEntry ||
             !isSameMessageDay(previousEntry.created_at, entry.created_at);
           const deliveryStatus = getMessageDeliveryStatus(entry);
+          const tooltipPlacement =
+            tooltipPlacements[entry.id] ?? "below-right";
           const hasSharedPin = Boolean(entry.pinned_at);
           const hasPersonalPin = entry.is_pinned_for_me;
           const canUseMessageActions =
@@ -330,11 +422,35 @@ export function MessageList({
                       ) : null}
                     </span>
                   ) : null}
-                  <span className="message-meta">
+                  <span
+                    className={[
+                      "message-meta",
+                      entry.edited_at ? `tooltip-${tooltipPlacement}` : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    onMouseEnter={(event) => {
+                      if (entry.edited_at) {
+                        updateTooltipPlacement(entry.id, event.currentTarget);
+                      }
+                    }}
+                    onFocus={(event) => {
+                      if (entry.edited_at) {
+                        updateTooltipPlacement(entry.id, event.currentTarget);
+                      }
+                    }}
+                  >
                     {sentAt && entry.created_at ? (
-                      <time dateTime={entry.created_at}>{sentAt}</time>
+                      <time dateTime={entry.created_at}>
+                        {entry.edited_at ? `edited ${sentAt}` : sentAt}
+                      </time>
                     ) : null}
-                    {entry.edited_at ? <span>edited</span> : null}
+                    {entry.edited_at && sentAtFull && editedAtFull ? (
+                      <span className="message-meta-tooltip" role="tooltip">
+                        <span>Sent: {sentAtFull}</span>
+                        <span>Edited: {editedAtFull}</span>
+                      </span>
+                    ) : null}
                     {deliveryStatus ? (
                       <span
                         className={`message-status ${deliveryStatus.kind}`}
