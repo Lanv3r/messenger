@@ -125,82 +125,83 @@ export function ChatComposer({
           onCancel={onCancelVoiceRecording}
           onSend={onSendVoiceRecording}
         />
-      ) : null}
-      <input
-        id="message"
-        type="text"
-        value={message}
-        placeholder="Write a message..."
-        disabled={voiceRecorder !== null}
-        onChange={(event) => onMessageChange(event.target.value)}
-        onPaste={onPasteImages}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            onSend();
-            return;
-          }
+      ) : (
+        <>
+          <input
+            id="message"
+            type="text"
+            value={message}
+            placeholder="Write a message..."
+            onChange={(event) => onMessageChange(event.target.value)}
+            onPaste={onPasteImages}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                onSend();
+                return;
+              }
 
-          if (event.key === "Escape" && isEditing) {
-            onCancelEdit();
-          }
-        }}
-      />
-      <button
-        type="button"
-        className="attachment-button"
-        aria-label={fileSending ? "Uploading file" : "Attach file"}
-        title={fileSending ? "Uploading file" : "Attach file"}
-        disabled={
-          activeChatId === null ||
-          hasDraftRecipient ||
-          voiceRecorder !== null ||
-          fileSending ||
-          editingMessageSaving
-        }
-        onClick={() => {
-          fileInputRef.current?.click();
-        }}
-      >
-        {fileSending ? (
-          <ClockArrowUp aria-hidden="true" size={18} />
-        ) : (
-          <Paperclip aria-hidden="true" size={18} />
-        )}
-      </button>
-      <button
-        type="button"
-        className="voice-record-button"
-        aria-label={
-          voiceSending ? "Uploading voice message" : "Record voice message"
-        }
-        title={voiceSending ? "Uploading voice message" : "Record voice message"}
-        disabled={
-          activeChatId === null ||
-          hasDraftRecipient ||
-          voiceRecorder !== null ||
-          voiceSending ||
-          isEditing
-        }
-        onClick={onStartVoiceRecording}
-      >
-        {voiceSending ? (
-          <ClockArrowUp aria-hidden="true" size={18} />
-        ) : (
-          <Mic aria-hidden="true" size={18} />
-        )}
-      </button>
-      <button
-        type="button"
-        className="send-button"
-        onClick={onSend}
-        disabled={
-          (activeChatId === null && !hasDraftRecipient) ||
-          voiceRecorder !== null ||
-          editingMessageSaving
-        }
-      >
-        {isEditing ? (editingMessageSaving ? "Saving..." : "Save") : "Send"}
-      </button>
+              if (event.key === "Escape" && isEditing) {
+                onCancelEdit();
+              }
+            }}
+          />
+          <button
+            type="button"
+            className="attachment-button"
+            aria-label={fileSending ? "Uploading file" : "Attach file"}
+            title={fileSending ? "Uploading file" : "Attach file"}
+            disabled={
+              activeChatId === null ||
+              hasDraftRecipient ||
+              fileSending ||
+              editingMessageSaving
+            }
+            onClick={() => {
+              fileInputRef.current?.click();
+            }}
+          >
+            {fileSending ? (
+              <ClockArrowUp aria-hidden="true" size={18} />
+            ) : (
+              <Paperclip aria-hidden="true" size={18} />
+            )}
+          </button>
+          <button
+            type="button"
+            className="voice-record-button"
+            aria-label={
+              voiceSending ? "Uploading voice message" : "Record voice message"
+            }
+            title={
+              voiceSending ? "Uploading voice message" : "Record voice message"
+            }
+            disabled={
+              activeChatId === null ||
+              hasDraftRecipient ||
+              voiceSending ||
+              isEditing
+            }
+            onClick={onStartVoiceRecording}
+          >
+            {voiceSending ? (
+              <ClockArrowUp aria-hidden="true" size={18} />
+            ) : (
+              <Mic aria-hidden="true" size={18} />
+            )}
+          </button>
+          <button
+            type="button"
+            className="send-button"
+            onClick={onSend}
+            disabled={
+              (activeChatId === null && !hasDraftRecipient) ||
+              editingMessageSaving
+            }
+          >
+            {isEditing ? (editingMessageSaving ? "Saving..." : "Save") : "Send"}
+          </button>
+        </>
+      )}
     </div>
   );
 }
