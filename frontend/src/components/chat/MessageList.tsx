@@ -50,6 +50,45 @@ type MessageListProps = {
   onOpenActionDialog: (kind: "pin" | "delete", entry: ChatMessage) => void;
 };
 
+const GROUPED_MESSAGE_WINDOW_MS = 5 * 60 * 1000;
+
+function getMessageTimestamp(value: string | null) {
+  if (!value) {
+    return null;
+  }
+
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function isGroupedWithPreviousMessage(
+  entry: ChatMessage,
+  previousEntry: ChatMessage | undefined,
+  showDaySeparator: boolean,
+) {
+  if (!previousEntry || showDaySeparator) {
+    return false;
+  }
+
+  if (entry.sender_id === null || previousEntry.sender_id === null) {
+    return false;
+  }
+
+  if (entry.sender_id !== previousEntry.sender_id) {
+    return false;
+  }
+
+  const currentTimestamp = getMessageTimestamp(entry.created_at);
+  const previousTimestamp = getMessageTimestamp(previousEntry.created_at);
+
+  if (currentTimestamp === null || previousTimestamp === null) {
+    return false;
+  }
+
+  const distanceMs = currentTimestamp - previousTimestamp;
+  return distanceMs >= 0 && distanceMs <= GROUPED_MESSAGE_WINDOW_MS;
+}
+
 function getMessageMenuPosition(clientX: number, clientY: number) {
   const menuWidth = 180;
   const menuMaxHeight = 280;
@@ -106,6 +145,7 @@ export function MessageList({
       ) : (
         messages.map((entry, index) => {
           const previousEntry = messages[index - 1];
+          const nextEntry = messages[index + 1];
           const sentAt = formatMessageTime(entry.created_at);
           const dayLabel = formatMessageDay(entry.created_at);
           const showDaySeparator =
@@ -140,6 +180,26 @@ export function MessageList({
             );
           const hasVisualMediaCaption =
             isVisualMediaMessage && Boolean(entry.content);
+          const isGroupedWithPrevious = isGroupedWithPreviousMessage(
+            entry,
+            previousEntry,
+            showDaySeparator,
+          );
+          const isGroupedWithNext = nextEntry
+            ? isGroupedWithPreviousMessage(
+                nextEntry,
+                entry,
+                !isSameMessageDay(entry.created_at, nextEntry.created_at),
+              )
+            : false;
+          const sequenceClass =
+            isGroupedWithPrevious && isGroupedWithNext
+              ? "message-sequence-inner"
+              : isGroupedWithNext
+                ? "message-sequence-first"
+                : isGroupedWithPrevious
+                  ? "message-sequence-last"
+                  : "";
           const messageKey = `${entry.sender_id ?? "system"}-${
             entry.id ?? index
           }`;
@@ -158,6 +218,8 @@ export function MessageList({
                   entry.id === activeSearchResultId ? "search-highlight" : "",
                   isVisualMediaMessage ? "media-message" : "",
                   hasVisualMediaCaption ? "media-with-caption" : "",
+                  isGroupedWithPrevious ? "grouped-with-previous" : "",
+                  sequenceClass,
                 ]
                   .filter(Boolean)
                   .join(" ")}
@@ -175,14 +237,18 @@ export function MessageList({
                   );
                 }}
               >
-                <img
-                  src={getSenderAvatar(entry)}
-                  alt=""
-                  className="message-avatar"
-                  onError={(event) => {
-                    event.currentTarget.src = "/favicon.svg";
-                  }}
-                />
+                {isGroupedWithPrevious ? (
+                  <span className="message-avatar-spacer" aria-hidden="true" />
+                ) : (
+                  <img
+                    src={getSenderAvatar(entry)}
+                    alt=""
+                    className="message-avatar"
+                    onError={(event) => {
+                      event.currentTarget.src = "/favicon.svg";
+                    }}
+                  />
+                )}
                 <div className="message-copy">
                   {entry.reply_to ? renderReplyPreview(entry.reply_to) : null}
                   {isEditingMessage ? (

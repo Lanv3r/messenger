@@ -2473,6 +2473,10 @@
   margin-right: auto;
 }
 
+#messages li.grouped-with-previous {
+  margin-top: -5px;
+}
+
 #messages li.search-highlight {
   isolation: isolate;
 }
@@ -2547,6 +2551,13 @@
   background: transparent;
 }
 
+.message-avatar-spacer {
+  align-self: end;
+  width: 38px;
+  height: 38px;
+  margin-bottom: 3px;
+}
+
 .message-copy {
   display: grid;
   min-width: 0;
@@ -2556,6 +2567,19 @@
   border-radius: 18px;
   background: #fff5ef;
   box-shadow: none;
+}
+
+#messages li.message-sequence-first .message-copy {
+  border-bottom-left-radius: 7px;
+}
+
+#messages li.message-sequence-inner .message-copy {
+  border-top-left-radius: 7px;
+  border-bottom-left-radius: 7px;
+}
+
+#messages li.message-sequence-last .message-copy {
+  border-top-left-radius: 7px;
 }
 
 #messages li.you .message-copy {
