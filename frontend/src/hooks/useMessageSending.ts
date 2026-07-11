@@ -7,7 +7,7 @@ import {
   updateChatPreview,
   upsertChatPreview,
 } from "@/lib/chat-helpers";
-import { getFileMessageType, toReplyPreview } from "@/lib/message-helpers";
+import { toReplyPreview } from "@/lib/message-helpers";
 import type {
   AttachmentDraft,
   AuthUser,
@@ -20,12 +20,6 @@ import type {
 type MarkReadOptions = {
   resetUnread?: boolean;
   unreadCountChange?: number;
-};
-
-type SendFileOptions = {
-  caption?: string;
-  manageSending?: boolean;
-  replyTarget?: ChatMessage | null;
 };
 
 type UseMessageSendingOptions = {
@@ -188,24 +182,32 @@ export function useMessageSending({
     }
   }
 
-  async function sendFileMessage(
-    file: File,
-    options: SendFileOptions = {},
-  ): Promise<boolean> {
+  async function sendAttachmentDrafts() {
+    if (attachmentDrafts.length === 0 || fileSending) {
+      return;
+    }
+
     if (draftRecipient) {
       onError("Send a text message first before attaching files.");
-      return false;
+      return;
     }
 
-    if (activeChatId === null || file.size === 0) {
-      return false;
+    if (activeChatId === null) {
+      return;
     }
 
-    const caption = options.caption?.trim() ?? "";
-    const replyTarget =
-      options.replyTarget === undefined ? replyToMessage : options.replyTarget;
+    const drafts = attachmentDrafts;
+    const caption = attachmentCaption.trim();
+    const replyTarget = replyToMessage;
     const tempId = crypto.randomUUID();
-    const objectUrl = URL.createObjectURL(file);
+    const attachments = drafts.map((draft) => ({
+      file_url: draft.previewUrl,
+      original_name: draft.file.name,
+      mime_type: draft.file.type,
+      size_bytes: draft.file.size,
+      message_type: draft.messageType,
+    }));
+    const hasMultipleAttachments = attachments.length > 1;
     const optimisticMessage: ChatMessage = {
       id: Date.now(),
       chat_id: activeChatId,
@@ -213,7 +215,7 @@ export function useMessageSending({
       sender_username: user.username,
       sender_avatar_url: user.avatarUrl,
       content: caption || null,
-      message_type: getFileMessageType(file),
+      message_type: hasMultipleAttachments ? "album" : drafts[0].messageType,
       reply_to_message_id: replyTarget?.id ?? null,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
@@ -222,21 +224,15 @@ export function useMessageSending({
       pinned_at: null,
       pinned_by: null,
       is_pinned_for_me: false,
-      metadata: {
-        file_url: objectUrl,
-        original_name: file.name,
-        mime_type: file.type,
-        size_bytes: file.size,
-      },
+      metadata: hasMultipleAttachments ? { attachments } : attachments[0],
       isOwn: true,
       delivery_status: "sending",
       temp_id: tempId,
       reply_to: replyTarget ? toReplyPreview(replyTarget) : null,
     };
 
-    if (options.manageSending ?? true) {
-      setFileSending(true);
-    }
+    setFileSending(true);
+    setAttachmentError(null);
     setMessages((current) => [...current, optimisticMessage]);
     setChats((current) => updateChatPreview(current, optimisticMessage));
     setReplyToMessage(null);
@@ -245,7 +241,9 @@ export function useMessageSending({
     clearComposerDraft(activeChatId);
 
     const formData = new FormData();
-    formData.append("file", file);
+    drafts.forEach((draft) => {
+      formData.append("files", draft.file);
+    });
     if (caption) {
       formData.append("content", caption);
     }
@@ -255,7 +253,7 @@ export function useMessageSending({
 
     try {
       const responseMessage = await apiFetch<ChatMessage>(
-        `/chats/${activeChatId}/messages/file`,
+        `/chats/${activeChatId}/messages/files`,
         {
           method: "POST",
           body: formData,
@@ -274,8 +272,7 @@ export function useMessageSending({
       markChatReadThrough(activeChatId, confirmedMessage.id, {
         resetUnread: true,
       });
-      URL.revokeObjectURL(objectUrl);
-      return true;
+      drafts.forEach((draft) => removeAttachmentDraft(draft.id));
     } catch (error) {
       setMessages((current) =>
         current.map((entry) =>
@@ -290,45 +287,11 @@ export function useMessageSending({
 
       if (errorMessage === "Could not validate credentials") {
         onSessionExpired();
-        return false;
+        return;
       }
 
+      setAttachmentError(errorMessage);
       onError(errorMessage);
-      return false;
-    } finally {
-      if (options.manageSending ?? true) {
-        setFileSending(false);
-      }
-    }
-  }
-
-  async function sendAttachmentDrafts() {
-    if (attachmentDrafts.length === 0 || fileSending) {
-      return;
-    }
-
-    const drafts = attachmentDrafts;
-    const caption = attachmentCaption.trim();
-    const replyTarget = replyToMessage;
-
-    setFileSending(true);
-    setAttachmentError(null);
-
-    try {
-      for (let index = 0; index < drafts.length; index += 1) {
-        const sent = await sendFileMessage(drafts[index].file, {
-          caption: index === 0 ? caption : "",
-          manageSending: false,
-          replyTarget,
-        });
-
-        if (!sent) {
-          setAttachmentError("One or more attachments could not be sent.");
-          return;
-        }
-
-        removeAttachmentDraft(drafts[index].id);
-      }
     } finally {
       setFileSending(false);
     }

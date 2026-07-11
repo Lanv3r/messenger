@@ -12,6 +12,7 @@ DELETED_MESSAGE_PREVIEW_CONTENT = "message deleted"
 DELETED_MESSAGE_PREVIEW_TYPE = "deleted"
 VOICE_MESSAGE_PREVIEW_CONTENT = "Voice message"
 FILE_MESSAGE_PREVIEW_LABELS = {
+    "album": "Attachments",
     "audio": "Audio file",
     "file": "File",
     "image": "Photo",
@@ -34,6 +35,18 @@ def get_message_preview_text(message: Message) -> str | None:
     content = message.content.strip() if message.content else None
     if content:
         return content
+
+    attachments = message.metadata_.get("attachments")
+    if isinstance(attachments, list) and attachments:
+        attachment_types = {
+            attachment.get("message_type")
+            for attachment in attachments
+            if isinstance(attachment, dict)
+        }
+        if attachment_types == {"image"}:
+            return f"{len(attachments)} photos"
+
+        return f"{len(attachments)} attachments"
 
     if message.message_type == "voice":
         return VOICE_MESSAGE_PREVIEW_CONTENT

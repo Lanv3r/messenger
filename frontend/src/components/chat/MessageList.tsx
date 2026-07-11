@@ -6,7 +6,7 @@ import {
   formatMessageTime,
   isSameMessageDay,
 } from "@/lib/date-format";
-import { canCopyMessage } from "@/lib/message-helpers";
+import { canCopyMessage, getMessageAttachments } from "@/lib/message-helpers";
 import { keepSubtleScrollbarVisible } from "@/lib/scrollbar";
 import type {
   Chat,
@@ -126,8 +126,14 @@ export function MessageList({
             activeChat?.type === "group" &&
             (entry.sender_id === currentUserId ||
               currentUserCanDeleteGroupMessages);
+          const attachments = getMessageAttachments(entry);
           const isVisualMediaMessage =
-            entry.message_type === "image" || entry.message_type === "video";
+            attachments.length > 0 &&
+            attachments.every(
+              (attachment) =>
+                attachment.message_type === "image" ||
+                attachment.message_type === "video",
+            );
           const hasVisualMediaCaption =
             isVisualMediaMessage && Boolean(entry.content);
           const messageKey = `${entry.sender_id ?? "system"}-${

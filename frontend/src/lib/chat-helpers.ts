@@ -1,4 +1,5 @@
 import type { Chat, ChatActivityState, ChatActivityUser, ChatMessage } from "@/types";
+import { getMessageAttachments } from "@/lib/message-helpers";
 
 export function getChatSortTime(chat: Chat) {
   const value = chat.last_message_created_at ?? chat.created_at;
@@ -20,11 +21,23 @@ export function sortChats(chats: Chat[]) {
 }
 
 export function getChatMessagePreviewText(
-  message: Pick<ChatMessage, "content" | "message_type">,
+  message: Pick<ChatMessage, "content" | "message_type" | "metadata">,
 ) {
   const content = message.content?.trim();
   if (content) {
     return content;
+  }
+
+  const attachments = getMessageAttachments(message);
+  if (attachments.length > 1) {
+    const attachmentTypes = new Set(
+      attachments.map((attachment) => attachment.message_type),
+    );
+    if (attachmentTypes.size === 1 && attachmentTypes.has("image")) {
+      return `${attachments.length} photos`;
+    }
+
+    return `${attachments.length} attachments`;
   }
 
   if (message.message_type === "voice") {

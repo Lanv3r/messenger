@@ -31,6 +31,14 @@ export type ChatMessage = {
   reply_to?: MessageReplyPreview | null;
 };
 
+export type MessageAttachment = {
+  file_url: string;
+  original_name: string;
+  mime_type: string;
+  size_bytes: number;
+  message_type: string;
+};
+
 export type MessageActionDialogState = {
   kind: "pin" | "delete";
   entry: ChatMessage;

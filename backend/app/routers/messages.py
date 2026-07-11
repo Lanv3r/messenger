@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, TypedDict
 from uuid import uuid4
 
 from app.db import SessionDep
@@ -47,6 +47,16 @@ from sqlmodel import col, exists, select
 router = APIRouter(tags=["messages"])
 
 
+class PreparedFileAttachment(TypedDict):
+    file_bytes: bytes
+    extension: str
+    original_name: str
+    mime_type: str
+    message_type: str
+    permission_name: str
+    size_bytes: int
+
+
 def require_visible_message(
     session: SessionDep,
     message_id: int,
@@ -63,6 +73,59 @@ def require_visible_message(
         raise HTTPException(status_code=404, detail="Message not found")
 
     return message
+
+
+async def prepare_file_attachment(file: UploadFile) -> PreparedFileAttachment:
+    content_type = file.content_type or ""
+    base_content_type = content_type.split(";", 1)[0].strip().lower()
+    extension = FILE_MESSAGE_ALLOWED_TYPES.get(base_content_type)
+    if extension is None:
+        raise HTTPException(status_code=400, detail="Unsupported file format")
+
+    message_type, permission_name = get_uploaded_file_message_type_and_permission(
+        base_content_type
+    )
+
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=400, detail="File is empty")
+    if len(file_bytes) > FILE_MESSAGE_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="File is too large")
+
+    return {
+        "file_bytes": file_bytes,
+        "extension": extension,
+        "original_name": Path(file.filename or "file").name or "file",
+        "mime_type": content_type or base_content_type,
+        "message_type": message_type,
+        "permission_name": permission_name,
+        "size_bytes": len(file_bytes),
+    }
+
+
+def save_prepared_file_attachment(
+    prepared_attachment: PreparedFileAttachment,
+) -> dict[str, object]:
+    FILE_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
+    filename = f"{uuid4().hex}{prepared_attachment['extension']}"
+    upload_path = FILE_UPLOADS_DIR / filename
+    upload_path.write_bytes(prepared_attachment["file_bytes"])
+
+    return {
+        "file_url": f"{FILE_UPLOAD_URL_PREFIX}/{filename}",
+        "original_name": prepared_attachment["original_name"],
+        "mime_type": prepared_attachment["mime_type"],
+        "size_bytes": prepared_attachment["size_bytes"],
+        "message_type": prepared_attachment["message_type"],
+    }
+
+
+def parse_file_caption(content: str | None) -> str | None:
+    caption = content.strip() if content and content.strip() else None
+    if caption is not None and len(caption) > 4000:
+        raise HTTPException(status_code=400, detail="Caption is too long")
+
+    return caption
 
 
 @router.get(
@@ -501,13 +564,13 @@ async def create_voice_message(
 
 
 @router.post(
-    "/chats/{chat_id}/messages/file",
+    "/chats/{chat_id}/messages/files",
     response_model=MessagePublic,
     dependencies=[Depends(upload_rate_limiter)],
 )
 async def create_file_message(
     chat_id: int,
-    file: Annotated[UploadFile, File()],
+    files: Annotated[list[UploadFile], File()],
     session: SessionDep,
     current_user: Annotated[User, Depends(get_current_user)],
     content: Annotated[str | None, Form()] = None,
@@ -517,26 +580,25 @@ async def create_file_message(
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
 
-    content_type = file.content_type or ""
-    base_content_type = content_type.split(";", 1)[0].strip()
-    extension = FILE_MESSAGE_ALLOWED_TYPES.get(base_content_type)
-    if extension is None:
-        raise HTTPException(status_code=400, detail="Unsupported file format")
+    if not files:
+        raise HTTPException(status_code=400, detail="Attach at least one file")
 
-    message_type, permission_name = get_uploaded_file_message_type_and_permission(
-        base_content_type
+    prepared_attachments = [
+        await prepare_file_attachment(file)
+        for file in files
+    ]
+    participant = require_chat_permission(
+        session,
+        chat_id,
+        user_id,
+        prepared_attachments[0]["permission_name"],
     )
-    participant = require_chat_permission(session, chat_id, user_id, permission_name)
+    for permission_name in {
+        attachment["permission_name"] for attachment in prepared_attachments[1:]
+    }:
+        require_chat_permission(session, chat_id, user_id, permission_name)
 
-    file_bytes = await file.read()
-    if not file_bytes:
-        raise HTTPException(status_code=400, detail="File is empty")
-    if len(file_bytes) > FILE_MESSAGE_MAX_BYTES:
-        raise HTTPException(status_code=413, detail="File is too large")
-
-    caption = content.strip() if content and content.strip() else None
-    if caption is not None and len(caption) > 4000:
-        raise HTTPException(status_code=400, detail="Caption is too long")
+    caption = parse_file_caption(content)
 
     chat = session.get(Chat, chat_id)
     if chat is None:
@@ -549,12 +611,20 @@ async def create_file_message(
         reply_to_message_id,
     )
 
-    original_name = Path(file.filename or "file").name
-    FILE_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
-    filename = f"{uuid4().hex}{extension}"
-    upload_path = FILE_UPLOADS_DIR / filename
-    upload_path.write_bytes(file_bytes)
-    file_url = f"{FILE_UPLOAD_URL_PREFIX}/{filename}"
+    stored_attachments = [
+        save_prepared_file_attachment(prepared_attachment)
+        for prepared_attachment in prepared_attachments
+    ]
+    message_type = (
+        str(stored_attachments[0]["message_type"])
+        if len(stored_attachments) == 1
+        else "album"
+    )
+    metadata = (
+        stored_attachments[0]
+        if len(stored_attachments) == 1
+        else {"attachments": stored_attachments}
+    )
 
     message = Message(
         chat_id=chat_id,
@@ -562,12 +632,7 @@ async def create_file_message(
         content=caption,
         message_type=message_type,
         reply_to_message_id=reply_target.id if reply_target else None,
-        metadata={
-            "file_url": file_url,
-            "original_name": original_name,
-            "mime_type": content_type or base_content_type,
-            "size_bytes": len(file_bytes),
-        },
+        metadata=metadata,
     )
 
     session.add(message)

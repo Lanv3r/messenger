@@ -255,8 +255,11 @@ class MessengerIntegrationTest(unittest.TestCase):
                 files={"file": ("voice.webm", b"audio", "audio/webm")},
             ),
             outsider_client.post(
-                f"/chats/{group['id']}/messages/file",
-                files={"file": ("note.txt", b"note", "text/plain")},
+                f"/chats/{group['id']}/messages/files",
+                files=[
+                    ("files", ("one.png", b"one", "image/png")),
+                    ("files", ("two.png", b"two", "image/png")),
+                ],
             ),
             outsider_client.get(
                 f"/chats/{group['id']}/member-default-permissions",
@@ -334,6 +337,35 @@ class MessengerIntegrationTest(unittest.TestCase):
             json={"content": "owner can still send"},
         )
         self.assertEqual(owner_response.status_code, 200, owner_response.text)
+
+    def test_multiple_file_uploads_create_one_message(self):
+        client, _user = self.signup("album")
+        chats = client.get("/chats")
+        self.assertEqual(chats.status_code, 200, chats.text)
+        self_chat_id = next(chat["id"] for chat in chats.json() if chat["type"] == "self")
+
+        response = client.post(
+            f"/chats/{self_chat_id}/messages/files",
+            data={"content": "two photos"},
+            files=[
+                ("files", ("one.png", b"one", "image/png")),
+                ("files", ("two.jpg", b"two", "image/jpeg")),
+            ],
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+
+        message = response.json()
+        self.assertEqual(message["message_type"], "album")
+        self.assertEqual(message["content"], "two photos")
+        self.assertEqual(len(message["metadata"]["attachments"]), 2)
+
+        messages = client.get(f"/chats/{self_chat_id}/messages")
+        self.assertEqual(messages.status_code, 200, messages.text)
+        uploaded_messages = [
+            entry for entry in messages.json() if entry["content"] == "two photos"
+        ]
+        self.assertEqual(len(uploaded_messages), 1)
+        self.assertEqual(uploaded_messages[0]["id"], message["id"])
 
     def test_group_permissions_for_adding_members_and_locked_defaults(self):
         owner_client, _owner = self.signup("owner")

@@ -5,6 +5,7 @@ import type {
   AuthResponse,
   AuthUser,
   ChatMessage,
+  MessageAttachment,
   MessageReplyPreview,
 } from "@/types";
 
@@ -119,6 +120,18 @@ export function getMessagePreviewText(entry: ChatMessage) {
     return content;
   }
 
+  const attachments = getMessageAttachments(entry);
+  if (attachments.length > 1) {
+    const attachmentTypes = new Set(
+      attachments.map((attachment) => attachment.message_type),
+    );
+    if (attachmentTypes.size === 1 && attachmentTypes.has("image")) {
+      return `${attachments.length} photos`;
+    }
+
+    return `${attachments.length} attachments`;
+  }
+
   if (entry.message_type === "voice") {
     return "Voice message";
   }
@@ -199,18 +212,96 @@ export function getVoiceAudioUrl(entry: ChatMessage) {
   return `${API_URL}${audioUrl}`;
 }
 
-export function getUploadedFileUrl(entry: ChatMessage) {
-  const fileUrl = entry.metadata?.file_url;
+function getMetadataString(
+  metadata: Record<string, unknown> | undefined,
+  key: string,
+) {
+  const value = metadata?.[key];
+  return typeof value === "string" ? value : null;
+}
 
-  if (typeof fileUrl !== "string" || !fileUrl) {
+function getMetadataNumber(
+  metadata: Record<string, unknown> | undefined,
+  key: string,
+) {
+  const value = metadata?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function normalizeUploadedUrl(url: string) {
+  if (url.startsWith("blob:") || url.startsWith("http")) {
+    return url;
+  }
+
+  return `${API_URL}${url}`;
+}
+
+function readAttachment(value: unknown): MessageAttachment | null {
+  if (!value || typeof value !== "object") {
     return null;
   }
 
-  if (fileUrl.startsWith("blob:") || fileUrl.startsWith("http")) {
-    return fileUrl;
+  const metadata = value as Record<string, unknown>;
+  const fileUrl = getMetadataString(metadata, "file_url");
+  if (!fileUrl) {
+    return null;
   }
 
-  return `${API_URL}${fileUrl}`;
+  const messageType = getMetadataString(metadata, "message_type") ?? "file";
+  const originalName =
+    getMetadataString(metadata, "original_name") ?? "Download file";
+  const mimeType = getMetadataString(metadata, "mime_type") ?? "";
+  const sizeBytes = getMetadataNumber(metadata, "size_bytes") ?? 0;
+
+  return {
+    file_url: fileUrl,
+    original_name: originalName,
+    mime_type: mimeType,
+    size_bytes: sizeBytes,
+    message_type: messageType,
+  };
+}
+
+export function getMessageAttachments(
+  entry: Pick<ChatMessage, "message_type" | "metadata">,
+): MessageAttachment[] {
+  const attachments = entry.metadata?.attachments;
+  if (Array.isArray(attachments)) {
+    return attachments
+      .map((attachment) => readAttachment(attachment))
+      .filter((attachment): attachment is MessageAttachment =>
+        Boolean(attachment),
+      );
+  }
+
+  const fileUrl = getMetadataString(entry.metadata, "file_url");
+  if (!fileUrl) {
+    return [];
+  }
+
+  return [
+    {
+      file_url: fileUrl,
+      original_name:
+        getMetadataString(entry.metadata, "original_name") ?? "Download file",
+      mime_type: getMetadataString(entry.metadata, "mime_type") ?? "",
+      size_bytes: getMetadataNumber(entry.metadata, "size_bytes") ?? 0,
+      message_type: entry.message_type === "album" ? "file" : entry.message_type,
+    },
+  ];
+}
+
+export function getAttachmentFileUrl(attachment: MessageAttachment) {
+  return normalizeUploadedUrl(attachment.file_url);
+}
+
+export function getUploadedFileUrl(entry: ChatMessage) {
+  const attachment = getMessageAttachments(entry)[0];
+  if (!attachment) {
+    return null;
+  }
+
+  return getAttachmentFileUrl(attachment);
 }
 
 export function canCopyMessage(entry: ChatMessage) {
@@ -218,7 +309,12 @@ export function canCopyMessage(entry: ChatMessage) {
     return true;
   }
 
-  return entry.message_type === "image" && Boolean(getUploadedFileUrl(entry));
+  const attachments = getMessageAttachments(entry);
+  return (
+    attachments.length === 1 &&
+    attachments[0].message_type === "image" &&
+    Boolean(getAttachmentFileUrl(attachments[0]))
+  );
 }
 
 function loadImageElement(url: string) {
@@ -343,11 +439,12 @@ export async function copyMessageToClipboard(entry: ChatMessage) {
     return;
   }
 
-  if (entry.message_type !== "image") {
+  const attachments = getMessageAttachments(entry);
+  if (attachments.length !== 1 || attachments[0].message_type !== "image") {
     throw new Error("This message has nothing copyable.");
   }
 
-  const imageUrl = getUploadedFileUrl(entry);
+  const imageUrl = getAttachmentFileUrl(attachments[0]);
   if (!imageUrl) {
     throw new Error("Image is unavailable.");
   }
@@ -356,10 +453,7 @@ export async function copyMessageToClipboard(entry: ChatMessage) {
 }
 
 export function getUploadedFileName(entry: ChatMessage) {
-  const originalName = entry.metadata?.original_name;
-  return typeof originalName === "string" && originalName
-    ? originalName
-    : "Download file";
+  return getMessageAttachments(entry)[0]?.original_name ?? "Download file";
 }
 
 export function formatFileSize(sizeBytes: unknown) {
