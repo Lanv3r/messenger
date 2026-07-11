@@ -1,6 +1,6 @@
+import { useEffect, useRef, type ClipboardEvent } from "react";
 import { Paperclip } from "lucide-react";
 
-import { formatFileSize } from "@/lib/message-helpers";
 import type { AttachmentDraft } from "@/types";
 
 type AttachmentPreviewDialogProps = {
@@ -10,26 +10,11 @@ type AttachmentPreviewDialogProps = {
   sending: boolean;
   onCaptionChange: (value: string) => void;
   onRemoveDraft: (draftId: string) => void;
+  onPasteImages: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
   onAddMore: () => void;
   onCancel: () => void;
   onSend: () => void;
 };
-
-function getAttachmentLabel(messageType: string) {
-  if (messageType === "image") {
-    return "Photo";
-  }
-
-  if (messageType === "video") {
-    return "Video";
-  }
-
-  if (messageType === "audio") {
-    return "Audio file";
-  }
-
-  return "File";
-}
 
 export function AttachmentPreviewDialog({
   drafts,
@@ -38,10 +23,39 @@ export function AttachmentPreviewDialog({
   sending,
   onCaptionChange,
   onRemoveDraft,
+  onPasteImages,
   onAddMore,
   onCancel,
   onSend,
 }: AttachmentPreviewDialogProps) {
+  const captionRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    const textarea = captionRef.current;
+    if (!textarea) {
+      return;
+    }
+
+    const style = window.getComputedStyle(textarea);
+    const lineHeight = Number.parseFloat(style.lineHeight) || 20;
+    const paddingTop = Number.parseFloat(style.paddingTop) || 0;
+    const paddingBottom = Number.parseFloat(style.paddingBottom) || 0;
+    const borderTop = Number.parseFloat(style.borderTopWidth) || 0;
+    const borderBottom = Number.parseFloat(style.borderBottomWidth) || 0;
+    const maxHeight =
+      lineHeight * 7 + paddingTop + paddingBottom + borderTop + borderBottom;
+
+    textarea.style.height = "auto";
+    const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
+    textarea.style.height = `${nextHeight}px`;
+    textarea.style.overflowY =
+      textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+
+    if (textarea.scrollHeight > maxHeight && document.activeElement === textarea) {
+      textarea.scrollTop = textarea.scrollHeight;
+    }
+  }, [caption]);
+
   return (
     <div className="message-action-backdrop" role="presentation">
       <section
@@ -53,10 +67,7 @@ export function AttachmentPreviewDialog({
       >
         <div className="attachment-preview-header">
           <div>
-            <strong>Send attachments</strong>
-            <span>
-              {drafts.length} {drafts.length === 1 ? "file" : "files"} selected
-            </span>
+            <strong>Send attachments ({drafts.length} selected)</strong>
           </div>
           <button
             type="button"
@@ -85,15 +96,6 @@ export function AttachmentPreviewDialog({
                   </span>
                 ) : null}
               </div>
-              <div className="attachment-preview-copy">
-                <strong>{draft.file.name}</strong>
-                <span>
-                  {getAttachmentLabel(draft.messageType)}
-                  {formatFileSize(draft.file.size)
-                    ? ` · ${formatFileSize(draft.file.size)}`
-                    : ""}
-                </span>
-              </div>
               <button
                 type="button"
                 aria-label={`Remove ${draft.file.name}`}
@@ -106,15 +108,16 @@ export function AttachmentPreviewDialog({
           ))}
         </div>
 
-        <label className="attachment-caption-field">
-          Caption
+        <label className="attachment-caption-field" aria-label="Caption">
           <textarea
+            ref={captionRef}
             value={caption}
             maxLength={4000}
-            rows={3}
+            rows={1}
             placeholder="Add a caption..."
             disabled={sending}
             onChange={(event) => onCaptionChange(event.target.value)}
+            onPaste={onPasteImages}
           />
         </label>
 

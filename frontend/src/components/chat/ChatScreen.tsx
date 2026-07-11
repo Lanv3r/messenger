@@ -680,7 +680,9 @@ export function ChatScreen({
     closeMessageMenu();
   };
 
-  const handlePasteImages = (event: ClipboardEvent<HTMLInputElement>) => {
+  const handlePasteImages = (
+    event: ClipboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+  ) => {
     const imageFiles = Array.from(event.clipboardData.files).filter((file) =>
       file.type.startsWith("image/"),
     );
@@ -959,6 +961,7 @@ export function ChatScreen({
             sending={fileSending}
             onCaptionChange={setAttachmentCaption}
             onRemoveDraft={removeAttachmentDraft}
+            onPasteImages={handlePasteImages}
             onAddMore={() => fileInputRef.current?.click()}
             onCancel={() => clearAttachmentDrafts()}
             onSend={() => {
