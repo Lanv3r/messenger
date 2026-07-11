@@ -2,7 +2,11 @@ import type { Dispatch, SetStateAction } from "react";
 
 import { apiFetch } from "@/lib/api";
 import { getVisibleMessages } from "@/lib/chat-helpers";
-import { markReplyPreviewDeleted, toReplyPreview } from "@/lib/message-helpers";
+import {
+  getMessagePreviewText,
+  markReplyPreviewDeleted,
+  toReplyPreview,
+} from "@/lib/message-helpers";
 import type { Chat, ChatMessage } from "@/types";
 
 type UseMessageMutationsOptions = {
@@ -86,7 +90,7 @@ export function useMessageMutations({
         chat.last_message_id === updatedMessage.id
           ? {
               ...chat,
-              last_message_text: updatedMessage.content,
+              last_message_text: getMessagePreviewText(updatedMessage),
               last_message_sender_id: updatedMessage.sender_id,
               last_message_created_at: updatedMessage.created_at,
               updated_at: updatedMessage.updated_at ?? chat.updated_at,

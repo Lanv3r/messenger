@@ -3123,8 +3123,69 @@
 }
 
 .composer-reply-main span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   font-weight: 750;
+}
+
+.composer-edit-preview .composer-reply-main {
+  padding-left: 4px;
+  border-left: 0;
+  color: #fff;
+}
+
+.composer-edit-preview {
+  border-color: rgba(244, 111, 84, 0.24);
+  background: rgba(255, 237, 225, 0.9);
+}
+
+.composer-edit-preview .composer-reply-main > span:first-child {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+}
+
+.composer-edit-icon {
+  justify-self: center;
+  color: #d64c2f;
+}
+
+.composer-edit-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.composer-edit-copy strong,
+.composer-edit-copy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-edit-copy strong {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.composer-edit-copy span {
+  font-size: 12px;
+  font-weight: 650;
+  color: #fff;
+  opacity: 0.86;
+}
+
+.composer .composer-edit-preview .composer-reply-cancel {
+  color: #111827;
+  background: transparent;
+}
+
+.composer .composer-edit-preview .composer-reply-cancel:hover {
+  color: #000;
+  background: transparent;
 }
 
 .composer-reply-main span:last-child {
@@ -3498,6 +3559,21 @@ html[data-theme="dark"] .profile-search-results .profile-status,
 html[data-theme="dark"] .profile-success,
 html[data-theme="dark"] .status.online {
   color: #72e0ad;
+}
+
+html[data-theme="dark"] .composer-edit-preview {
+  border-color: rgba(255, 157, 132, 0.24);
+  background: rgba(244, 111, 84, 0.18);
+}
+
+html[data-theme="dark"] .composer-edit-icon {
+  color: #ff9d84;
+}
+
+html[data-theme="dark"] .composer .composer-edit-preview .composer-reply-cancel,
+html[data-theme="dark"] .composer .composer-edit-preview .composer-reply-cancel:hover {
+  color: #020617;
+  background: transparent;
 }
 
 html[data-theme="dark"] .profile-error {

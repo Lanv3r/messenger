@@ -32,9 +32,6 @@ type MessageListProps = {
   activeSearchResultId: number | null;
   openMessageMenuId: number | null;
   messageMenuPosition: MessageMenuPosition | null;
-  editingMessageId: number | null;
-  editingMessageText: string;
-  editingMessageSaving: boolean;
   currentUserCanDeleteGroupMessages: boolean;
   renderMessageBody: (entry: ChatMessage) => ReactNode;
   renderReplyPreview: (reply: MessageReplyPreview) => ReactNode;
@@ -44,9 +41,6 @@ type MessageListProps = {
   onCopyMessage: (entry: ChatMessage) => void;
   onStartReply: (entry: ChatMessage) => void;
   onStartEdit: (entry: ChatMessage) => void;
-  onCancelEdit: () => void;
-  onSaveEdit: (entry: ChatMessage) => void;
-  onEditingTextChange: (value: string) => void;
   onOpenActionDialog: (kind: "pin" | "delete", entry: ChatMessage) => void;
 };
 
@@ -116,9 +110,6 @@ export function MessageList({
   activeSearchResultId,
   openMessageMenuId,
   messageMenuPosition,
-  editingMessageId,
-  editingMessageText,
-  editingMessageSaving,
   currentUserCanDeleteGroupMessages,
   renderMessageBody,
   renderReplyPreview,
@@ -128,9 +119,6 @@ export function MessageList({
   onCopyMessage,
   onStartReply,
   onStartEdit,
-  onCancelEdit,
-  onSaveEdit,
-  onEditingTextChange,
   onOpenActionDialog,
 }: MessageListProps) {
   return (
@@ -160,17 +148,17 @@ export function MessageList({
             entry.delivery_status !== "sending" &&
             entry.delivery_status !== "failed";
           const isMessageMenuOpen = openMessageMenuId === entry.id;
-          const canEditMessage =
-            canUseMessageActions &&
-            entry.sender_id === currentUserId &&
-            entry.content !== null &&
-            entry.message_type === "text";
-          const isEditingMessage = editingMessageId === entry.id;
           const canDeleteGroupMessage =
             activeChat?.type === "group" &&
             (entry.sender_id === currentUserId ||
               currentUserCanDeleteGroupMessages);
           const attachments = getMessageAttachments(entry);
+          const canEditMessage =
+            canUseMessageActions &&
+            entry.sender_id === currentUserId &&
+            (entry.message_type === "text"
+              ? entry.content !== null
+              : attachments.length > 0);
           const isVisualMediaMessage =
             attachments.length > 0 &&
             attachments.every(
@@ -251,53 +239,7 @@ export function MessageList({
                 )}
                 <div className="message-copy">
                   {entry.reply_to ? renderReplyPreview(entry.reply_to) : null}
-                  {isEditingMessage ? (
-                    <form
-                      className="message-edit-form"
-                      onSubmit={(event) => {
-                        event.preventDefault();
-                        onSaveEdit(entry);
-                      }}
-                    >
-                      <textarea
-                        value={editingMessageText}
-                        maxLength={4000}
-                        rows={3}
-                        autoFocus
-                        onChange={(event) =>
-                          onEditingTextChange(event.target.value)
-                        }
-                        onKeyDown={(event) => {
-                          if (
-                            event.key === "Enter" &&
-                            (event.metaKey || event.ctrlKey)
-                          ) {
-                            event.preventDefault();
-                            onSaveEdit(entry);
-                          }
-
-                          if (event.key === "Escape") {
-                            event.preventDefault();
-                            onCancelEdit();
-                          }
-                        }}
-                      />
-                      <span className="message-edit-actions">
-                        <button type="submit" disabled={editingMessageSaving}>
-                          {editingMessageSaving ? "Saving..." : "Save"}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={editingMessageSaving}
-                          onClick={onCancelEdit}
-                        >
-                          Cancel
-                        </button>
-                      </span>
-                    </form>
-                  ) : (
-                    renderMessageBody(entry)
-                  )}
+                  {renderMessageBody(entry)}
                   {hasSharedPin || hasPersonalPin ? (
                     <span className="message-pin-state">
                       <Pin size={12} aria-hidden="true" />
@@ -345,7 +287,7 @@ export function MessageList({
                           >
                             Reply
                           </button>
-                          {canEditMessage && !isEditingMessage ? (
+                          {canEditMessage ? (
                             <button
                               type="button"
                               role="menuitem"

@@ -1,4 +1,10 @@
-import { useEffect, useRef, useState, type ClipboardEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type ClipboardEvent,
+} from "react";
 import type { Socket } from "socket.io-client";
 
 import { AttachmentPreviewDialog } from "@/components/chat/AttachmentPreviewDialog";
@@ -17,6 +23,7 @@ import { MessageList } from "@/components/chat/MessageList";
 import { MessageReplyPreviewButton } from "@/components/chat/MessageReplyPreviewButton";
 import { MessageSearch } from "@/components/chat/MessageSearch";
 import { ProfileEditor } from "@/components/chat/ProfileEditor";
+import { apiFetch } from "@/lib/api";
 import {
   getChatMemberDisplayName,
   upsertChat,
@@ -24,6 +31,7 @@ import {
 import {
   copyMessageImageToClipboard,
   copyMessageToClipboard,
+  getMessageAttachments,
 } from "@/lib/message-helpers";
 import { useVoiceRecorder } from "@/hooks/useVoiceRecorder";
 import { useChatSocket } from "@/hooks/useChatSocket";
@@ -93,6 +101,9 @@ export function ChatScreen({
     entry: ChatMessage;
     attachmentIndex: number;
   } | null>(null);
+  const [editingAttachmentMessage, setEditingAttachmentMessage] =
+    useState<ChatMessage | null>(null);
+  const [attachmentEditSaving, setAttachmentEditSaving] = useState(false);
   const searchHighlightTimeoutRef = useRef<number | null>(null);
   const {
     drafts: attachmentDrafts,
@@ -103,6 +114,7 @@ export function ChatScreen({
     clearDrafts: clearAttachmentDrafts,
     removeDraft: removeAttachmentDraft,
     addDrafts: addAttachmentDrafts,
+    setDraftsFromAttachments,
     handleFileInputChange,
   } = useAttachmentDrafts({
     activeChatId,
@@ -623,6 +635,13 @@ export function ChatScreen({
     activeChatId,
     messages,
   });
+  const composerEditingMessage =
+    editingMessageId === null
+      ? null
+      : messages.find((entry) => entry.id === editingMessageId) ?? null;
+  const attachmentEditTarget =
+    editingAttachmentMessage ??
+    (attachmentDrafts.length > 0 ? composerEditingMessage : null);
   const {
     getChatTitle,
     getChatSubtitle,
@@ -690,6 +709,82 @@ export function ChatScreen({
     closeMessageMenu();
   };
 
+  const cancelAttachmentEdit = () => {
+    setEditingAttachmentMessage(null);
+    setAttachmentEditSaving(false);
+    clearAttachmentDrafts();
+  };
+
+  const startEditingMessageFromMenu = (entry: ChatMessage) => {
+    const attachments = getMessageAttachments(entry);
+    if (attachments.length === 0) {
+      setReplyToMessage(null);
+      startEditingMessage(entry);
+      requestAnimationFrame(() => {
+        document.getElementById("message")?.focus();
+      });
+      return;
+    }
+
+    setEditingAttachmentMessage(entry);
+    setDraftsFromAttachments(attachments, entry.content ?? "");
+    setAttachmentEditSaving(false);
+    setChatError(null);
+    closeMessageMenu();
+  };
+
+  const saveAttachmentEdit = async (targetMessage: ChatMessage | null) => {
+    if (!targetMessage || attachmentEditSaving) {
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("content", attachmentCaption);
+    attachmentDrafts.forEach((draft) => {
+      if (draft.existingFileUrl) {
+        formData.append("existing_file_urls", draft.existingFileUrl);
+      }
+
+      if (draft.file) {
+        formData.append("files", draft.file);
+      }
+    });
+
+    setAttachmentEditSaving(true);
+    setAttachmentError(null);
+    setChatError(null);
+
+    try {
+      const updatedMessage = await apiFetch<ChatMessage>(
+        `/messages/${targetMessage.id}`,
+        {
+          method: "PATCH",
+          body: formData,
+        },
+      );
+
+      applyMessageUpdate(updatedMessage);
+      setEditingAttachmentMessage(null);
+      if (editingMessageId === targetMessage.id) {
+        finishEditingMessage(targetMessage.chat_id, targetMessage.id);
+      }
+      clearAttachmentDrafts();
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : "Unable to edit attachments.";
+
+      if (errorMessage === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setAttachmentError(errorMessage);
+      setChatError(errorMessage);
+    } finally {
+      setAttachmentEditSaving(false);
+    }
+  };
+
   const handlePasteImages = (
     event: ClipboardEvent<HTMLInputElement | HTMLTextAreaElement>,
   ) => {
@@ -702,7 +797,27 @@ export function ChatScreen({
     }
 
     event.preventDefault();
+    if (
+      composerEditingMessage &&
+      !editingAttachmentMessage &&
+      attachmentDrafts.length === 0
+    ) {
+      setAttachmentCaption(editingMessageText);
+    }
     addAttachmentDrafts(imageFiles);
+  };
+
+  const handleComposerFileInputChange = (
+    event: ChangeEvent<HTMLInputElement>,
+  ) => {
+    if (
+      composerEditingMessage &&
+      !editingAttachmentMessage &&
+      attachmentDrafts.length === 0
+    ) {
+      setAttachmentCaption(editingMessageText);
+    }
+    handleFileInputChange(event);
   };
 
   const copyMessage = async (entry: ChatMessage) => {
@@ -996,18 +1111,37 @@ export function ChatScreen({
           />
         ) : null}
 
-        {attachmentDrafts.length > 0 ? (
+        {attachmentDrafts.length > 0 || editingAttachmentMessage ? (
           <AttachmentPreviewDialog
+            mode={attachmentEditTarget ? "edit" : "send"}
             drafts={attachmentDrafts}
             caption={attachmentCaption}
             error={attachmentError}
-            sending={fileSending}
+            sending={
+              attachmentEditTarget ? attachmentEditSaving : fileSending
+            }
             onCaptionChange={setAttachmentCaption}
-            onRemoveDraft={removeAttachmentDraft}
+            onRemoveDraft={(draftId) =>
+              removeAttachmentDraft(draftId, {
+                preserveCaption: Boolean(editingAttachmentMessage),
+              })
+            }
             onPasteImages={handlePasteImages}
             onAddMore={() => fileInputRef.current?.click()}
-            onCancel={() => clearAttachmentDrafts()}
+            onCancel={() => {
+              if (editingAttachmentMessage) {
+                cancelAttachmentEdit();
+                return;
+              }
+
+              clearAttachmentDrafts();
+            }}
             onSend={() => {
+              if (attachmentEditTarget) {
+                void saveAttachmentEdit(attachmentEditTarget);
+                return;
+              }
+
               void sendAttachmentDrafts();
             }}
           />
@@ -1073,9 +1207,6 @@ export function ChatScreen({
           activeSearchResultId={activeSearchResultId}
           openMessageMenuId={openMessageMenuId}
           messageMenuPosition={messageMenuPosition}
-          editingMessageId={editingMessageId}
-          editingMessageText={editingMessageText}
-          editingMessageSaving={editingMessageSaving}
           currentUserCanDeleteGroupMessages={currentUserCanDeleteGroupMessages}
           renderMessageBody={(entry) => (
             <MessageBody
@@ -1101,12 +1232,7 @@ export function ChatScreen({
             void copyMessage(entry);
           }}
           onStartReply={startReplyingToMessage}
-          onStartEdit={startEditingMessage}
-          onCancelEdit={cancelEditingMessage}
-          onSaveEdit={(entry) => {
-            void saveMessageEdit(entry);
-          }}
-          onEditingTextChange={setEditingMessageText}
+          onStartEdit={startEditingMessageFromMenu}
           onOpenActionDialog={openMessageActionDialog}
         />
 
@@ -1114,24 +1240,43 @@ export function ChatScreen({
           fileInputRef={fileInputRef}
           activeChatId={activeChatId}
           hasDraftRecipient={draftRecipient !== null}
-          message={message}
+          message={
+            composerEditingMessage ? editingMessageText : message
+          }
+          editingMessage={composerEditingMessage}
+          editingMessageSaving={editingMessageSaving}
           replyToMessage={replyToMessage}
           voiceRecorder={voiceRecorder}
           voiceRecordingElapsedMs={voiceRecordingElapsedMs}
           fileSending={fileSending}
           voiceSending={voiceSending}
-          onFileInputChange={handleFileInputChange}
+          onFileInputChange={handleComposerFileInputChange}
           onPasteImages={handlePasteImages}
           onRevealMessage={revealMessageById}
           onCancelReply={() => setReplyToMessage(null)}
+          onCancelEdit={cancelEditingMessage}
           onCancelVoiceRecording={() => {
             void stopVoiceRecording(false);
           }}
           onSendVoiceRecording={() => {
             void stopVoiceRecording(true);
           }}
-          onMessageChange={handleMessageInputChange}
-          onSend={sendTextMessage}
+          onMessageChange={(value) => {
+            if (composerEditingMessage) {
+              setEditingMessageText(value);
+              return;
+            }
+
+            handleMessageInputChange(value);
+          }}
+          onSend={() => {
+            if (composerEditingMessage) {
+              void saveMessageEdit(composerEditingMessage);
+              return;
+            }
+
+            sendTextMessage();
+          }}
           onStartVoiceRecording={() => {
             void startVoiceRecording();
           }}

@@ -4,6 +4,7 @@ import { Paperclip } from "lucide-react";
 import type { AttachmentDraft } from "@/types";
 
 type AttachmentPreviewDialogProps = {
+  mode?: "send" | "edit";
   drafts: AttachmentDraft[];
   caption: string;
   error: string | null;
@@ -17,6 +18,7 @@ type AttachmentPreviewDialogProps = {
 };
 
 export function AttachmentPreviewDialog({
+  mode = "send",
   drafts,
   caption,
   error,
@@ -29,6 +31,12 @@ export function AttachmentPreviewDialog({
   onSend,
 }: AttachmentPreviewDialogProps) {
   const captionRef = useRef<HTMLTextAreaElement | null>(null);
+  const title =
+    mode === "edit"
+      ? `Edit attachments (${drafts.length} selected)`
+      : `Send attachments (${drafts.length} selected)`;
+  const actionLabel = mode === "edit" ? "Save" : "Send";
+  const progressLabel = mode === "edit" ? "Saving..." : "Sending...";
 
   useEffect(() => {
     const textarea = captionRef.current;
@@ -67,7 +75,7 @@ export function AttachmentPreviewDialog({
       >
         <div className="attachment-preview-header">
           <div>
-            <strong>Send attachments ({drafts.length} selected)</strong>
+            <strong>{title}</strong>
           </div>
           <button
             type="button"
@@ -84,7 +92,7 @@ export function AttachmentPreviewDialog({
             <article className="attachment-preview-item" key={draft.id}>
               <div className="attachment-preview-media">
                 {draft.messageType === "image" ? (
-                  <img src={draft.previewUrl} alt={draft.file.name} />
+                  <img src={draft.previewUrl} alt={draft.originalName} />
                 ) : null}
                 {draft.messageType === "video" ? (
                   <video controls preload="metadata" src={draft.previewUrl} />
@@ -98,7 +106,7 @@ export function AttachmentPreviewDialog({
               </div>
               <button
                 type="button"
-                aria-label={`Remove ${draft.file.name}`}
+                aria-label={`Remove ${draft.originalName}`}
                 disabled={sending}
                 onClick={() => onRemoveDraft(draft.id)}
               >
@@ -130,8 +138,12 @@ export function AttachmentPreviewDialog({
           <button type="button" disabled={sending} onClick={onCancel}>
             Cancel
           </button>
-          <button type="button" disabled={sending || drafts.length === 0} onClick={onSend}>
-            {sending ? "Sending..." : "Send"}
+          <button
+            type="button"
+            disabled={sending || (mode === "send" && drafts.length === 0)}
+            onClick={onSend}
+          >
+            {sending ? progressLabel : actionLabel}
           </button>
         </div>
       </section>

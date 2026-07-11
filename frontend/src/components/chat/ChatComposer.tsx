@@ -1,5 +1,5 @@
 import type { ChangeEvent, ClipboardEvent, RefObject } from "react";
-import { ClockArrowUp, Mic, Paperclip } from "lucide-react";
+import { ClockArrowUp, Mic, Paperclip, Pencil } from "lucide-react";
 
 import { VoiceRecorderControls } from "@/components/chat/VoiceRecorderControls";
 import { getMessagePreviewText } from "@/lib/message-helpers";
@@ -13,6 +13,8 @@ type ChatComposerProps = {
   activeChatId: number | null;
   hasDraftRecipient: boolean;
   message: string;
+  editingMessage: ChatMessage | null;
+  editingMessageSaving: boolean;
   replyToMessage: ChatMessage | null;
   voiceRecorder: MediaRecorder | null;
   voiceRecordingElapsedMs: number;
@@ -22,6 +24,7 @@ type ChatComposerProps = {
   onPasteImages: (event: ClipboardEvent<HTMLInputElement>) => void;
   onRevealMessage: (messageId: number) => void;
   onCancelReply: () => void;
+  onCancelEdit: () => void;
   onCancelVoiceRecording: () => void;
   onSendVoiceRecording: () => void;
   onMessageChange: (value: string) => void;
@@ -35,6 +38,8 @@ export function ChatComposer({
   activeChatId,
   hasDraftRecipient,
   message,
+  editingMessage,
+  editingMessageSaving,
   replyToMessage,
   voiceRecorder,
   voiceRecordingElapsedMs,
@@ -44,6 +49,7 @@ export function ChatComposer({
   onPasteImages,
   onRevealMessage,
   onCancelReply,
+  onCancelEdit,
   onCancelVoiceRecording,
   onSendVoiceRecording,
   onMessageChange,
@@ -51,6 +57,8 @@ export function ChatComposer({
   onStartVoiceRecording,
   getSenderName,
 }: ChatComposerProps) {
+  const isEditing = editingMessage !== null;
+
   return (
     <div className="composer">
       <input
@@ -61,7 +69,35 @@ export function ChatComposer({
         accept={FILE_MESSAGE_ACCEPT}
         onChange={onFileInputChange}
       />
-      {replyToMessage ? (
+      {isEditing ? (
+        <div className="composer-reply-preview composer-edit-preview">
+          <button
+            type="button"
+            className="composer-reply-main"
+            onClick={() => onRevealMessage(editingMessage.id)}
+          >
+            <span>
+              <Pencil
+                className="composer-edit-icon"
+                size={24}
+                aria-hidden="true"
+              />
+              <span className="composer-edit-copy">
+                <strong>Edit message</strong>
+                <span>{getMessagePreviewText(editingMessage)}</span>
+              </span>
+            </span>
+          </button>
+          <button
+            type="button"
+            className="composer-reply-cancel"
+            aria-label="Cancel edit"
+            onClick={onCancelEdit}
+          >
+            &times;
+          </button>
+        </div>
+      ) : replyToMessage ? (
         <div className="composer-reply-preview">
           <button
             type="button"
@@ -101,6 +137,11 @@ export function ChatComposer({
         onKeyDown={(event) => {
           if (event.key === "Enter") {
             onSend();
+            return;
+          }
+
+          if (event.key === "Escape" && isEditing) {
+            onCancelEdit();
           }
         }}
       />
@@ -113,7 +154,8 @@ export function ChatComposer({
           activeChatId === null ||
           hasDraftRecipient ||
           voiceRecorder !== null ||
-          fileSending
+          fileSending ||
+          editingMessageSaving
         }
         onClick={() => {
           fileInputRef.current?.click();
@@ -136,7 +178,8 @@ export function ChatComposer({
           activeChatId === null ||
           hasDraftRecipient ||
           voiceRecorder !== null ||
-          voiceSending
+          voiceSending ||
+          isEditing
         }
         onClick={onStartVoiceRecording}
       >
@@ -151,10 +194,12 @@ export function ChatComposer({
         className="send-button"
         onClick={onSend}
         disabled={
-          (activeChatId === null && !hasDraftRecipient) || voiceRecorder !== null
+          (activeChatId === null && !hasDraftRecipient) ||
+          voiceRecorder !== null ||
+          editingMessageSaving
         }
       >
-        Send
+        {isEditing ? (editingMessageSaving ? "Saving..." : "Save") : "Send"}
       </button>
     </div>
   );

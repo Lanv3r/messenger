@@ -53,9 +53,13 @@ export type ComposerDraft = {
 
 export type AttachmentDraft = {
   id: string;
-  file: File;
+  file?: File;
+  existingFileUrl?: string;
   previewUrl: string;
   messageType: string;
+  originalName: string;
+  mimeType: string;
+  sizeBytes: number;
 };
 
 export type AuthUser = {

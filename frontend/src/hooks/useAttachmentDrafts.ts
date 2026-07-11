@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 
-import { getFileMessageType } from "@/lib/message-helpers";
-import type { AttachmentDraft } from "@/types";
+import {
+  getAttachmentFileUrl,
+  getFileMessageType,
+} from "@/lib/message-helpers";
+import type { AttachmentDraft, MessageAttachment } from "@/types";
 
 type UseAttachmentDraftsOptions = {
   activeChatId: number | null;
@@ -21,6 +24,12 @@ export function useAttachmentDrafts({
   const [error, setError] = useState<string | null>(null);
   const draftsRef = useRef<AttachmentDraft[]>([]);
 
+  function revokeDraftPreview(previewUrl: string) {
+    if (previewUrl.startsWith("blob:")) {
+      URL.revokeObjectURL(previewUrl);
+    }
+  }
+
   useEffect(() => {
     draftsRef.current = drafts;
   }, [drafts]);
@@ -28,27 +37,30 @@ export function useAttachmentDrafts({
   useEffect(() => {
     return () => {
       draftsRef.current.forEach((draft) =>
-        URL.revokeObjectURL(draft.previewUrl),
+        revokeDraftPreview(draft.previewUrl),
       );
     };
   }, []);
 
   function clearDrafts(draftsToClear = drafts) {
-    draftsToClear.forEach((draft) => URL.revokeObjectURL(draft.previewUrl));
+    draftsToClear.forEach((draft) => revokeDraftPreview(draft.previewUrl));
     setDrafts([]);
     setCaption("");
     setError(null);
   }
 
-  function removeDraft(draftId: string) {
+  function removeDraft(
+    draftId: string,
+    options: { preserveCaption?: boolean } = {},
+  ) {
     setDrafts((current) => {
       const draft = current.find((entry) => entry.id === draftId);
       if (draft) {
-        URL.revokeObjectURL(draft.previewUrl);
+        revokeDraftPreview(draft.previewUrl);
       }
 
       const nextDrafts = current.filter((entry) => entry.id !== draftId);
-      if (nextDrafts.length === 0) {
+      if (nextDrafts.length === 0 && !options.preserveCaption) {
         setCaption("");
         setError(null);
       }
@@ -75,6 +87,9 @@ export function useAttachmentDrafts({
         file,
         previewUrl: URL.createObjectURL(file),
         messageType: getFileMessageType(file),
+        originalName: file.name,
+        mimeType: file.type,
+        sizeBytes: file.size,
       }));
 
     if (nextDrafts.length === 0) {
@@ -97,6 +112,27 @@ export function useAttachmentDrafts({
     addDrafts(files);
   }
 
+  function setDraftsFromAttachments(
+    attachments: MessageAttachment[],
+    nextCaption: string,
+  ) {
+    clearDrafts();
+    setDrafts(
+      attachments.map((attachment) => ({
+        id: crypto.randomUUID(),
+        existingFileUrl: attachment.file_url,
+        previewUrl: getAttachmentFileUrl(attachment),
+        messageType: attachment.message_type,
+        originalName: attachment.original_name,
+        mimeType: attachment.mime_type,
+        sizeBytes: attachment.size_bytes,
+      })),
+    );
+    setCaption(nextCaption);
+    setError(null);
+    onClearChatError();
+  }
+
   return {
     drafts,
     caption,
@@ -106,6 +142,7 @@ export function useAttachmentDrafts({
     clearDrafts,
     removeDraft,
     addDrafts,
+    setDraftsFromAttachments,
     handleFileInputChange,
   };
 }

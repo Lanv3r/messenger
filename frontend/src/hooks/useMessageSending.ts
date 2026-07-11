@@ -202,9 +202,9 @@ export function useMessageSending({
     const tempId = crypto.randomUUID();
     const attachments = drafts.map((draft) => ({
       file_url: draft.previewUrl,
-      original_name: draft.file.name,
-      mime_type: draft.file.type,
-      size_bytes: draft.file.size,
+      original_name: draft.originalName,
+      mime_type: draft.mimeType,
+      size_bytes: draft.sizeBytes,
       message_type: draft.messageType,
     }));
     const hasMultipleAttachments = attachments.length > 1;
@@ -242,7 +242,9 @@ export function useMessageSending({
 
     const formData = new FormData();
     drafts.forEach((draft) => {
-      formData.append("files", draft.file);
+      if (draft.file) {
+        formData.append("files", draft.file);
+      }
     });
     if (caption) {
       formData.append("content", caption);

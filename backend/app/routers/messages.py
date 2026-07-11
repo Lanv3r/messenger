@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Annotated, TypedDict
+from typing import Annotated, TypedDict, cast
 from uuid import uuid4
 
 from app.db import SessionDep
@@ -39,7 +39,16 @@ from app.upload_constants import (
     VOICE_UPLOAD_URL_PREFIX,
     VOICE_UPLOADS_DIR,
 )
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import FileResponse
 from sqlalchemy import func
 from sqlmodel import col, exists, select
@@ -118,6 +127,34 @@ def save_prepared_file_attachment(
         "size_bytes": prepared_attachment["size_bytes"],
         "message_type": prepared_attachment["message_type"],
     }
+
+
+def get_message_file_attachments(message: Message) -> list[dict[str, object]]:
+    attachments = message.metadata_.get("attachments")
+    if isinstance(attachments, list):
+        return [
+            dict(attachment)
+            for attachment in attachments
+            if isinstance(attachment, dict)
+            and isinstance(attachment.get("file_url"), str)
+        ]
+
+    if isinstance(message.metadata_.get("file_url"), str):
+        attachment = dict(message.metadata_)
+        attachment.setdefault("message_type", message.message_type)
+        return [attachment]
+
+    return []
+
+
+def build_file_message_metadata(
+    attachments: list[dict[str, object]],
+) -> tuple[str, dict[str, object]]:
+    if len(attachments) == 1:
+        message_type = attachments[0].get("message_type")
+        return str(message_type) if message_type else "file", attachments[0]
+
+    return "album", {"attachments": attachments}
 
 
 def parse_file_caption(content: str | None) -> str | None:
@@ -700,6 +737,125 @@ async def create_file_message(
     return public_message
 
 
+async def apply_file_message_edit(
+    message_id: int,
+    session: SessionDep,
+    current_user: User,
+    content: str | None = None,
+    existing_file_urls: list[str] | None = None,
+    files: list[UploadFile] | None = None,
+):
+    message = session.get(Message, message_id)
+
+    if message is None or message.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    require_active_participant(session, message.chat_id, user_id)
+
+    if message.sender_id != user_id:
+        raise HTTPException(
+            status_code=403, detail="You can only edit your own messages"
+        )
+
+    message_user_state = session.get(MessageUserState, (message.id, user_id))
+    if message_user_state and message_user_state.deleted_at is not None:
+        raise HTTPException(status_code=404, detail="Message not found")
+
+    caption = parse_file_caption(content)
+    original_attachments = get_message_file_attachments(message)
+    original_attachments_by_url = {
+        str(attachment["file_url"]): attachment
+        for attachment in original_attachments
+        if "file_url" in attachment
+    }
+    kept_attachments = []
+    seen_file_urls = set()
+
+    for file_url in existing_file_urls or []:
+        if file_url in seen_file_urls:
+            continue
+
+        attachment = original_attachments_by_url.get(file_url)
+        if attachment is None:
+            raise HTTPException(status_code=400, detail="Unknown existing attachment")
+
+        kept_attachments.append(attachment)
+        seen_file_urls.add(file_url)
+
+    prepared_attachments = [
+        await prepare_file_attachment(file)
+        for file in (files or [])
+    ]
+    for permission_name in {
+        attachment["permission_name"] for attachment in prepared_attachments
+    }:
+        require_chat_permission(session, message.chat_id, user_id, permission_name)
+
+    stored_attachments = [
+        *kept_attachments,
+        *[
+            save_prepared_file_attachment(prepared_attachment)
+            for prepared_attachment in prepared_attachments
+        ],
+    ]
+
+    if stored_attachments:
+        message_type, metadata = build_file_message_metadata(stored_attachments)
+    elif caption is not None:
+        message_type, metadata = "text", {}
+    else:
+        raise HTTPException(
+            status_code=400,
+            detail="Message must contain text or at least one file",
+        )
+
+    message.content = caption
+    message.message_type = message_type
+    message.metadata_ = metadata
+    message.updated_at = datetime.now(timezone.utc)
+    message.edited_at = message.updated_at
+
+    session.add(message)
+    session.commit()
+    session.refresh(message)
+
+    public_message = to_message_public(
+        message,
+        current_user,
+        message_user_state=message_user_state,
+        reply_to=build_message_reply_preview(session, message, user_id),
+    )
+
+    participant_ids = session.exec(
+        select(col(ChatParticipant.user_id)).where(
+            col(ChatParticipant.chat_id) == message.chat_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).all()
+
+    for participant_id in participant_ids:
+        participant_message_user_state = session.get(
+            MessageUserState, (message.id, participant_id)
+        )
+        participant_public_message = to_message_public(
+            message,
+            current_user,
+            message_user_state=participant_message_user_state,
+            reply_to=build_message_reply_preview(session, message, participant_id),
+        )
+        await sio.emit(
+            "message_updated",
+            participant_public_message.model_dump(mode="json", by_alias=True),
+            room=f"user:{participant_id}",
+        )
+
+    return public_message
+
+
 @router.get(
     "/chats/{chat_id}/messages/search",
     response_model=list[MessagePublic],
@@ -1003,10 +1159,36 @@ async def delete_message(
 @router.patch("/messages/{message_id}", response_model=MessagePublic)
 async def edit_message(
     message_id: int,
-    payload: MessageEditRequest,
+    request: Request,
     session: SessionDep,
     current_user: Annotated[User, Depends(get_current_user)],
 ):
+    content_type = request.headers.get("content-type", "").split(";", 1)[0].lower()
+
+    if content_type == "multipart/form-data":
+        form = await request.form()
+        raw_content = form.get("content")
+        existing_file_urls = [
+            value
+            for value in form.getlist("existing_file_urls")
+            if isinstance(value, str)
+        ]
+        uploaded_files: list[UploadFile] = []
+        for value in form.getlist("files"):
+            if hasattr(value, "read") and hasattr(value, "filename"):
+                uploaded_files.append(cast(UploadFile, value))
+
+        return await apply_file_message_edit(
+            message_id,
+            session,
+            current_user,
+            raw_content if isinstance(raw_content, str) else None,
+            existing_file_urls,
+            uploaded_files,
+        )
+
+    data = await request.json()
+    payload = MessageEditRequest.model_validate(data)
     message = session.get(Message, message_id)
 
     if message is None or message.deleted_at is not None:
@@ -1027,7 +1209,11 @@ async def edit_message(
     if message_user_state and message_user_state.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Message not found")
 
-    message.content = payload.content.strip()
+    content = payload.content.strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+    message.content = content
     message.updated_at = datetime.now(timezone.utc)
     message.edited_at = message.updated_at
 
@@ -1061,7 +1247,7 @@ async def edit_message(
         )
         await sio.emit(
             "message_updated",
-            participant_public_message.model_dump(mode="json"),
+            participant_public_message.model_dump(mode="json", by_alias=True),
             room=f"user:{participant_id}",
         )
 
