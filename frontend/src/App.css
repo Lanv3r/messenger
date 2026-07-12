@@ -100,7 +100,7 @@ html[data-theme="dark"] {
   display: grid;
   margin: -14px -14px 0;
   overflow: hidden;
-  background: transparent;
+  background: rgba(255, 255, 255, 0.38);
 }
 
 .chat-window-header-button {
@@ -3672,7 +3672,7 @@ html[data-theme="dark"] .chat-info-panel {
 }
 
 html[data-theme="dark"] .chat-top-stack {
-  background: transparent;
+  background: rgba(255, 255, 255, 0.035);
 }
 
 html[data-theme="dark"] .chat-window-header-button {
