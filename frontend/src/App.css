@@ -1253,6 +1253,10 @@
   opacity: 0.96;
 }
 
+.chat-list-item.active.pinned.dragging {
+  background: #a9472c;
+}
+
 .chat-list-item.pinned.dragging .chat-open-button {
   cursor: grabbing;
 }
@@ -1303,7 +1307,7 @@
 }
 
 .chat-row-pin {
-  color: #f46f54;
+  color: #9ca3af;
 }
 
 .chat-open-button .chat-title-meta {
@@ -1356,19 +1360,19 @@
 
 .chat-list-item.active {
   border-color: transparent;
-  background: rgba(255, 255, 255, 0.52);
+  background: #a9472c;
 }
 
 .chat-list-item.active strong,
 .chat-list-item.active small,
 .chat-list-item.active time,
 .chat-list-item.active .chat-row-pin {
-  color: #1f2937;
+  color: #fff7ed;
 }
 
 .chat-list-item.active .unread-badge {
-  color: #fff;
-  background: #f46f54;
+  color: #a9472c;
+  background: #fff7ed;
 }
 
 .chat-context-menu {
@@ -3865,7 +3869,11 @@ html[data-theme="dark"] .chat-list-item.pinned.dragging {
 
 html[data-theme="dark"] .chat-list-item.active {
   border-color: transparent;
-  background: rgba(255, 255, 255, 0.13);
+  background: #8f2f1e;
+}
+
+html[data-theme="dark"] .chat-list-item.active.pinned.dragging {
+  background: #8f2f1e;
 }
 
 html[data-theme="dark"] .chat-list-item.active strong {
@@ -3875,11 +3883,11 @@ html[data-theme="dark"] .chat-list-item.active strong {
 html[data-theme="dark"] .chat-list-item.active small,
 html[data-theme="dark"] .chat-list-item.active time,
 html[data-theme="dark"] .chat-list-item.active .chat-row-pin {
-  color: #c8b6a7;
+  color: #ffe7dc;
 }
 
 html[data-theme="dark"] .chat-row-pin {
-  color: #ff9d84;
+  color: #8a94a6;
 }
 
 html[data-theme="dark"] .profile-search-clear:hover,
