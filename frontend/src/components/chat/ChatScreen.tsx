@@ -427,7 +427,7 @@ export function ChatScreen({
     onError: setChatError,
     onClearError: () => setChatError(null),
   });
-  const { toggleChatPin } = useChatSettings({
+  const { toggleChatPin, reorderPinnedChats } = useChatSettings({
     setChats,
     onSessionExpired,
     onError: setChatError,
@@ -963,6 +963,9 @@ export function ChatScreen({
             onJoinChat={joinChat}
             onToggleChatPin={(chat) => {
               void toggleChatPin(chat);
+            }}
+            onReorderPinnedChats={(chatIds) => {
+              void reorderPinnedChats(chatIds);
             }}
             getChatTitle={getChatTitle}
             getChatSubtitle={getChatSubtitle}

@@ -139,6 +139,7 @@ class ChatParticipantBase(SQLModel):
     last_read_at: datetime | None = Field(default=None, sa_type=DateTime)
     muted_until: datetime | None = Field(default=None, sa_type=DateTime)
     is_pinned: bool = False
+    pinned_order: int | None = None
     is_archived: bool = False
 
 
@@ -203,6 +204,7 @@ class ChatParticipantUpdate(ChatParticipantBase):
     last_read_at: datetime | None = None
     muted_until: datetime | None = None
     is_pinned: bool | None = None
+    pinned_order: int | None = None
     is_archived: bool | None = None
     left_at: datetime | None = None
 
@@ -298,6 +300,7 @@ class ChatListItem(SQLModel):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     is_pinned: bool = False
+    pinned_order: int | None = None
 
 
 class DirectMessageCreate(SQLModel):
@@ -318,6 +321,15 @@ class ChatSettingsUpdate(SQLModel):
     is_pinned: bool | None = None
     is_archived: bool | None = None
     muted_until: datetime | None = None
+
+
+class PinnedChatOrderUpdate(SQLModel):
+    chat_ids: list[int]
+
+
+class PinnedChatOrderResponse(SQLModel):
+    ok: bool
+    chat_ids: list[int]
 
 
 class AddGroupMembers(SQLModel):

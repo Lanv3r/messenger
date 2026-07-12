@@ -16,6 +16,15 @@ export function sortChats(chats: Chat[]) {
       return firstIsPinned ? -1 : 1;
     }
 
+    if (firstIsPinned && secondIsPinned) {
+      const firstPinnedOrder = first.pinned_order ?? Number.MAX_SAFE_INTEGER;
+      const secondPinnedOrder = second.pinned_order ?? Number.MAX_SAFE_INTEGER;
+
+      if (firstPinnedOrder !== secondPinnedOrder) {
+        return firstPinnedOrder - secondPinnedOrder;
+      }
+    }
+
     return getChatSortTime(second) - getChatSortTime(first);
   });
 }
@@ -128,6 +137,7 @@ export function mergeChatMembershipUpdate(
     other_last_read_message_id: existingChat.other_last_read_message_id,
     other_last_read_at: existingChat.other_last_read_at,
     is_pinned: existingChat.is_pinned,
+    pinned_order: existingChat.pinned_order,
   };
 }
 

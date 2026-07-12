@@ -124,6 +124,7 @@ export type Chat = {
   last_message_created_at: string | null;
   unread_count: number;
   is_pinned: boolean;
+  pinned_order: number | null;
   current_last_read_message_id: number | null;
   other_last_read_message_id: number | null;
   other_last_read_at: string | null;
@@ -210,6 +211,12 @@ export type ChatSettingsResponse = {
   ok: boolean;
   chat_id: number;
   is_pinned: boolean;
+  pinned_order: number | null;
   is_archived?: boolean;
   muted_until?: string | null;
+};
+
+export type PinnedChatOrderResponse = {
+  ok: boolean;
+  chat_ids: number[];
 };

@@ -16,6 +16,8 @@ from app.models import (
     GroupCreate,
     Message,
     MessageUserState,
+    PinnedChatOrderResponse,
+    PinnedChatOrderUpdate,
     User,
 )
 from app.permissions import SYSTEM_ROLE_DEFAULTS
@@ -38,7 +40,7 @@ from app.socket import sio
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy import func
 from sqlalchemy.sql.elements import ColumnElement
-from sqlmodel import col, exists, select
+from sqlmodel import Session, col, exists, select
 
 router = APIRouter(tags=["chats"])
 
@@ -80,6 +82,22 @@ def group_create_from_form(
         description=description,
         member_ids=member_ids or [],
     )
+
+
+def get_chat_sort_timestamp(chat: ChatListItem) -> float:
+    value = chat.last_message_created_at or chat.created_at
+    return value.timestamp() if value is not None else 0
+
+
+def get_next_pinned_order(session: Session, user_id: int) -> int:
+    max_order = session.exec(
+        select(func.max(col(ChatParticipant.pinned_order))).where(
+            col(ChatParticipant.user_id) == user_id,
+            col(ChatParticipant.left_at).is_(None),
+            col(ChatParticipant.is_pinned).is_(True),
+        )
+    ).one()
+    return (max_order or 0) + 1
 
 
 @router.get("/chats", response_model=list[ChatListItem])
@@ -217,14 +235,17 @@ def get_chats(
                 created_at=chat.created_at,
                 updated_at=chat.updated_at,
                 is_pinned=current_participant.is_pinned,
+                pinned_order=current_participant.pinned_order,
             )
         )
     result.sort(
         key=lambda chat: (
-            chat.is_pinned,
-            chat.last_message_created_at or chat.created_at,
-        ),
-        reverse=True,
+            0 if chat.is_pinned else 1,
+            chat.pinned_order
+            if chat.is_pinned and chat.pinned_order is not None
+            else 2_147_483_647,
+            -get_chat_sort_timestamp(chat),
+        )
     )
     return result
 
@@ -290,6 +311,7 @@ def get_direct_chat_by_user(
             created_at=chat.created_at,
             updated_at=chat.updated_at,
             is_pinned=current_participant.is_pinned,
+            pinned_order=current_participant.pinned_order,
         )
 
     other_user = session.get(User, user_id)
@@ -388,6 +410,7 @@ def get_direct_chat_by_user(
         created_at=chat.created_at,
         updated_at=chat.updated_at,
         is_pinned=current_participant.is_pinned,
+        pinned_order=current_participant.pinned_order,
     )
 
 
@@ -485,6 +508,46 @@ def get_chat_members(
     return members
 
 
+@router.patch("/chats/pinned-order", response_model=PinnedChatOrderResponse)
+def reorder_pinned_chats(
+    payload: PinnedChatOrderUpdate,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    if len(payload.chat_ids) != len(set(payload.chat_ids)):
+        raise HTTPException(status_code=400, detail="Duplicate chat IDs are not allowed")
+
+    pinned_participants = session.exec(
+        select(ChatParticipant).where(
+            col(ChatParticipant.user_id) == user_id,
+            col(ChatParticipant.left_at).is_(None),
+            col(ChatParticipant.is_pinned).is_(True),
+        )
+    ).all()
+    pinned_participants_by_chat_id = {
+        participant.chat_id: participant for participant in pinned_participants
+    }
+
+    if set(payload.chat_ids) != set(pinned_participants_by_chat_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Pinned chat order must include all pinned chats and only pinned chats",
+        )
+
+    for index, chat_id in enumerate(payload.chat_ids, start=1):
+        participant = pinned_participants_by_chat_id[chat_id]
+        participant.pinned_order = index
+        session.add(participant)
+
+    session.commit()
+
+    return PinnedChatOrderResponse(ok=True, chat_ids=payload.chat_ids)
+
+
 @router.patch("/chats/{chat_id}/settings")
 def pin_chat(
     chat_id: int,
@@ -499,6 +562,16 @@ def pin_chat(
 
     update_data = payload.model_dump(exclude_unset=True)
     for key, value in update_data.items():
+        if key == "is_pinned":
+            next_is_pinned = bool(value)
+            participant.is_pinned = next_is_pinned
+
+            if next_is_pinned and participant.pinned_order is None:
+                participant.pinned_order = get_next_pinned_order(session, user_id)
+            elif not next_is_pinned:
+                participant.pinned_order = None
+            continue
+
         setattr(participant, key, value)
     session.add(participant)
     session.commit()
@@ -508,6 +581,7 @@ def pin_chat(
         "ok": True,
         "chat_id": chat_id,
         "is_pinned": participant.is_pinned,
+        "pinned_order": participant.pinned_order,
         "is_archived": participant.is_archived,
         "muted_until": participant.muted_until,
     }
@@ -608,6 +682,7 @@ async def create_group_chat(
         last_message_created_at=None,
         created_at=chat.created_at,
         updated_at=chat.updated_at,
+        pinned_order=None,
     )
 
     for member_id in member_ids:
@@ -705,6 +780,7 @@ async def add_group_members(
         last_message_created_at=None,
         created_at=chat.created_at,
         updated_at=chat.updated_at,
+        pinned_order=None,
     )
 
     if not new_member_ids:
@@ -1094,6 +1170,7 @@ async def remove_user(
         last_message_created_at=None,
         created_at=chat.created_at,
         updated_at=chat.updated_at,
+        pinned_order=None,
     )
 
     await sio.emit(

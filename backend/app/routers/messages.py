@@ -408,6 +408,7 @@ async def create_direct_message(
             last_message_created_at=message.created_at,
             created_at=chat.created_at,
             updated_at=chat.updated_at,
+            pinned_order=None,
         ),
         "message": public_message,
     }

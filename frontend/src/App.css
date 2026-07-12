@@ -1204,43 +1204,59 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 0;
+  width: calc(100% + 40px);
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding-right: 4px;
-  margin-right: -4px;
+  padding-right: 0;
+  margin-inline: -20px;
 }
 
 .chat-list-item {
   width: 100%;
   flex: 0 0 auto;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  border: 1px solid rgba(163, 88, 66, 0.16);
-  border-radius: 18px;
+  border: 0;
+  border-radius: 0;
   color: #8b5e34;
-  background: rgba(255, 255, 255, 0.78);
+  background: transparent;
   overflow: hidden;
   transition:
-    transform 160ms ease,
-    border-color 160ms ease,
     background 160ms ease;
 }
 
 .chat-list-item:hover {
-  transform: translateY(-1px);
-  border-color: rgba(244, 111, 84, 0.35);
+  transform: none;
+  background: rgba(255, 255, 255, 0.22);
+}
+
+.chat-list-item.pinned {
+  cursor: grab;
+}
+
+.chat-list-item.pinned .chat-open-button {
+  cursor: grab;
+}
+
+.chat-list-item.pinned.dragging {
+  opacity: 0.56;
+}
+
+.chat-list-item.pinned.drag-over {
+  background: rgba(244, 111, 84, 0.14);
 }
 
 .chat-open-button {
   min-width: 0;
+  width: 100%;
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr);
+  grid-template-columns: 38px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
-  padding: 10px;
+  gap: 5px;
+  padding: 5px 12px;
   border: 0;
   font: inherit;
   color: inherit;
@@ -1250,8 +1266,8 @@
 }
 
 .chat-open-button img {
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   object-fit: cover;
   background: rgba(133, 144, 167, 0.14);
@@ -1260,14 +1276,26 @@
 .chat-open-button > span {
   min-width: 0;
   display: grid;
-  gap: 2px;
+  gap: 1px;
 }
 
 .chat-title-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+}
+
+.chat-preview-row {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.chat-row-pin {
+  color: #f46f54;
 }
 
 .chat-open-button .chat-title-meta {
@@ -1275,7 +1303,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: end;
-  gap: 6px;
+  gap: 4px;
 }
 
 .chat-open-button .unread-badge {
@@ -1318,58 +1346,54 @@
   color: #a77852;
 }
 
-.chat-pin-button {
-  width: 30px;
-  height: 30px;
-  display: grid;
-  place-items: center;
-  margin-right: 8px;
-  border: 0;
-  border-radius: 999px;
-  color: #a77852;
-  background: transparent;
-  cursor: pointer;
-  opacity: 0;
-  transition:
-    opacity 160ms ease,
-    background 160ms ease,
-    color 160ms ease;
-}
-
-.chat-list-item:hover .chat-pin-button,
-.chat-list-item.pinned .chat-pin-button,
-.chat-pin-button:focus-visible {
-  opacity: 1;
-}
-
-.chat-list-item.pinned:not(.active) .chat-pin-button {
-  color: #f46f54;
-  background: rgba(244, 111, 84, 0.12);
-}
-
-.chat-pin-button:hover {
-  background: rgba(244, 111, 84, 0.12);
-}
-
 .chat-list-item.active {
   border-color: transparent;
-  background: #f46f54;
+  background: rgba(255, 255, 255, 0.52);
 }
 
 .chat-list-item.active strong,
 .chat-list-item.active small,
 .chat-list-item.active time,
-.chat-list-item.active .chat-pin-button {
-  color: #fff;
+.chat-list-item.active .chat-row-pin {
+  color: #1f2937;
 }
 
 .chat-list-item.active .unread-badge {
-  color: #f46f54;
-  background: #fff;
+  color: #fff;
+  background: #f46f54;
 }
 
-.chat-list-item.active .chat-pin-button:hover {
-  background: rgba(255, 255, 255, 0.18);
+.chat-context-menu {
+  position: fixed;
+  z-index: 120;
+  display: grid;
+  min-width: 150px;
+  padding: 6px;
+  border: 1px solid rgba(163, 88, 66, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 18px 42px rgba(31, 41, 55, 0.18);
+  backdrop-filter: blur(12px);
+}
+
+.chat-context-menu button {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  color: #6f3a2b;
+  background: transparent;
+  cursor: pointer;
+}
+
+.chat-context-menu button:hover {
+  color: #d64c2f;
+  background: rgba(244, 111, 84, 0.12);
 }
 
 .status {
@@ -3586,7 +3610,6 @@ html[data-theme="dark"] .retry-button {
 
 html[data-theme="dark"] .chat-window-header-button,
 html[data-theme="dark"] .chat-header-search-button,
-html[data-theme="dark"] .chat-list-item,
 html[data-theme="dark"] .profile-card,
 html[data-theme="dark"] .chat-info-panel,
 html[data-theme="dark"] .chat-info-nested-panel,
@@ -3795,7 +3818,6 @@ html[data-theme="dark"] .avatar-upload-button,
 html[data-theme="dark"] .avatar-upload-dialog-close,
 html[data-theme="dark"] .profile-editor-close,
 html[data-theme="dark"] .profile-search-clear,
-html[data-theme="dark"] .chat-pin-button,
 html[data-theme="dark"] .sidebar-add-chat-button {
   color: #d8c2b1;
 }
@@ -3824,21 +3846,53 @@ html[data-theme="dark"] .account-rail-avatar-button:focus-visible::after {
 }
 
 html[data-theme="dark"] .chat-list-item:hover {
-  border-color: rgba(244, 111, 84, 0.32);
-  background: rgba(255, 255, 255, 0.075);
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+html[data-theme="dark"] .chat-list-item.pinned.drag-over {
+  background: rgba(244, 111, 84, 0.16);
 }
 
 html[data-theme="dark"] .chat-list-item.active {
   border-color: transparent;
-  background: linear-gradient(135deg, #f46f54, #b83422);
+  background: rgba(255, 255, 255, 0.13);
 }
 
-html[data-theme="dark"] .chat-list-item.pinned:not(.active) .chat-pin-button,
-html[data-theme="dark"] .chat-pin-button:hover,
+html[data-theme="dark"] .chat-list-item.active strong {
+  color: #f7efe7;
+}
+
+html[data-theme="dark"] .chat-list-item.active small,
+html[data-theme="dark"] .chat-list-item.active time,
+html[data-theme="dark"] .chat-list-item.active .chat-row-pin {
+  color: #c8b6a7;
+}
+
+html[data-theme="dark"] .chat-row-pin {
+  color: #ff9d84;
+}
+
 html[data-theme="dark"] .profile-search-clear:hover,
 html[data-theme="dark"] .sidebar-add-chat-button:hover {
   color: #ff9d84;
   background: rgba(244, 111, 84, 0.12);
+}
+
+html[data-theme="dark"] .chat-context-menu {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(15, 20, 30, 0.94);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.36);
+}
+
+html[data-theme="dark"] .chat-context-menu button {
+  color: #f7efe7;
+  background: transparent;
+}
+
+html[data-theme="dark"] .chat-context-menu button:hover {
+  color: #ff9d84;
+  background: rgba(244, 111, 84, 0.14);
 }
 
 html[data-theme="dark"] .profile-search-form input,
