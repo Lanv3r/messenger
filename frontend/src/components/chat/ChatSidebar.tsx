@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { Pin, X } from "lucide-react";
 
@@ -56,6 +56,46 @@ function getProfileDisplayName(profile: UserProfile) {
   return `${profile.first_name}${profile.last_name ? ` ${profile.last_name}` : ""}`;
 }
 
+function getPinnedChatIds(chats: Chat[]) {
+  return chats.filter((chat) => chat.is_pinned).map((chat) => chat.id);
+}
+
+function areChatIdListsEqual(first: number[], second: number[]) {
+  return (
+    first.length === second.length &&
+    first.every((chatId, index) => chatId === second[index])
+  );
+}
+
+function swapChatIds(
+  chatIds: number[],
+  draggedChatId: number,
+  targetChatId: number,
+) {
+  const draggedIndex = chatIds.indexOf(draggedChatId);
+  const targetIndex = chatIds.indexOf(targetChatId);
+
+  if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) {
+    return chatIds;
+  }
+
+  const nextChatIds = [...chatIds];
+  nextChatIds[draggedIndex] = targetChatId;
+  nextChatIds[targetIndex] = draggedChatId;
+  return nextChatIds;
+}
+
+type DragPreviewTarget = {
+  chatId: number;
+  translateY: number;
+};
+
+type PendingPinnedDrag = {
+  chatId: number;
+  pointerId: number;
+  startClientY: number;
+};
+
 export function ChatSidebar({
   profileQuery,
   profileResult,
@@ -79,9 +119,32 @@ export function ChatSidebar({
   const [draggedPinnedChatId, setDraggedPinnedChatId] = useState<number | null>(
     null,
   );
-  const [dragTargetPinnedChatId, setDragTargetPinnedChatId] = useState<
-    number | null
-  >(null);
+  const [dragPreviewTarget, setDragPreviewTarget] =
+    useState<DragPreviewTarget | null>(null);
+  const [draggedChatTranslateY, setDraggedChatTranslateY] = useState(0);
+  const chatListRef = useRef<HTMLDivElement | null>(null);
+  const chatRowRefs = useRef(new Map<number, HTMLDivElement>());
+  const dragStartRowRects = useRef(new Map<number, DOMRect>());
+  const dragStartPinnedOrder = useRef<number[]>([]);
+  const dragPointerOffsetY = useRef(0);
+  const draggedPinnedChatIdRef = useRef<number | null>(null);
+  const dragPreviewTargetRef = useRef<DragPreviewTarget | null>(null);
+  const pendingPinnedDrag = useRef<PendingPinnedDrag | null>(null);
+  const suppressNextChatClick = useRef(false);
+
+  function captureDragStartRowRects() {
+    dragStartRowRects.current = new Map(
+      Array.from(chatRowRefs.current.entries()).map(([chatId, element]) => [
+        chatId,
+        element.getBoundingClientRect(),
+      ]),
+    );
+  }
+
+  function setPinnedDragPreviewTarget(nextTarget: DragPreviewTarget | null) {
+    dragPreviewTargetRef.current = nextTarget;
+    setDragPreviewTarget(nextTarget);
+  }
 
   useEffect(() => {
     if (!chatMenu) {
@@ -109,25 +172,128 @@ export function ChatSidebar({
     };
   }, [chatMenu]);
 
-  function reorderPinnedChat(draggedChatId: number, targetChatId: number) {
-    if (draggedChatId === targetChatId) {
+  function updatePinnedChatSwapPreview(draggedChatId: number, draggedTop: number) {
+    const pinnedOrder = dragStartPinnedOrder.current;
+    const draggedIndex = pinnedOrder.indexOf(draggedChatId);
+    const draggedRect = dragStartRowRects.current.get(draggedChatId);
+
+    if (draggedIndex === -1 || !draggedRect) {
+      setPinnedDragPreviewTarget(null);
       return;
     }
 
-    const pinnedChatIds = chats
-      .filter((chat) => chat.is_pinned)
-      .map((chat) => chat.id);
-    const draggedIndex = pinnedChatIds.indexOf(draggedChatId);
-    const targetIndex = pinnedChatIds.indexOf(targetChatId);
+    const draggedBottom = draggedTop + draggedRect.height;
+    let nextPreviewTarget: DragPreviewTarget | null = null;
+    let largestOverlap = 0;
 
-    if (draggedIndex === -1 || targetIndex === -1) {
+    for (const chatId of pinnedOrder) {
+      if (chatId === draggedChatId) {
+        continue;
+      }
+
+      const targetRect = dragStartRowRects.current.get(chatId);
+
+      if (!targetRect) {
+        continue;
+      }
+
+      const overlap = Math.max(
+        0,
+        Math.min(draggedBottom, targetRect.bottom) -
+          Math.max(draggedTop, targetRect.top),
+      );
+
+      if (overlap >= targetRect.height / 2 && overlap > largestOverlap) {
+        largestOverlap = overlap;
+        nextPreviewTarget = {
+          chatId,
+          translateY: draggedRect.top - targetRect.top,
+        };
+      }
+    }
+
+    const current = dragPreviewTargetRef.current;
+
+    if (
+      current?.chatId === nextPreviewTarget?.chatId &&
+      current?.translateY === nextPreviewTarget?.translateY
+    ) {
       return;
     }
 
-    const nextPinnedChatIds = [...pinnedChatIds];
-    const [draggedId] = nextPinnedChatIds.splice(draggedIndex, 1);
-    nextPinnedChatIds.splice(targetIndex, 0, draggedId);
-    onReorderPinnedChats(nextPinnedChatIds);
+    setPinnedDragPreviewTarget(nextPreviewTarget);
+  }
+
+  function commitPinnedChatOrder() {
+    const previewTarget = dragPreviewTargetRef.current;
+    const draggedChatId = draggedPinnedChatIdRef.current;
+
+    if (!previewTarget || draggedChatId === null) {
+      return;
+    }
+
+    const nextPinnedOrder = swapChatIds(
+      dragStartPinnedOrder.current,
+      draggedChatId,
+      previewTarget.chatId,
+    );
+
+    if (!areChatIdListsEqual(dragStartPinnedOrder.current, nextPinnedOrder)) {
+      onReorderPinnedChats(nextPinnedOrder);
+    }
+  }
+
+  function startPinnedPointerDrag(chatId: number, pointerY: number) {
+    const draggedRect = dragStartRowRects.current.get(chatId);
+
+    if (!draggedRect) {
+      return;
+    }
+
+    setChatMenu(null);
+    draggedPinnedChatIdRef.current = chatId;
+    setDraggedPinnedChatId(chatId);
+    dragPointerOffsetY.current = pointerY - draggedRect.top;
+    updateDraggedPinnedChatPosition(chatId, pointerY);
+  }
+
+  function updateDraggedPinnedChatPosition(chatId: number, pointerY: number) {
+    const draggedRect = dragStartRowRects.current.get(chatId);
+    const chatListRect = chatListRef.current?.getBoundingClientRect();
+
+    if (!draggedRect || !chatListRect) {
+      return;
+    }
+
+    const unclampedTop = pointerY - dragPointerOffsetY.current;
+    const clampedTop = Math.min(
+      Math.max(unclampedTop, chatListRect.top),
+      chatListRect.bottom - draggedRect.height,
+    );
+    const translateY = clampedTop - draggedRect.top;
+
+    setDraggedChatTranslateY(translateY);
+    updatePinnedChatSwapPreview(chatId, clampedTop);
+  }
+
+  function finishPinnedPointerDrag() {
+    if (draggedPinnedChatIdRef.current !== null) {
+      commitPinnedChatOrder();
+      suppressNextChatClick.current = true;
+    }
+
+    clearPinnedDragState();
+  }
+
+  function clearPinnedDragState() {
+    draggedPinnedChatIdRef.current = null;
+    setDraggedPinnedChatId(null);
+    setPinnedDragPreviewTarget(null);
+    setDraggedChatTranslateY(0);
+    dragStartPinnedOrder.current = [];
+    dragStartRowRects.current = new Map();
+    dragPointerOffsetY.current = 0;
+    pendingPinnedDrag.current = null;
   }
 
   return (
@@ -217,6 +383,7 @@ export function ChatSidebar({
           </div>
           <div
             className="chat-list subtle-scrollbar"
+            ref={chatListRef}
             onScroll={keepSubtleScrollbarVisible}
           >
             {chats.map((chat) => {
@@ -227,16 +394,33 @@ export function ChatSidebar({
           return (
             <div
               key={chat.id}
+              ref={(element) => {
+                if (element) {
+                  chatRowRefs.current.set(chat.id, element);
+                } else {
+                  chatRowRefs.current.delete(chat.id);
+                }
+              }}
               className={[
                 "chat-list-item",
                 chat.id === activeChatId ? "active" : "",
                 chat.is_pinned ? "pinned" : "",
                 draggedPinnedChatId === chat.id ? "dragging" : "",
-                dragTargetPinnedChatId === chat.id ? "drag-over" : "",
               ]
                 .filter(Boolean)
                 .join(" ")}
-              draggable={chat.is_pinned}
+              style={
+                draggedPinnedChatId === chat.id
+                  ? {
+                      transform: `translateY(${draggedChatTranslateY}px)`,
+                      zIndex: 2,
+                    }
+                  : dragPreviewTarget?.chatId === chat.id
+                  ? {
+                      transform: `translateY(${dragPreviewTarget.translateY}px)`,
+                    }
+                  : undefined
+              }
               onContextMenu={(event) => {
                 event.preventDefault();
                 setChatMenu({
@@ -244,53 +428,83 @@ export function ChatSidebar({
                   ...getChatMenuPosition(event.clientX, event.clientY),
                 });
               }}
-              onDragStart={(event) => {
-                if (!chat.is_pinned) {
+              onPointerDown={(event) => {
+                if (!chat.is_pinned || event.button !== 0) {
+                  return;
+                }
+
+                pendingPinnedDrag.current = {
+                  chatId: chat.id,
+                  pointerId: event.pointerId,
+                  startClientY: event.clientY,
+                };
+                dragStartPinnedOrder.current = getPinnedChatIds(chats);
+                captureDragStartRowRects();
+              }}
+              onPointerMove={(event) => {
+                const pendingDrag = pendingPinnedDrag.current;
+
+                if (
+                  !pendingDrag ||
+                  pendingDrag.chatId !== chat.id ||
+                  pendingDrag.pointerId !== event.pointerId
+                ) {
+                  return;
+                }
+
+                if (draggedPinnedChatIdRef.current === null) {
+                  const movedDistance = Math.abs(
+                    event.clientY - pendingDrag.startClientY,
+                  );
+
+                  if (movedDistance < 4) {
+                    return;
+                  }
+
                   event.preventDefault();
-                  return;
-                }
-
-                setChatMenu(null);
-                setDraggedPinnedChatId(chat.id);
-                event.dataTransfer.effectAllowed = "move";
-                event.dataTransfer.setData("text/plain", String(chat.id));
-              }}
-              onDragOver={(event) => {
-                if (!chat.is_pinned || draggedPinnedChatId === null) {
+                  event.currentTarget.setPointerCapture(event.pointerId);
+                  startPinnedPointerDrag(chat.id, event.clientY);
                   return;
                 }
 
                 event.preventDefault();
-                event.dataTransfer.dropEffect = "move";
-                setDragTargetPinnedChatId(chat.id);
+                updateDraggedPinnedChatPosition(chat.id, event.clientY);
               }}
-              onDragLeave={() => {
-                if (dragTargetPinnedChatId === chat.id) {
-                  setDragTargetPinnedChatId(null);
-                }
-              }}
-              onDrop={(event) => {
-                event.preventDefault();
-                const draggedChatId = Number(
-                  event.dataTransfer.getData("text/plain"),
-                );
+              onPointerUp={(event) => {
+                const pendingDrag = pendingPinnedDrag.current;
 
-                if (chat.is_pinned && Number.isInteger(draggedChatId)) {
-                  reorderPinnedChat(draggedChatId, chat.id);
+                if (
+                  !pendingDrag ||
+                  pendingDrag.chatId !== chat.id ||
+                  pendingDrag.pointerId !== event.pointerId
+                ) {
+                  return;
                 }
 
-                setDraggedPinnedChatId(null);
-                setDragTargetPinnedChatId(null);
+                if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+                  event.currentTarget.releasePointerCapture(event.pointerId);
+                }
+
+                if (draggedPinnedChatIdRef.current !== null) {
+                  event.preventDefault();
+                }
+
+                finishPinnedPointerDrag();
               }}
-              onDragEnd={() => {
-                setDraggedPinnedChatId(null);
-                setDragTargetPinnedChatId(null);
+              onPointerCancel={() => {
+                clearPinnedDragState();
               }}
             >
               <button
                 type="button"
                 className="chat-open-button"
-                onClick={() => {
+                onClick={(event) => {
+                  if (suppressNextChatClick.current) {
+                    event.preventDefault();
+                    suppressNextChatClick.current = false;
+                    return;
+                  }
+
                   setChatMenu(null);
                   onJoinChat(chat);
                 }}

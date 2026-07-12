@@ -1214,6 +1214,7 @@
 }
 
 .chat-list-item {
+  position: relative;
   width: 100%;
   flex: 0 0 auto;
   display: grid;
@@ -1224,8 +1225,13 @@
   color: #8b5e34;
   background: transparent;
   overflow: hidden;
+  will-change: transform;
   transition:
-    background 160ms ease;
+    transform 180ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    background 160ms ease,
+    box-shadow 160ms ease,
+    filter 160ms ease,
+    opacity 160ms ease;
 }
 
 .chat-list-item:hover {
@@ -1242,11 +1248,13 @@
 }
 
 .chat-list-item.pinned.dragging {
-  opacity: 0.56;
+  background: rgba(255, 255, 255, 0.72);
+  box-shadow: 0 12px 28px rgba(106, 58, 45, 0.16);
+  opacity: 0.96;
 }
 
-.chat-list-item.pinned.drag-over {
-  background: rgba(244, 111, 84, 0.14);
+.chat-list-item.pinned.dragging .chat-open-button {
+  cursor: grabbing;
 }
 
 .chat-open-button {
@@ -3850,8 +3858,9 @@ html[data-theme="dark"] .chat-list-item:hover {
   background: rgba(255, 255, 255, 0.045);
 }
 
-html[data-theme="dark"] .chat-list-item.pinned.drag-over {
-  background: rgba(244, 111, 84, 0.16);
+html[data-theme="dark"] .chat-list-item.pinned.dragging {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.26);
 }
 
 html[data-theme="dark"] .chat-list-item.active {
