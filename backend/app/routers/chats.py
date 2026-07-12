@@ -70,6 +70,18 @@ def to_chat_member_public(
     )
 
 
+def group_create_from_form(
+    title: Annotated[str, Form()],
+    description: Annotated[str | None, Form()] = None,
+    member_ids: Annotated[list[int] | None, Form()] = None,
+) -> GroupCreate:
+    return GroupCreate(
+        title=title,
+        description=description,
+        member_ids=member_ids or [],
+    )
+
+
 @router.get("/chats", response_model=list[ChatListItem])
 def get_chats(
     session: SessionDep,
@@ -505,7 +517,7 @@ def pin_chat(
 async def create_group_chat(
     session: SessionDep,
     current_user: Annotated[User, Depends(get_current_user)],
-    payload: Annotated[GroupCreate, Form()],
+    payload: Annotated[GroupCreate, Depends(group_create_from_form)],
     avatar: Annotated[UploadFile | None, File()] = None,
 ):
     user_id = current_user.id
