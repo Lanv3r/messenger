@@ -22,6 +22,7 @@ import { MessageBody } from "@/components/chat/MessageBody";
 import { MessageList } from "@/components/chat/MessageList";
 import { MessageReplyPreviewButton } from "@/components/chat/MessageReplyPreviewButton";
 import { MessageSearch } from "@/components/chat/MessageSearch";
+import { PinnedMessagesBar } from "@/components/chat/PinnedMessagesBar";
 import { ProfileEditor } from "@/components/chat/ProfileEditor";
 import { apiFetch } from "@/lib/api";
 import {
@@ -338,6 +339,7 @@ export function ChatScreen({
     memberRemovalMessage,
     memberRemovalCandidate,
     currentUserCanDeleteGroupMessages,
+    currentUserCanPinGroupMessages,
     currentUserCanRemoveGroupMembers,
     selectedAdminPermissions,
     canEditSelectedAdmin,
@@ -866,6 +868,30 @@ export function ChatScreen({
     return true;
   };
 
+  const canUnpinPinnedBarMessage = (entry: ChatMessage) => {
+    if (
+      entry.temp_id ||
+      entry.delivery_status === "sending" ||
+      entry.delivery_status === "failed"
+    ) {
+      return false;
+    }
+
+    if (entry.is_pinned_for_me) {
+      return true;
+    }
+
+    if (!entry.pinned_at || !activeChat) {
+      return false;
+    }
+
+    if (activeChat.type !== "group") {
+      return true;
+    }
+
+    return currentUserCanPinGroupMessages;
+  };
+
   const confirmPinAction = (scope: "me" | "chat" | "unpin") => {
     const entry = messageActionDialog?.entry;
     if (!entry) {
@@ -944,27 +970,39 @@ export function ChatScreen({
           />
         )}
         <section className="chat-card">
-          <ChatHeader
-            title={chatHeaderTitle}
-            subtitle={chatHeaderSubtitle}
-            avatarUrl={chatHeaderAvatar}
-            clickable={chatHeaderClickable}
-            onClick={handleChatHeaderClick}
-            searchEnabled={activeChatId !== null && draftRecipient === null}
-            searchActive={messageSearchOpen}
-            onSearchClick={() => {
-              if (activeChatId === null || draftRecipient !== null) {
-                return;
-              }
-
-              setMessageSearchOpen((current) => {
-                if (current) {
-                  resetMessageSearch();
+          <div className="chat-top-stack">
+            <ChatHeader
+              title={chatHeaderTitle}
+              subtitle={chatHeaderSubtitle}
+              avatarUrl={chatHeaderAvatar}
+              clickable={chatHeaderClickable}
+              onClick={handleChatHeaderClick}
+              searchEnabled={activeChatId !== null && draftRecipient === null}
+              searchActive={messageSearchOpen}
+              onSearchClick={() => {
+                if (activeChatId === null || draftRecipient !== null) {
+                  return;
                 }
-                return !current;
-              });
-            }}
-          />
+
+                setMessageSearchOpen((current) => {
+                  if (current) {
+                    resetMessageSearch();
+                  }
+                  return !current;
+                });
+              }}
+            />
+            {!creatingGroup ? (
+              <PinnedMessagesBar
+                messages={visibleMessages}
+                canUnpinMessage={canUnpinPinnedBarMessage}
+                onRequestUnpin={(entry) => {
+                  openMessageActionDialog("pin", entry);
+                }}
+                onRevealMessage={revealMessageById}
+              />
+            ) : null}
+          </div>
 
           {creatingGroup ? (
             <CreateGroupPanel

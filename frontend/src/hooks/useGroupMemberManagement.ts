@@ -93,6 +93,11 @@ export function useGroupMemberManagement({
     activeChat?.type === "group" &&
     (activeChat.current_user_role === "owner" ||
       currentUserAdminPermissions?.delete_messages === true);
+  const currentUserCanPinGroupMessages =
+    activeChat?.type === "group" &&
+    (activeChat.current_user_role === "owner" ||
+      currentUserAdminPermissions?.pin_messages === true ||
+      memberPermissions?.pin_messages === true);
   const canAttemptManageGroup =
     activeChat?.type === "group" &&
     (activeChat.current_user_role === "owner" ||
@@ -804,6 +809,7 @@ export function useGroupMemberManagement({
     memberRemovalMessage,
     memberRemovalCandidate,
     currentUserCanDeleteGroupMessages,
+    currentUserCanPinGroupMessages,
     currentUserCanRemoveGroupMembers,
     selectedAdminPermissions,
     canEditSelectedAdmin,
