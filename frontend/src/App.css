@@ -23,8 +23,8 @@
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 20px;
-  padding: 28px;
+  gap: 10px;
+  padding: 14px;
   box-sizing: border-box;
   border: 1px solid rgba(163, 88, 66, 0.15);
   border-radius: 0;
@@ -76,7 +76,7 @@
 .chat-top-stack {
   flex: 0 0 auto;
   display: grid;
-  margin: -28px -28px 0;
+  margin: -14px -14px 0;
   overflow: hidden;
   background: transparent;
 }
@@ -86,8 +86,8 @@
   display: grid;
   grid-template-columns: 52px minmax(0, 1fr);
   align-items: center;
-  gap: 12px;
-  padding: 14px 76px 14px 28px;
+  gap: 6px;
+  padding: 7px 48px 7px 14px;
   border: 0;
   border-radius: 0;
   text-align: left;
@@ -112,7 +112,7 @@
 .chat-header-search-button {
   position: absolute;
   top: 50%;
-  right: 28px;
+  right: 14px;
   width: 38px;
   height: 38px;
   display: grid;
@@ -2448,8 +2448,8 @@
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 12px;
-  padding: 8px 28px 10px;
+  gap: 6px;
+  padding: 4px 14px 5px;
   border: 0;
   border-radius: 0;
   background: rgba(255, 255, 255, 0.34);
@@ -2529,7 +2529,7 @@
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 6px;
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -2542,7 +2542,7 @@
   display: grid;
   grid-template-columns: 38px minmax(0, 1fr);
   align-items: end;
-  gap: 10px;
+  gap: 5px;
   max-width: 80%;
   padding: 0;
   text-align: left;
@@ -2560,7 +2560,7 @@
 }
 
 #messages li.grouped-with-previous {
-  margin-top: -5px;
+  margin-top: -2px;
 }
 
 #messages li.search-highlight {
@@ -2570,7 +2570,7 @@
 #messages li.search-highlight::before {
   content: "";
   position: absolute;
-  inset: -7px -9px;
+  inset: -4px -5px;
   z-index: -1;
   border-radius: 22px;
   background: rgba(244, 111, 84, 0.16);
@@ -2608,7 +2608,7 @@
 #messages li.empty-state {
   grid-template-columns: 1fr;
   max-width: 100%;
-  padding: 18px;
+  padding: 9px;
   place-items: center;
   text-align: center;
   color: #6b7280;
@@ -2619,7 +2619,7 @@
   align-self: center;
   display: block;
   max-width: max-content;
-  padding: 6px 10px;
+  padding: 3px 5px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 700;
@@ -2648,8 +2648,8 @@
   display: grid;
   min-width: 0;
   max-width: 100%;
-  gap: 5px;
-  padding: 13px 16px;
+  gap: 3px;
+  padding: 7px 8px;
   border: 1px solid rgba(163, 88, 66, 0.1);
   border-radius: 18px;
   background: #fff5ef;
@@ -2732,7 +2732,7 @@
 #messages li.media-message .file-message-caption {
   width: 100%;
   max-width: 100%;
-  padding: 10px 13px;
+  padding: 5px 7px;
   border: 1px solid rgba(163, 88, 66, 0.1);
   border-radius: 0 0 16px 16px;
   box-sizing: border-box;
@@ -2743,7 +2743,7 @@
 
 #messages li.media-message.media-with-caption .file-message-caption {
   min-height: 38px;
-  padding-right: 94px;
+  padding-right: 70px;
 }
 
 #messages li.media-message.you .file-message-caption {
@@ -3220,7 +3220,7 @@
   width: min(320px, 100%);
   min-width: 0;
   gap: 2px;
-  padding: 7px 9px;
+  padding: 4px 5px;
   border: 0;
   border-left: 3px solid rgba(244, 111, 84, 0.72);
   border-radius: 12px;
@@ -3275,7 +3275,7 @@
 .composer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto auto;
-  gap: 12px;
+  gap: 6px;
 }
 
 .file-input {
@@ -3290,8 +3290,8 @@
   display: grid;
   grid-template-columns: 1fr auto;
   align-items: stretch;
-  gap: 8px;
-  padding: 8px;
+  gap: 4px;
+  padding: 4px;
   border: 1px solid rgba(163, 88, 66, 0.14);
   border-radius: 16px;
   background: rgba(244, 111, 84, 0.08);
@@ -3301,7 +3301,7 @@
   display: grid;
   min-width: 0;
   gap: 2px;
-  padding: 0 0 0 10px;
+  padding: 0 0 0 5px;
   border: 0;
   border-left: 3px solid rgba(244, 111, 84, 0.72);
   text-align: left;
@@ -3340,7 +3340,7 @@
   display: grid;
   grid-template-columns: 34px minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
+  gap: 5px;
 }
 
 .composer-edit-icon {
@@ -3413,9 +3413,9 @@
   display: grid;
   grid-template-columns: 1fr auto auto;
   align-items: center;
-  gap: 10px;
+  gap: 5px;
   min-height: 52px;
-  padding: 8px 10px 8px 16px;
+  padding: 4px 5px 4px 8px;
   border: 1px solid rgba(163, 88, 66, 0.18);
   border-radius: 16px;
   color: #6f3a2b;
@@ -3464,7 +3464,7 @@
 .composer input {
   width: 100%;
   min-height: 52px;
-  padding: 0 16px;
+  padding: 0 8px;
   border: 1px solid rgba(163, 88, 66, 0.18);
   border-radius: 16px;
   font: inherit;
@@ -3481,7 +3481,7 @@
 .composer button {
   min-width: 124px;
   min-height: 52px;
-  padding: 0 20px;
+  padding: 0 10px;
   border: 0;
   border-radius: 16px;
   font: inherit;
@@ -4145,12 +4145,12 @@ html[data-theme="dark"] .status {
   .chat-card {
     height: 100svh;
     min-height: 0;
-    padding: 22px 18px;
+    padding: 11px 9px;
     border-radius: 0;
   }
 
   .chat-top-stack {
-    margin: -22px -18px 0;
+    margin: -11px -9px 0;
   }
 
   .status-copy {
