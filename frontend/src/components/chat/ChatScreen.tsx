@@ -1098,6 +1098,7 @@ export function ChatScreen({
           <MemberProfileDialog
             member={selectedChatMember}
             currentUserId={user.userId}
+            showManagement={activeChat?.type === "group"}
             mode={selectedMemberManagementMode}
             adminPermissionsLoading={
               adminPermissionsLoadingUserId === selectedChatMember.user_id

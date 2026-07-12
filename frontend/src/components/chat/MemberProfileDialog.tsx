@@ -10,6 +10,7 @@ import type {
 type MemberProfileDialogProps = {
   member: ChatMember;
   currentUserId: number;
+  showManagement: boolean;
   mode: MemberManagementMode;
   adminPermissionsLoading: boolean;
   hasActions: boolean;
@@ -55,6 +56,7 @@ type MemberProfileDialogProps = {
 export function MemberProfileDialog({
   member,
   currentUserId,
+  showManagement,
   mode,
   adminPermissionsLoading,
   hasActions,
@@ -118,47 +120,49 @@ export function MemberProfileDialog({
           <p className="profile-username">@{member.username}</p>
           {member.bio ? <p className="profile-bio">{member.bio}</p> : null}
           <span className="profile-status">{member.status}</span>
-          <MemberManagementPanel
-            member={member}
-            currentUserId={currentUserId}
-            mode={mode}
-            adminPermissionsLoading={adminPermissionsLoading}
-            hasActions={hasActions}
-            canPromoteMember={canPromoteMember}
-            canEditAdmin={canEditAdmin}
-            canEditMemberPermissions={canEditMemberPermissions}
-            canRemoveMember={canRemoveMember}
-            memberPermissions={memberPermissions}
-            memberPermissionsDraft={memberPermissionsDraft}
-            selectedMemberPermissionsDraft={selectedMemberPermissionsDraft}
-            selectedMemberPermissionsSaving={selectedMemberPermissionsSaving}
-            selectedMemberPermissionsError={selectedMemberPermissionsError}
-            selectedMemberPermissionsMessage={selectedMemberPermissionsMessage}
-            selectedAdminPermissions={selectedAdminPermissions}
-            selectedMemberPermissionIsSaving={selectedMemberPermissionIsSaving}
-            selectedMemberRemovalIsSaving={selectedMemberRemovalIsSaving}
-            adminPermissionsError={adminPermissionsError}
-            adminPermissionsMessage={adminPermissionsMessage}
-            memberRemovalError={memberRemovalError}
-            memberRemovalMessage={memberRemovalMessage}
-            memberPermissionIsLockedByDefault={memberPermissionIsLockedByDefault}
-            adminPermissionIsForcedByMemberDefault={
-              adminPermissionIsForcedByMemberDefault
-            }
-            onModeChange={onModeChange}
-            onSelectedMemberBooleanPermissionChange={
-              onSelectedMemberBooleanPermissionChange
-            }
-            onSelectedMemberNumericPermissionChange={
-              onSelectedMemberNumericPermissionChange
-            }
-            onAdminPermissionChange={onAdminPermissionChange}
-            onSaveSelectedMemberPermissions={onSaveSelectedMemberPermissions}
-            onPromoteSelectedMember={onPromoteSelectedMember}
-            onSaveSelectedAdminPermissions={onSaveSelectedAdminPermissions}
-            onDismissSelectedAdmin={onDismissSelectedAdmin}
-            onStartRemoveMember={onStartRemoveMember}
-          />
+          {showManagement ? (
+            <MemberManagementPanel
+              member={member}
+              currentUserId={currentUserId}
+              mode={mode}
+              adminPermissionsLoading={adminPermissionsLoading}
+              hasActions={hasActions}
+              canPromoteMember={canPromoteMember}
+              canEditAdmin={canEditAdmin}
+              canEditMemberPermissions={canEditMemberPermissions}
+              canRemoveMember={canRemoveMember}
+              memberPermissions={memberPermissions}
+              memberPermissionsDraft={memberPermissionsDraft}
+              selectedMemberPermissionsDraft={selectedMemberPermissionsDraft}
+              selectedMemberPermissionsSaving={selectedMemberPermissionsSaving}
+              selectedMemberPermissionsError={selectedMemberPermissionsError}
+              selectedMemberPermissionsMessage={selectedMemberPermissionsMessage}
+              selectedAdminPermissions={selectedAdminPermissions}
+              selectedMemberPermissionIsSaving={selectedMemberPermissionIsSaving}
+              selectedMemberRemovalIsSaving={selectedMemberRemovalIsSaving}
+              adminPermissionsError={adminPermissionsError}
+              adminPermissionsMessage={adminPermissionsMessage}
+              memberRemovalError={memberRemovalError}
+              memberRemovalMessage={memberRemovalMessage}
+              memberPermissionIsLockedByDefault={memberPermissionIsLockedByDefault}
+              adminPermissionIsForcedByMemberDefault={
+                adminPermissionIsForcedByMemberDefault
+              }
+              onModeChange={onModeChange}
+              onSelectedMemberBooleanPermissionChange={
+                onSelectedMemberBooleanPermissionChange
+              }
+              onSelectedMemberNumericPermissionChange={
+                onSelectedMemberNumericPermissionChange
+              }
+              onAdminPermissionChange={onAdminPermissionChange}
+              onSaveSelectedMemberPermissions={onSaveSelectedMemberPermissions}
+              onPromoteSelectedMember={onPromoteSelectedMember}
+              onSaveSelectedAdminPermissions={onSaveSelectedAdminPermissions}
+              onDismissSelectedAdmin={onDismissSelectedAdmin}
+              onStartRemoveMember={onStartRemoveMember}
+            />
+          ) : null}
         </div>
       </article>
     </div>
