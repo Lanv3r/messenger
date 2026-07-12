@@ -2638,7 +2638,7 @@
 #messages li.media-message.you .message-copy {
   position: relative;
   justify-self: start;
-  width: min(340px, 100%);
+  width: min(475px, 100%);
   padding: 0;
   border: 0;
   background: transparent;
@@ -3021,7 +3021,8 @@
 
 .file-message {
   display: grid;
-  width: min(340px, 100%);
+  width: fit-content;
+  max-width: min(475px, 100%);
   gap: 8px;
 }
 
@@ -3069,10 +3070,12 @@
 
 .file-message img,
 .file-message video {
-  width: 100%;
-  max-height: 300px;
+  width: auto;
+  max-width: 100%;
+  height: auto;
+  max-height: 475px;
   border-radius: 14px;
-  object-fit: cover;
+  object-fit: contain;
   background: rgba(17, 24, 39, 0.08);
 }
 
@@ -3080,7 +3083,7 @@
 .file-message-attachments.multiple video {
   height: 100%;
   max-height: none;
-  object-fit: cover;
+  object-fit: contain;
 }
 
 .file-message audio {
