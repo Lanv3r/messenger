@@ -23,6 +23,11 @@ export function useProfileEditor({
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const hasUnsavedChanges =
+    firstName !== user.firstName ||
+    lastName !== (user.lastName ?? "") ||
+    bio !== (user.bio ?? "") ||
+    avatarFile !== null;
 
   useEffect(() => {
     if (editing) {
@@ -65,13 +70,11 @@ export function useProfileEditor({
     setMessage(null);
   };
 
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-
+  const saveProfile = async () => {
     if (!firstName.trim()) {
       setMessage(null);
       setError("First name is required.");
-      return;
+      return false;
     }
 
     setSaving(true);
@@ -93,9 +96,13 @@ export function useProfileEditor({
       });
 
       onUserUpdated(updatedUser);
+      setFirstName(updatedUser.first_name);
+      setLastName(updatedUser.last_name ?? "");
+      setBio(updatedUser.bio ?? "");
       setAvatarFile(null);
       setAvatarPreviewUrl(updatedUser.avatar_url ?? "/favicon.svg");
       setMessage("Profile updated.");
+      return true;
     } catch (requestError) {
       const requestMessage =
         requestError instanceof Error
@@ -104,13 +111,19 @@ export function useProfileEditor({
 
       if (requestMessage === "Could not validate credentials") {
         onSessionExpired();
-        return;
+        return false;
       }
 
       setError(requestMessage);
+      return false;
     } finally {
       setSaving(false);
     }
+  };
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    await saveProfile();
   };
 
   return {
@@ -122,6 +135,7 @@ export function useProfileEditor({
     error,
     message,
     saving,
+    hasUnsavedChanges,
     setFirstName,
     setLastName,
     setBio,
@@ -129,6 +143,7 @@ export function useProfileEditor({
     toggleEditing,
     openEditing,
     closeEditing,
+    saveProfile,
     submit,
   };
 }

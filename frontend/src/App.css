@@ -1728,9 +1728,47 @@ html[data-theme="dark"] {
 
 .profile-editor-form label span {
   justify-self: end;
+  display: inline-block;
   font-size: 12px;
   font-weight: 500;
   color: #6b7280;
+  transform-origin: center;
+}
+
+.profile-editor-form label span.limit-reached {
+  font-weight: 800;
+  color: #b42318;
+}
+
+.profile-editor-form label span.limit-pulse {
+  animation: profile-bio-limit-pulse 360ms ease;
+}
+
+@keyframes profile-bio-limit-pulse {
+  0% {
+    transform: scale(1);
+  }
+
+  35% {
+    transform: scale(1.22);
+  }
+
+  72% {
+    transform: scale(0.96);
+  }
+
+  100% {
+    transform: scale(1);
+  }
+}
+
+.profile-editor-save {
+  color: var(--accent-on-fill);
+  background: var(--accent-fill);
+}
+
+.profile-editor-save:hover:not(:disabled) {
+  background: var(--accent-fill-hover);
 }
 
 .avatar-upload-field {
@@ -3639,6 +3677,10 @@ html[data-theme="dark"] .profile-editor-form label span,
 html[data-theme="dark"] .avatar-upload-help,
 html[data-theme="dark"] .avatar-upload-dialog span {
   color: #c8b6a7;
+}
+
+html[data-theme="dark"] .profile-editor-form label span.limit-reached {
+  color: #ff6b5f;
 }
 
 html[data-theme="dark"] .sidebar-section-label,

@@ -95,6 +95,7 @@ export function ChatScreen({
   const [chatError, setChatError] = useState<string | null>(
     null,
   );
+  const [profileCloseConfirmOpen, setProfileCloseConfirmOpen] = useState(false);
   const [messageSearchOpen, setMessageSearchOpen] = useState(false);
   const [imageViewer, setImageViewer] = useState<{
     src: string;
@@ -142,18 +143,46 @@ export function ChatScreen({
     error: profileSaveError,
     message: profileSaveMessage,
     saving: profileSaving,
+    hasUnsavedChanges: profileHasUnsavedChanges,
     setFirstName: setProfileFirstName,
     setLastName: setProfileLastName,
     setBio: setProfileBio,
     setAvatarFile: setProfileAvatarFile,
     openEditing: openProfileEditor,
     closeEditing: closeProfileEditor,
+    saveProfile,
     submit: handleProfileUpdate,
   } = useProfileEditor({
     user,
     onUserUpdated,
     onSessionExpired,
   });
+  const requestCloseProfileEditor = () => {
+    if (profileHasUnsavedChanges) {
+      setProfileCloseConfirmOpen(true);
+      return;
+    }
+
+    closeProfileEditor();
+  };
+  const cancelProfileCloseConfirm = () => {
+    setProfileCloseConfirmOpen(false);
+  };
+  const discardProfileChanges = () => {
+    setProfileCloseConfirmOpen(false);
+    closeProfileEditor();
+  };
+  const saveAndCloseProfileEditor = async () => {
+    const saved = await saveProfile();
+
+    if (!saved) {
+      setProfileCloseConfirmOpen(false);
+      return;
+    }
+
+    setProfileCloseConfirmOpen(false);
+    closeProfileEditor();
+  };
   const {
     query: messageSearchQuery,
     results: messageSearchResults,
@@ -1353,9 +1382,56 @@ export function ChatScreen({
             onLastNameChange={setProfileLastName}
             onBioChange={setProfileBio}
             onAvatarFileChange={setProfileAvatarFile}
-            onClose={closeProfileEditor}
+            onClose={requestCloseProfileEditor}
             onSubmit={handleProfileUpdate}
           />
+        </div>
+      ) : null}
+      {profileCloseConfirmOpen ? (
+        <div
+          className="message-action-backdrop"
+          role="presentation"
+          onClick={cancelProfileCloseConfirm}
+        >
+          <section
+            className="message-action-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Unsaved profile changes"
+            onClick={(event) => {
+              event.stopPropagation();
+            }}
+          >
+            <div className="message-action-dialog-copy">
+              <strong>There are unsaved changes.</strong>
+              <p>Do you want to save them before exiting?</p>
+            </div>
+            <div className="message-action-dialog-actions">
+              <button
+                type="button"
+                disabled={profileSaving}
+                onClick={cancelProfileCloseConfirm}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={profileSaving}
+                onClick={discardProfileChanges}
+              >
+                Don&apos;t save
+              </button>
+              <button
+                type="button"
+                disabled={profileSaving}
+                onClick={() => {
+                  void saveAndCloseProfileEditor();
+                }}
+              >
+                {profileSaving ? "Saving..." : "Save"}
+              </button>
+            </div>
+          </section>
         </div>
       ) : null}
     </main>

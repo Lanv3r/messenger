@@ -13,6 +13,18 @@ from app.services.users import is_valid_username
 router = APIRouter(tags=["users"])
 
 
+def user_profile_update_from_form(
+    first_name: Annotated[str | None, Form()] = None,
+    last_name: Annotated[str | None, Form()] = None,
+    bio: Annotated[str | None, Form()] = None,
+) -> UserProfileUpdate:
+    return UserProfileUpdate(
+        first_name=first_name,
+        last_name=last_name,
+        bio=bio,
+    )
+
+
 @router.get("/users/username-availability")
 def check_username_availability(username: str, session: SessionDep):
     normalized_username = username.strip().lower()
@@ -77,7 +89,7 @@ async def read_users_me(
 async def update_me(
     session: SessionDep,
     current_user: Annotated[User, Depends(get_current_user)],
-    payload: Annotated[UserProfileUpdate, Form()],
+    payload: Annotated[UserProfileUpdate, Depends(user_profile_update_from_form)],
     avatar: Annotated[UploadFile | None, File()] = None,
 ):
     update_data: dict[str, str | None] = {}

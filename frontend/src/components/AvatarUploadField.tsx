@@ -93,7 +93,7 @@ export function AvatarUploadField({
               Cancel
             </Button>
             <Button type="button" onClick={acceptPreview}>
-              Save
+              Yes
             </Button>
           </div>
         </section>

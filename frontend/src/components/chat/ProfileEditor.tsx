@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { X } from "lucide-react";
 
 import { AvatarUploadField } from "@/components/AvatarUploadField";
@@ -20,6 +22,37 @@ type ProfileEditorProps = {
   onSubmit: (event: React.FormEvent) => void;
 };
 
+const BIO_MAX_LENGTH = 70;
+const BIO_LIMIT_IGNORED_KEYS = new Set([
+  "Alt",
+  "ArrowDown",
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "Backspace",
+  "CapsLock",
+  "Control",
+  "Delete",
+  "End",
+  "Escape",
+  "Home",
+  "Meta",
+  "PageDown",
+  "PageUp",
+  "Shift",
+  "Tab",
+]);
+
+function isBioLimitInputAttempt(
+  event: React.KeyboardEvent<HTMLTextAreaElement>,
+) {
+  if (event.metaKey || event.ctrlKey || BIO_LIMIT_IGNORED_KEYS.has(event.key)) {
+    return false;
+  }
+
+  return event.key.length === 1 || event.key === "Enter";
+}
+
 export function ProfileEditor({
   username,
   firstName,
@@ -36,6 +69,13 @@ export function ProfileEditor({
   onClose,
   onSubmit,
 }: ProfileEditorProps) {
+  const [bioLimitPulseKey, setBioLimitPulseKey] = useState(0);
+  const bioLimitReached = bio.length >= BIO_MAX_LENGTH;
+
+  function pulseBioLimit() {
+    setBioLimitPulseKey((current) => current + 1);
+  }
+
   return (
     <section
       className="profile-editor"
@@ -87,16 +127,39 @@ export function ProfileEditor({
           Bio
           <textarea
             value={bio}
-            maxLength={70}
+            maxLength={BIO_MAX_LENGTH}
             rows={3}
             onChange={(event) => onBioChange(event.target.value)}
+            onKeyDown={(event) => {
+              if (bioLimitReached && isBioLimitInputAttempt(event)) {
+                pulseBioLimit();
+              }
+            }}
+            onPaste={(event) => {
+              if (
+                bioLimitReached &&
+                event.clipboardData.getData("text").length > 0
+              ) {
+                pulseBioLimit();
+              }
+            }}
           />
-          <span>{bio.length}/70</span>
+          <span
+            key={bioLimitPulseKey}
+            className={[
+              bioLimitReached ? "limit-reached" : "",
+              bioLimitPulseKey > 0 ? "limit-pulse" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+          >
+            {bio.length}/{BIO_MAX_LENGTH}
+          </span>
         </label>
         {error ? <p className="profile-error">{error}</p> : null}
         {message ? <p className="profile-success">{message}</p> : null}
-        <Button type="submit" disabled={saving}>
-          {saving ? "Saving..." : "Save profile"}
+        <Button type="submit" className="profile-editor-save" disabled={saving}>
+          {saving ? "Saving..." : "Save"}
         </Button>
       </form>
     </section>
