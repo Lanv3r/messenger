@@ -67,21 +67,25 @@ function areChatIdListsEqual(first: number[], second: number[]) {
   );
 }
 
-function swapChatIds(
+function moveChatIdToIndex(
   chatIds: number[],
   draggedChatId: number,
-  targetChatId: number,
+  targetIndex: number,
 ) {
   const draggedIndex = chatIds.indexOf(draggedChatId);
-  const targetIndex = chatIds.indexOf(targetChatId);
 
-  if (draggedIndex === -1 || targetIndex === -1 || draggedIndex === targetIndex) {
+  if (
+    draggedIndex === -1 ||
+    targetIndex < 0 ||
+    targetIndex >= chatIds.length ||
+    draggedIndex === targetIndex
+  ) {
     return chatIds;
   }
 
   const nextChatIds = [...chatIds];
-  nextChatIds[draggedIndex] = targetChatId;
-  nextChatIds[targetIndex] = draggedChatId;
+  nextChatIds.splice(draggedIndex, 1);
+  nextChatIds.splice(targetIndex, 0, draggedChatId);
   return nextChatIds;
 }
 
@@ -90,11 +94,37 @@ type DragPreviewTarget = {
   translateY: number;
 };
 
+type DragPreviewState = {
+  order: number[];
+  translations: DragPreviewTarget[];
+};
+
 type PendingPinnedDrag = {
   chatId: number;
   pointerId: number;
   startClientY: number;
 };
+
+function areDragPreviewStatesEqual(
+  first: DragPreviewState | null,
+  second: DragPreviewState | null,
+) {
+  if (!first || !second) {
+    return first === second;
+  }
+
+  return (
+    areChatIdListsEqual(first.order, second.order) &&
+    first.translations.length === second.translations.length &&
+    first.translations.every((translation, index) => {
+      const otherTranslation = second.translations[index];
+      return (
+        translation.chatId === otherTranslation.chatId &&
+        translation.translateY === otherTranslation.translateY
+      );
+    })
+  );
+}
 
 export function ChatSidebar({
   profileQuery,
@@ -119,17 +149,19 @@ export function ChatSidebar({
   const [draggedPinnedChatId, setDraggedPinnedChatId] = useState<number | null>(
     null,
   );
-  const [dragPreviewTarget, setDragPreviewTarget] =
-    useState<DragPreviewTarget | null>(null);
+  const [dragPreviewState, setDragPreviewState] =
+    useState<DragPreviewState | null>(null);
   const [draggedChatTranslateY, setDraggedChatTranslateY] = useState(0);
+  const [isPinnedDropSettling, setIsPinnedDropSettling] = useState(false);
   const chatListRef = useRef<HTMLDivElement | null>(null);
   const chatRowRefs = useRef(new Map<number, HTMLDivElement>());
   const dragStartRowRects = useRef(new Map<number, DOMRect>());
   const dragStartPinnedOrder = useRef<number[]>([]);
   const dragPointerOffsetY = useRef(0);
   const draggedPinnedChatIdRef = useRef<number | null>(null);
-  const dragPreviewTargetRef = useRef<DragPreviewTarget | null>(null);
+  const dragPreviewStateRef = useRef<DragPreviewState | null>(null);
   const pendingPinnedDrag = useRef<PendingPinnedDrag | null>(null);
+  const dropSettlingAnimationFrame = useRef<number | null>(null);
   const suppressNextChatClick = useRef(false);
 
   function captureDragStartRowRects() {
@@ -141,9 +173,9 @@ export function ChatSidebar({
     );
   }
 
-  function setPinnedDragPreviewTarget(nextTarget: DragPreviewTarget | null) {
-    dragPreviewTargetRef.current = nextTarget;
-    setDragPreviewTarget(nextTarget);
+  function setPinnedDragPreviewState(nextState: DragPreviewState | null) {
+    dragPreviewStateRef.current = nextState;
+    setDragPreviewState(nextState);
   }
 
   useEffect(() => {
@@ -172,21 +204,42 @@ export function ChatSidebar({
     };
   }, [chatMenu]);
 
+  useEffect(() => {
+    return () => {
+      if (dropSettlingAnimationFrame.current !== null) {
+        window.cancelAnimationFrame(dropSettlingAnimationFrame.current);
+      }
+    };
+  }, []);
+
+  function settlePinnedDropAfterPaint() {
+    if (dropSettlingAnimationFrame.current !== null) {
+      window.cancelAnimationFrame(dropSettlingAnimationFrame.current);
+    }
+
+    dropSettlingAnimationFrame.current = window.requestAnimationFrame(() => {
+      dropSettlingAnimationFrame.current = window.requestAnimationFrame(() => {
+        dropSettlingAnimationFrame.current = null;
+        setIsPinnedDropSettling(false);
+      });
+    });
+  }
+
   function updatePinnedChatSwapPreview(draggedChatId: number, draggedTop: number) {
     const pinnedOrder = dragStartPinnedOrder.current;
     const draggedIndex = pinnedOrder.indexOf(draggedChatId);
     const draggedRect = dragStartRowRects.current.get(draggedChatId);
 
     if (draggedIndex === -1 || !draggedRect) {
-      setPinnedDragPreviewTarget(null);
+      setPinnedDragPreviewState(null);
       return;
     }
 
     const draggedBottom = draggedTop + draggedRect.height;
-    let nextPreviewTarget: DragPreviewTarget | null = null;
+    let targetIndex: number | null = null;
     let largestOverlap = 0;
 
-    for (const chatId of pinnedOrder) {
+    for (const [index, chatId] of pinnedOrder.entries()) {
       if (chatId === draggedChatId) {
         continue;
       }
@@ -205,42 +258,71 @@ export function ChatSidebar({
 
       if (overlap >= targetRect.height / 2 && overlap > largestOverlap) {
         largestOverlap = overlap;
-        nextPreviewTarget = {
-          chatId,
-          translateY: draggedRect.top - targetRect.top,
-        };
+        targetIndex = index;
       }
     }
 
-    const current = dragPreviewTargetRef.current;
-
-    if (
-      current?.chatId === nextPreviewTarget?.chatId &&
-      current?.translateY === nextPreviewTarget?.translateY
-    ) {
+    if (targetIndex === null) {
+      setPinnedDragPreviewState(null);
       return;
     }
 
-    setPinnedDragPreviewTarget(nextPreviewTarget);
+    const nextOrder = moveChatIdToIndex(pinnedOrder, draggedChatId, targetIndex);
+    const translations = pinnedOrder.flatMap((chatId, originalIndex) => {
+      if (chatId === draggedChatId) {
+        return [];
+      }
+
+      const nextIndex = nextOrder.indexOf(chatId);
+
+      if (nextIndex === -1 || nextIndex === originalIndex) {
+        return [];
+      }
+
+      const originalRect = dragStartRowRects.current.get(chatId);
+      const targetSlotChatId = pinnedOrder[nextIndex];
+      const targetSlotRect = dragStartRowRects.current.get(targetSlotChatId);
+
+      if (!originalRect || !targetSlotRect) {
+        return [];
+      }
+
+      return [
+        {
+          chatId,
+          translateY: targetSlotRect.top - originalRect.top,
+        },
+      ];
+    });
+
+    const nextPreviewState: DragPreviewState = {
+      order: nextOrder,
+      translations,
+    };
+    const current = dragPreviewStateRef.current;
+
+    if (areDragPreviewStatesEqual(current, nextPreviewState)) {
+      return;
+    }
+
+    setPinnedDragPreviewState(nextPreviewState);
   }
 
-  function commitPinnedChatOrder() {
-    const previewTarget = dragPreviewTargetRef.current;
+  function getPinnedChatOrderToCommit() {
+    const previewState = dragPreviewStateRef.current;
     const draggedChatId = draggedPinnedChatIdRef.current;
 
-    if (!previewTarget || draggedChatId === null) {
-      return;
+    if (!previewState || draggedChatId === null) {
+      return null;
     }
 
-    const nextPinnedOrder = swapChatIds(
-      dragStartPinnedOrder.current,
-      draggedChatId,
-      previewTarget.chatId,
-    );
+    const nextPinnedOrder = previewState.order;
 
-    if (!areChatIdListsEqual(dragStartPinnedOrder.current, nextPinnedOrder)) {
-      onReorderPinnedChats(nextPinnedOrder);
+    if (areChatIdListsEqual(dragStartPinnedOrder.current, nextPinnedOrder)) {
+      return null;
     }
+
+    return nextPinnedOrder;
   }
 
   function startPinnedPointerDrag(chatId: number, pointerY: number) {
@@ -277,18 +359,31 @@ export function ChatSidebar({
   }
 
   function finishPinnedPointerDrag() {
+    const nextPinnedOrder =
+      draggedPinnedChatIdRef.current !== null
+        ? getPinnedChatOrderToCommit()
+        : null;
+
     if (draggedPinnedChatIdRef.current !== null) {
-      commitPinnedChatOrder();
       suppressNextChatClick.current = true;
     }
 
+    if (nextPinnedOrder) {
+      setIsPinnedDropSettling(true);
+    }
+
     clearPinnedDragState();
+
+    if (nextPinnedOrder) {
+      onReorderPinnedChats(nextPinnedOrder);
+      settlePinnedDropAfterPaint();
+    }
   }
 
   function clearPinnedDragState() {
     draggedPinnedChatIdRef.current = null;
     setDraggedPinnedChatId(null);
-    setPinnedDragPreviewTarget(null);
+    setPinnedDragPreviewState(null);
     setDraggedChatTranslateY(0);
     dragStartPinnedOrder.current = [];
     dragStartRowRects.current = new Map();
@@ -382,7 +477,13 @@ export function ChatSidebar({
             </button>
           </div>
           <div
-            className="chat-list subtle-scrollbar"
+            className={[
+              "chat-list",
+              "subtle-scrollbar",
+              isPinnedDropSettling ? "pinned-drop-settling" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
             ref={chatListRef}
             onScroll={keepSubtleScrollbarVisible}
           >
@@ -390,6 +491,9 @@ export function ChatSidebar({
               const sentAt = formatChatTime(chat.last_message_created_at);
               const unreadCount =
                 chat.unread_count > 99 ? "99+" : chat.unread_count;
+              const previewTranslation = dragPreviewState?.translations.find(
+                (translation) => translation.chatId === chat.id,
+              );
 
           return (
             <div
@@ -415,9 +519,9 @@ export function ChatSidebar({
                       transform: `translateY(${draggedChatTranslateY}px)`,
                       zIndex: 2,
                     }
-                  : dragPreviewTarget?.chatId === chat.id
+                  : previewTranslation
                   ? {
-                      transform: `translateY(${dragPreviewTarget.translateY}px)`,
+                      transform: `translateY(${previewTranslation.translateY}px)`,
                     }
                   : undefined
               }

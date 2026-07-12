@@ -1256,6 +1256,10 @@ html[data-theme="dark"] {
     opacity 160ms ease;
 }
 
+.chat-list.pinned-drop-settling .chat-list-item {
+  transition: none;
+}
+
 .chat-list-item:hover {
   transform: none;
   background: rgba(255, 255, 255, 0.22);
