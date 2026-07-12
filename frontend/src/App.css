@@ -1,3 +1,25 @@
+:root {
+  --accent-text: #ff9d84;
+  --accent-fill: #ff9d84;
+  --accent-fill-hover: #f5866e;
+  --accent-soft: rgba(255, 157, 132, 0.18);
+  --accent-soft-hover: rgba(255, 157, 132, 0.28);
+  --accent-focus: rgba(255, 157, 132, 0.36);
+  --accent-on-fill: #3a1c15;
+  --accent-shadow: rgba(255, 157, 132, 0.22);
+}
+
+html[data-theme="dark"] {
+  --accent-text: #ff9d84;
+  --accent-fill: #ff9d84;
+  --accent-fill-hover: #ffb19d;
+  --accent-soft: rgba(255, 157, 132, 0.14);
+  --accent-soft-hover: rgba(255, 157, 132, 0.24);
+  --accent-focus: rgba(255, 157, 132, 0.34);
+  --accent-on-fill: #24100c;
+  --accent-shadow: rgba(0, 0, 0, 0.22);
+}
+
 .chat-shell {
   height: 100svh;
   display: grid;
@@ -133,8 +155,8 @@
 
 .chat-header-search-button:hover:not(:disabled),
 .chat-header-search-button.active {
-  color: #d64c2f;
-  background: rgba(244, 111, 84, 0.12);
+  color: var(--accent-text);
+  background: var(--accent-soft);
   transform: translateY(-50%);
 }
 
@@ -257,7 +279,7 @@
   font-size: 20px;
   line-height: 1;
   font-weight: 800;
-  color: #b45b43;
+  color: var(--accent-text);
   background: transparent;
   cursor: pointer;
 }
@@ -293,7 +315,7 @@
   font-size: 22px;
   line-height: 1;
   font-weight: 800;
-  color: #b45b43;
+  color: var(--accent-text);
   background: transparent;
   cursor: pointer;
 }
@@ -365,7 +387,7 @@
   font-size: 20px;
   font-weight: 800;
   line-height: 1;
-  color: #b45b43;
+  color: var(--accent-text);
   background: transparent;
   cursor: pointer;
   transition:
@@ -375,7 +397,7 @@
 
 .chat-members-heading button:hover {
   transform: translateY(-1px);
-  color: #d64c2f;
+  color: var(--accent-fill-hover);
 }
 
 .message-action-backdrop {
@@ -467,8 +489,8 @@
 }
 
 .image-viewer-context-menu button:hover {
-  color: #ff9d84;
-  background: rgba(244, 111, 84, 0.14);
+  color: var(--accent-text);
+  background: var(--accent-soft);
 }
 
 .message-action-dialog-copy {
@@ -497,7 +519,7 @@
   align-items: center;
   gap: 10px;
   padding: 9px 10px;
-  border: 1px solid rgba(244, 111, 84, 0.14);
+  border: 1px solid var(--accent-soft);
   border-radius: 13px;
   font-size: 13px;
   font-weight: 800;
@@ -510,7 +532,7 @@
 .message-action-checkbox input {
   width: 18px;
   height: 18px;
-  accent-color: #f46f54;
+  accent-color: var(--accent-fill);
   cursor: pointer;
 }
 
@@ -530,8 +552,8 @@
   font: inherit;
   font-size: 13px;
   font-weight: 850;
-  color: #9a4f36;
-  background: rgba(244, 111, 84, 0.14);
+  color: var(--accent-text);
+  background: var(--accent-soft);
   cursor: pointer;
   transition:
     transform 150ms ease,
@@ -540,18 +562,18 @@
 }
 
 .message-action-dialog-actions button:hover {
-  background: rgba(244, 111, 84, 0.22);
+  background: var(--accent-soft-hover);
   transform: translateY(-1px);
 }
 
 .message-action-dialog-actions button:last-child:not(.danger) {
-  color: #fff;
-  background: linear-gradient(135deg, #f46f54, #d64c2f);
-  box-shadow: 0 12px 28px rgba(214, 76, 47, 0.24);
+  color: var(--accent-on-fill);
+  background: var(--accent-fill);
+  box-shadow: 0 12px 28px var(--accent-shadow);
 }
 
 .message-action-dialog-actions button:last-child:not(.danger):hover {
-  background: linear-gradient(135deg, #ff7d62, #d64c2f);
+  background: var(--accent-fill-hover);
 }
 
 .message-action-dialog-actions button.danger {
@@ -618,8 +640,8 @@
   height: 34px;
   border: 0;
   border-radius: 999px;
-  color: #9a4f36;
-  background: rgba(244, 111, 84, 0.12);
+  color: var(--accent-text);
+  background: var(--accent-soft);
   font: inherit;
   font-size: 20px;
   font-weight: 800;
@@ -694,8 +716,8 @@
   height: 42px;
   place-items: center;
   border-radius: 14px;
-  color: #9a4f36;
-  background: rgba(244, 111, 84, 0.16);
+  color: var(--accent-text);
+  background: var(--accent-soft);
 }
 
 .attachment-preview-item > button {
@@ -895,7 +917,7 @@
   font: inherit;
   font-size: 12px;
   font-weight: 800;
-  color: #b45b43;
+  color: var(--accent-text);
   background: transparent;
   cursor: pointer;
 }
@@ -1098,8 +1120,8 @@
 .account-rail-button:hover,
 .account-rail-avatar-button:hover {
   transform: translateY(-1px);
-  border-color: rgba(244, 111, 84, 0.32);
-  color: #d64c2f;
+  border-color: var(--accent-focus);
+  color: var(--accent-text);
   background: rgba(255, 245, 238, 0.96);
 }
 
@@ -1111,7 +1133,7 @@
 
 .account-rail-avatar-button:hover::after,
 .account-rail-avatar-button:focus-visible::after {
-  border-color: rgba(244, 111, 84, 0.76);
+  border-color: var(--accent-fill);
 }
 
 .account-rail-button.theme-toggle-button {
@@ -1157,8 +1179,8 @@
 
 .theme-toggle-button:hover {
   transform: translateY(-1px);
-  border-color: rgba(244, 111, 84, 0.32);
-  color: #d64c2f;
+  border-color: var(--accent-focus);
+  color: var(--accent-text);
   background: rgba(255, 245, 238, 0.96);
 }
 
@@ -1167,7 +1189,7 @@
   font-weight: 800;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: #b45b43;
+  color: var(--accent-text);
 }
 
 .sidebar-section-header {
@@ -1197,7 +1219,7 @@
 
 .sidebar-add-chat-button:hover {
   transform: translateY(-1px);
-  color: #d64c2f;
+  color: var(--accent-text);
 }
 
 .chat-list {
@@ -1254,7 +1276,7 @@
 }
 
 .chat-list-item.active.pinned.dragging {
-  background: #a9472c;
+  background: var(--accent-fill);
 }
 
 .chat-list-item.pinned.dragging .chat-open-button {
@@ -1331,7 +1353,7 @@
   font-weight: 800;
   line-height: 1;
   color: #fff;
-  background: #f46f54;
+  background: var(--accent-fill);
 }
 
 .chat-open-button strong,
@@ -1360,19 +1382,19 @@
 
 .chat-list-item.active {
   border-color: transparent;
-  background: #a9472c;
+  background: var(--accent-fill);
 }
 
 .chat-list-item.active strong,
 .chat-list-item.active small,
 .chat-list-item.active time,
 .chat-list-item.active .chat-row-pin {
-  color: #fff7ed;
+  color: var(--accent-on-fill);
 }
 
 .chat-list-item.active .unread-badge {
-  color: #a9472c;
-  background: #fff7ed;
+  color: var(--accent-fill);
+  background: var(--accent-on-fill);
 }
 
 .chat-context-menu {
@@ -1404,8 +1426,8 @@
 }
 
 .chat-context-menu button:hover {
-  color: #d64c2f;
-  background: rgba(244, 111, 84, 0.12);
+  color: var(--accent-text);
+  background: var(--accent-soft);
 }
 
 .status {
@@ -1457,8 +1479,8 @@
 }
 
 .profile-search-form input:focus {
-  outline: 2px solid rgba(244, 111, 84, 0.25);
-  border-color: rgba(244, 111, 84, 0.45);
+  outline: 2px solid var(--accent-focus);
+  border-color: var(--accent-text);
 }
 
 .profile-search-prefix {
@@ -1468,7 +1490,7 @@
   z-index: 1;
   font-size: 15px;
   font-weight: 850;
-  color: #b45b43;
+  color: var(--accent-text);
   pointer-events: none;
   transform: translateY(-50%);
 }
@@ -1490,8 +1512,8 @@
 }
 
 .profile-search-clear:hover {
-  color: #d64c2f;
-  background: rgba(244, 111, 84, 0.1);
+  color: var(--accent-text);
+  background: var(--accent-soft);
 }
 
 .profile-search-status {
@@ -1653,8 +1675,8 @@
 
 .profile-editor-close:hover {
   transform: translateY(-1px);
-  border-color: rgba(244, 111, 84, 0.32);
-  color: #d64c2f;
+  border-color: var(--accent-focus);
+  color: var(--accent-text);
   background: rgba(255, 245, 238, 0.95);
 }
 
@@ -1805,8 +1827,8 @@
 
 .avatar-upload-button:hover {
   transform: translateY(-1px);
-  border-color: rgba(244, 111, 84, 0.32);
-  color: #d64c2f;
+  border-color: var(--accent-focus);
+  color: var(--accent-text);
   background: rgba(255, 245, 238, 0.95);
 }
 
@@ -1985,7 +2007,7 @@
   font: inherit;
   font-size: 12px;
   font-weight: 800;
-  color: #b45b43;
+  color: var(--accent-text);
   background: transparent;
   cursor: pointer;
 }
@@ -2007,8 +2029,8 @@
 
 .group-form-close:hover {
   transform: translateY(-1px);
-  border-color: rgba(244, 111, 84, 0.32);
-  color: #d64c2f;
+  border-color: var(--accent-focus);
+  color: var(--accent-text);
   background: rgba(255, 245, 238, 0.95);
 }
 
@@ -2334,13 +2356,13 @@
 .permission-row small {
   font-size: 11px;
   font-weight: 700;
-  color: #b45b43;
+  color: var(--accent-text);
 }
 
 .permission-row input[type="checkbox"] {
   width: 18px;
   height: 18px;
-  accent-color: #f46f54;
+  accent-color: var(--accent-fill);
 }
 
 .permission-row input[type="number"] {
@@ -2375,8 +2397,8 @@
 }
 
 .message-search-form input:focus {
-  outline: 2px solid rgba(244, 111, 84, 0.25);
-  border-color: rgba(244, 111, 84, 0.45);
+  outline: 2px solid var(--accent-focus);
+  border-color: var(--accent-text);
 }
 
 .message-search-close {
@@ -2396,8 +2418,8 @@
 }
 
 .message-search-close:hover {
-  color: #d64c2f;
-  background: rgba(244, 111, 84, 0.1);
+  color: var(--accent-text);
+  background: var(--accent-soft);
 }
 
 .message-search-results {
@@ -2432,8 +2454,8 @@
 
 .message-search-results button:hover,
 .message-search-results button.active {
-  border-color: rgba(244, 111, 84, 0.36);
-  background: rgba(244, 111, 84, 0.1);
+  border-color: var(--accent-focus);
+  background: var(--accent-soft);
 }
 
 .message-search-results button span {
@@ -2496,7 +2518,7 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: #9a4f36;
+  color: var(--accent-text);
   font-size: 12px;
   font-weight: 850;
   line-height: 1.2;
@@ -2544,7 +2566,7 @@
   place-items: center;
   border: 0;
   border-radius: 999px;
-  color: #9a4f36;
+  color: var(--accent-text);
   background: transparent;
   cursor: pointer;
   transition:
@@ -2553,8 +2575,8 @@
 }
 
 .pinned-message-unpin-button:hover {
-  color: #d64c2f;
-  background: rgba(244, 111, 84, 0.12);
+  color: var(--accent-fill-hover);
+  background: var(--accent-soft);
 }
 
 #messages {
@@ -2588,7 +2610,7 @@
 
 #messages li.you {
   margin-right: auto;
-  color: #fff;
+  color: var(--accent-on-fill);
 }
 
 #messages li.server {
@@ -2700,7 +2722,7 @@
 }
 
 .message-link {
-  color: #b8462a;
+  color: var(--accent-fill);
   font-weight: 750;
   text-decoration: underline;
   text-decoration-thickness: 1px;
@@ -2710,15 +2732,15 @@
 }
 
 .message-link:hover {
-  color: #8f321c;
+  color: var(--accent-fill-hover);
 }
 
 #messages li.you .message-link {
-  color: #fff2cc;
+  color: var(--accent-on-fill);
 }
 
 #messages li.you .message-link:hover {
-  color: #ffffff;
+  color: #5f2a1f;
 }
 
 #messages li.message-sequence-first .message-copy {
@@ -2736,7 +2758,7 @@
 
 #messages li.you .message-copy {
   border-color: rgba(255, 255, 255, 0.16);
-  background: linear-gradient(135deg, #f46f54, #d64c2f);
+  background: var(--accent-fill);
   box-shadow: none;
 }
 
@@ -2785,9 +2807,9 @@
 #messages li.media-message.you .file-message-caption {
   justify-self: end;
   border-color: rgba(255, 255, 255, 0.16);
-  color: #fff;
-  background: linear-gradient(135deg, #f46f54, #d64c2f);
-  box-shadow: 0 12px 28px rgba(214, 76, 47, 0.16);
+  color: var(--accent-on-fill);
+  background: var(--accent-fill);
+  box-shadow: 0 12px 28px var(--accent-shadow);
 }
 
 .message-pin-state,
@@ -2805,13 +2827,13 @@
   width: fit-content;
   padding: 3px 7px;
   border-radius: 999px;
-  color: #9a4f36;
-  background: rgba(244, 111, 84, 0.12);
+  color: var(--accent-text);
+  background: var(--accent-soft);
 }
 
 #messages li.you .message-pin-state {
-  color: #ffe8de;
-  background: rgba(255, 255, 255, 0.16);
+  color: var(--accent-on-fill);
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .message-actions {
@@ -2834,18 +2856,18 @@
   font: inherit;
   font-size: 11px;
   font-weight: 800;
-  color: #9a4f36;
-  background: rgba(244, 111, 84, 0.12);
+  color: var(--accent-text);
+  background: var(--accent-soft);
   cursor: pointer;
 }
 
 .message-actions button:hover {
-  background: rgba(244, 111, 84, 0.2);
+  background: var(--accent-soft-hover);
 }
 
 #messages li.you .message-actions button {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.16);
+  color: var(--accent-on-fill);
+  background: rgba(255, 255, 255, 0.22);
 }
 
 #messages li.you .message-actions button:hover {
@@ -2883,7 +2905,7 @@
 
 .message-actions .message-context-menu button:hover,
 #messages li.you .message-actions .message-context-menu button:hover {
-  background: rgba(244, 111, 84, 0.12);
+  background: var(--accent-soft);
 }
 
 .message-edit-form {
@@ -2911,8 +2933,8 @@
 }
 
 .message-edit-form textarea:focus {
-  outline: 2px solid rgba(244, 111, 84, 0.24);
-  border-color: rgba(244, 111, 84, 0.45);
+  outline: 2px solid var(--accent-focus);
+  border-color: var(--accent-text);
 }
 
 #messages li.you .message-edit-form textarea:focus {
@@ -2933,13 +2955,13 @@
   font: inherit;
   font-size: 11px;
   font-weight: 800;
-  color: #9a4f36;
-  background: rgba(244, 111, 84, 0.12);
+  color: var(--accent-text);
+  background: var(--accent-soft);
   cursor: pointer;
 }
 
 .message-edit-actions button:hover {
-  background: rgba(244, 111, 84, 0.2);
+  background: var(--accent-soft-hover);
 }
 
 .message-edit-actions button:disabled {
@@ -2948,8 +2970,8 @@
 }
 
 #messages li.you .message-edit-actions button {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.16);
+  color: var(--accent-on-fill);
+  background: rgba(255, 255, 255, 0.22);
 }
 
 #messages li.you .message-edit-actions button:hover {
@@ -3060,14 +3082,10 @@
   right: 12px;
   bottom: 12px;
   padding: 0;
-  color: #8b5e34;
+  color: inherit;
   background: transparent;
-  opacity: 1;
+  opacity: 0.64;
   pointer-events: auto;
-}
-
-#messages li.media-message.media-with-caption.you .message-meta {
-  color: #fff;
 }
 
 .message-status {
@@ -3258,18 +3276,18 @@
   gap: 2px;
   padding: 4px 5px;
   border: 0;
-  border-left: 3px solid rgba(244, 111, 84, 0.72);
+  border-left: 3px solid var(--accent-fill);
   border-radius: 12px;
   box-sizing: border-box;
   text-align: left;
   font: inherit;
   color: inherit;
-  background: rgba(244, 111, 84, 0.1);
+  background: var(--accent-soft);
   cursor: pointer;
 }
 
 .message-reply-preview:hover {
-  background: rgba(244, 111, 84, 0.16);
+  background: var(--accent-soft-hover);
 }
 
 .message-reply-preview:disabled {
@@ -3330,7 +3348,7 @@
   padding: 4px;
   border: 1px solid rgba(163, 88, 66, 0.14);
   border-radius: 16px;
-  background: rgba(244, 111, 84, 0.08);
+  background: var(--accent-soft);
 }
 
 .composer .composer-reply-main {
@@ -3339,7 +3357,7 @@
   gap: 2px;
   padding: 0 0 0 5px;
   border: 0;
-  border-left: 3px solid rgba(244, 111, 84, 0.72);
+  border-left: 3px solid var(--accent-fill);
   text-align: left;
   font: inherit;
   color: #6f3a2b;
@@ -3368,7 +3386,7 @@
 }
 
 .composer-edit-preview {
-  border-color: rgba(244, 111, 84, 0.24);
+  border-color: var(--accent-focus);
   background: rgba(255, 237, 225, 0.9);
 }
 
@@ -3381,7 +3399,7 @@
 
 .composer-edit-icon {
   justify-self: center;
-  color: #d64c2f;
+  color: var(--accent-text);
 }
 
 .composer-edit-copy {
@@ -3435,13 +3453,13 @@
   font: inherit;
   font-size: 20px;
   font-weight: 700;
-  color: #9a4f36;
-  background: rgba(244, 111, 84, 0.12);
+  color: var(--accent-text);
+  background: var(--accent-soft);
   cursor: pointer;
 }
 
 .composer .composer-reply-cancel:hover {
-  background: rgba(244, 111, 84, 0.2);
+  background: var(--accent-soft-hover);
 }
 
 .voice-recording-panel {
@@ -3477,8 +3495,8 @@
 }
 
 .composer .voice-recording-panel .voice-cancel-button {
-  color: #9a4f36;
-  background: rgba(244, 111, 84, 0.14);
+  color: var(--accent-text);
+  background: var(--accent-soft);
 }
 
 .composer .attachment-button,
@@ -3510,8 +3528,8 @@
 }
 
 .composer input:focus {
-  outline: 2px solid rgba(244, 111, 84, 0.25);
-  border-color: rgba(244, 111, 84, 0.45);
+  outline: 2px solid var(--accent-focus);
+  border-color: var(--accent-text);
 }
 
 .composer button {
@@ -3522,9 +3540,13 @@
   border-radius: 16px;
   font: inherit;
   font-weight: 700;
-  color: #fff;
-  background: linear-gradient(135deg, #f46f54, #d64c2f);
+  color: var(--accent-on-fill);
+  background: var(--accent-fill);
   cursor: pointer;
+}
+
+.composer button:hover:not(:disabled) {
+  background: var(--accent-fill-hover);
 }
 
 .composer button:disabled {
@@ -3539,7 +3561,7 @@
   background: transparent;
   font: inherit;
   font-weight: 700;
-  color: #b45b43;
+  color: var(--accent-text);
   cursor: pointer;
 }
 
@@ -3617,7 +3639,7 @@ html[data-theme="dark"] .avatar-upload-dialog span {
 html[data-theme="dark"] .sidebar-section-label,
 html[data-theme="dark"] .profile-search-prefix,
 html[data-theme="dark"] .retry-button {
-  color: #ff9d84;
+  color: var(--accent-text);
 }
 
 html[data-theme="dark"] .chat-window-header-button,
@@ -3663,7 +3685,7 @@ html[data-theme="dark"] .pinned-messages-bar {
 }
 
 html[data-theme="dark"] .pinned-messages-heading {
-  color: #ff9d84;
+  color: var(--accent-text);
 }
 
 html[data-theme="dark"] .pinned-message-card {
@@ -3682,8 +3704,8 @@ html[data-theme="dark"] .pinned-message-card:hover {
 }
 
 html[data-theme="dark"] .pinned-message-unpin-button:hover {
-  color: #ff9d84;
-  background: rgba(244, 111, 84, 0.12);
+  color: var(--accent-text);
+  background: var(--accent-soft);
 }
 
 html[data-theme="dark"] .message-action-backdrop {
@@ -3723,17 +3745,17 @@ html[data-theme="dark"] .message-action-dialog-actions button {
 }
 
 html[data-theme="dark"] .message-action-dialog-actions button:hover {
-  background: rgba(244, 111, 84, 0.18);
+  background: var(--accent-soft-hover);
 }
 
 html[data-theme="dark"] .message-action-dialog-actions button:last-child:not(.danger) {
-  color: #fff7f0;
-  background: rgba(244, 111, 84, 0.26);
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.22);
+  color: var(--accent-on-fill);
+  background: var(--accent-fill);
+  box-shadow: 0 12px 28px var(--accent-shadow);
 }
 
 html[data-theme="dark"] .message-action-dialog-actions button:last-child:not(.danger):hover {
-  background: rgba(244, 111, 84, 0.34);
+  background: var(--accent-fill-hover);
 }
 
 html[data-theme="dark"] .message-action-dialog-actions button.danger {
@@ -3842,9 +3864,9 @@ html[data-theme="dark"] .account-rail-button:hover,
 html[data-theme="dark"] .account-rail-avatar-button:hover,
 html[data-theme="dark"] .avatar-upload-button:hover,
 html[data-theme="dark"] .profile-editor-close:hover {
-  border-color: rgba(244, 111, 84, 0.36);
-  color: #ff9d84;
-  background: rgba(244, 111, 84, 0.11);
+  border-color: var(--accent-focus);
+  color: var(--accent-text);
+  background: var(--accent-soft);
 }
 
 html[data-theme="dark"] .account-rail-avatar-button:hover {
@@ -3854,7 +3876,7 @@ html[data-theme="dark"] .account-rail-avatar-button:hover {
 
 html[data-theme="dark"] .account-rail-avatar-button:hover::after,
 html[data-theme="dark"] .account-rail-avatar-button:focus-visible::after {
-  border-color: rgba(255, 157, 132, 0.82);
+  border-color: var(--accent-text);
 }
 
 html[data-theme="dark"] .chat-list-item:hover {
@@ -3869,21 +3891,21 @@ html[data-theme="dark"] .chat-list-item.pinned.dragging {
 
 html[data-theme="dark"] .chat-list-item.active {
   border-color: transparent;
-  background: #8f2f1e;
+  background: var(--accent-fill);
 }
 
 html[data-theme="dark"] .chat-list-item.active.pinned.dragging {
-  background: #8f2f1e;
+  background: var(--accent-fill);
 }
 
 html[data-theme="dark"] .chat-list-item.active strong {
-  color: #f7efe7;
+  color: var(--accent-on-fill);
 }
 
 html[data-theme="dark"] .chat-list-item.active small,
 html[data-theme="dark"] .chat-list-item.active time,
 html[data-theme="dark"] .chat-list-item.active .chat-row-pin {
-  color: #ffe7dc;
+  color: var(--accent-on-fill);
 }
 
 html[data-theme="dark"] .chat-row-pin {
@@ -3892,8 +3914,8 @@ html[data-theme="dark"] .chat-row-pin {
 
 html[data-theme="dark"] .profile-search-clear:hover,
 html[data-theme="dark"] .sidebar-add-chat-button:hover {
-  color: #ff9d84;
-  background: rgba(244, 111, 84, 0.12);
+  color: var(--accent-text);
+  background: var(--accent-soft);
 }
 
 html[data-theme="dark"] .chat-context-menu {
@@ -3908,8 +3930,8 @@ html[data-theme="dark"] .chat-context-menu button {
 }
 
 html[data-theme="dark"] .chat-context-menu button:hover {
-  color: #ff9d84;
-  background: rgba(244, 111, 84, 0.14);
+  color: var(--accent-text);
+  background: var(--accent-soft);
 }
 
 html[data-theme="dark"] .profile-search-form input,
@@ -3932,8 +3954,8 @@ html[data-theme="dark"] .profile-search-form input:focus,
 html[data-theme="dark"] .profile-editor-form input:focus,
 html[data-theme="dark"] .profile-editor-form textarea:focus,
 html[data-theme="dark"] .composer input:focus {
-  outline-color: rgba(244, 111, 84, 0.28);
-  border-color: rgba(244, 111, 84, 0.42);
+  outline-color: var(--accent-focus);
+  border-color: var(--accent-text);
 }
 
 html[data-theme="dark"] .voice-recording-panel {
@@ -3949,12 +3971,12 @@ html[data-theme="dark"] .status.online {
 }
 
 html[data-theme="dark"] .composer-edit-preview {
-  border-color: rgba(255, 157, 132, 0.24);
-  background: rgba(244, 111, 84, 0.18);
+  border-color: var(--accent-focus);
+  background: var(--accent-soft);
 }
 
 html[data-theme="dark"] .composer-edit-icon {
-  color: #ff9d84;
+  color: var(--accent-text);
 }
 
 html[data-theme="dark"] .composer-edit-preview .composer-reply-main,
@@ -4001,8 +4023,8 @@ html[data-theme="dark"] .profile-popup-close {
 }
 
 html[data-theme="dark"] .profile-popup-close:hover {
-  color: #ff9d84;
-  background: rgba(244, 111, 84, 0.14);
+  color: var(--accent-text);
+  background: var(--accent-soft);
 }
 
 html[data-theme="dark"] .profile-popup-card > img,
@@ -4059,7 +4081,7 @@ html[data-theme="dark"] .chat-info-nested-header button:hover,
 html[data-theme="dark"] .chat-info-back:hover,
 html[data-theme="dark"] .chat-members-heading button:hover,
 html[data-theme="dark"] .member-editor-header button:hover {
-  color: #ff9d84;
+  color: var(--accent-text);
 }
 
 html[data-theme="dark"] .chat-info-actions button,
@@ -4077,9 +4099,9 @@ html[data-theme="dark"] .chat-members-panel form button:hover:not(:disabled),
 html[data-theme="dark"] .member-management-actions button:hover:not(:disabled),
 html[data-theme="dark"] .member-permissions-actions button:hover:not(:disabled),
 html[data-theme="dark"] .member-rights-section > button:hover:not(:disabled) {
-  border-color: rgba(244, 111, 84, 0.36);
-  color: #ff9d84;
-  background: rgba(244, 111, 84, 0.14);
+  border-color: var(--accent-focus);
+  color: var(--accent-text);
+  background: var(--accent-soft);
 }
 
 html[data-theme="dark"] .chat-member-row,
@@ -4100,7 +4122,7 @@ html[data-theme="dark"] .permission-row {
 }
 
 html[data-theme="dark"] .permission-row small {
-  color: #ff9d84;
+  color: var(--accent-text);
 }
 
 html[data-theme="dark"] .permission-row input[type="number"],
@@ -4133,7 +4155,8 @@ html[data-theme="dark"] .member-rights-section {
 
 html[data-theme="dark"] #messages li.you .message-copy {
   border-color: rgba(255, 255, 255, 0.12);
-  background: linear-gradient(135deg, #f46f54, #b83422);
+  color: var(--accent-on-fill);
+  background: var(--accent-fill);
 }
 
 html[data-theme="dark"] #messages li.media-message .message-copy,
@@ -4171,8 +4194,8 @@ html[data-theme="dark"] .image-viewer-context-menu button {
 html[data-theme="dark"] .message-actions .message-context-menu button:hover,
 html[data-theme="dark"] #messages li.you .message-actions .message-context-menu button:hover,
 html[data-theme="dark"] .image-viewer-context-menu button:hover {
-  color: #ff9d84;
-  background: rgba(244, 111, 84, 0.14);
+  color: var(--accent-text);
+  background: var(--accent-soft);
 }
 
 html[data-theme="dark"] .status {

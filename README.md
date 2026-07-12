@@ -9,6 +9,30 @@ Work-in-progress chat app with a FastAPI/SQLModel backend, Socket.IO realtime up
 - Auth: HttpOnly cookie containing a JWT access token
 - Uploads: local filesystem storage mounted at `/uploads`
 
+## Frontend Color System
+
+The app accent is **muted peach**: `#ff9d84`. It is used for the `@` user-search prefix, the `Chats` sidebar label, selected chats, outgoing message fills, composer buttons, and soft focus/hover accents.
+
+Light theme:
+
+- `--accent-text`: `#ff9d84`
+- `--accent-fill`: `#ff9d84`
+- `--accent-fill-hover`: `#f5866e`
+- `--accent-soft`: `rgba(255, 157, 132, 0.18)`
+- `--accent-soft-hover`: `rgba(255, 157, 132, 0.28)`
+- `--accent-focus`: `rgba(255, 157, 132, 0.36)`
+- `--accent-on-fill`: `#3a1c15`
+
+Dark theme:
+
+- `--accent-text`: `#ff9d84`
+- `--accent-fill`: `#ff9d84`
+- `--accent-fill-hover`: `#ffb19d`
+- `--accent-soft`: `rgba(255, 157, 132, 0.14)`
+- `--accent-soft-hover`: `rgba(255, 157, 132, 0.24)`
+- `--accent-focus`: `rgba(255, 157, 132, 0.34)`
+- `--accent-on-fill`: `#24100c`
+
 ## API Overview
 
 Auth:
