@@ -2534,6 +2534,7 @@ html[data-theme="dark"] {
 .message-search-results button small {
   display: -webkit-box;
   overflow: hidden;
+  line-clamp: 2;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   font-size: 12px;
@@ -2765,6 +2766,7 @@ html[data-theme="dark"] {
 .message-copy > span {
   min-width: 0;
   max-width: 100%;
+  white-space: pre-wrap;
 }
 
 .message-link {
@@ -2846,6 +2848,8 @@ html[data-theme="dark"] {
   color: #1f2937;
   background: #fff5ef;
   box-shadow: 0 10px 24px rgba(106, 58, 45, 0.08);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 #messages li.media-message.media-with-caption .file-message-caption {
@@ -3378,8 +3382,12 @@ html[data-theme="dark"] {
 .composer {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: end;
   gap: 6px;
-  margin-top: 10px;
+  margin: 8px -14px -14px;
+  padding: 8px 14px 14px;
+  background: rgba(255, 255, 255, 0.38);
+  box-shadow: inset 0 1px 0 rgba(163, 88, 66, 0.08);
 }
 
 .file-input {
@@ -3520,8 +3528,8 @@ html[data-theme="dark"] {
   gap: 5px;
   min-height: 52px;
   padding: 4px 5px 4px 8px;
-  border: 1px solid rgba(163, 88, 66, 0.18);
-  border-radius: 16px;
+  border: 0;
+  border-radius: 0;
   color: #6f3a2b;
   background: #fff;
   box-sizing: border-box;
@@ -3556,6 +3564,7 @@ html[data-theme="dark"] {
   padding: 0;
   display: inline-grid;
   place-items: center;
+  background: transparent;
 }
 
 .composer .attachment-button svg,
@@ -3565,21 +3574,29 @@ html[data-theme="dark"] {
   stroke-width: 2.4;
 }
 
-.composer input {
+.composer textarea {
   width: 100%;
   min-height: 52px;
-  padding: 0 8px;
-  border: 1px solid rgba(163, 88, 66, 0.18);
-  border-radius: 16px;
+  max-height: calc((1em * 1.35 * 13) + 30px);
+  padding: 15px 8px;
+  border: 0;
+  border-radius: 0;
   font: inherit;
+  line-height: 1.35;
   color: #111827;
-  background: #fff;
+  background: transparent;
   box-sizing: border-box;
+  resize: none;
+  overflow-y: auto;
+  scrollbar-width: none;
 }
 
-.composer input:focus {
-  outline: 2px solid var(--accent-focus);
-  border-color: var(--accent-text);
+.composer textarea::-webkit-scrollbar {
+  display: none;
+}
+
+.composer textarea:focus {
+  outline: none;
 }
 
 .composer button {
@@ -3587,16 +3604,22 @@ html[data-theme="dark"] {
   min-height: 52px;
   padding: 0 10px;
   border: 0;
-  border-radius: 16px;
+  border-radius: 0;
   font: inherit;
   font-weight: 700;
-  color: var(--accent-on-fill);
-  background: var(--accent-fill);
+  color: var(--accent-text);
+  background: transparent;
   cursor: pointer;
 }
 
+.composer > button {
+  height: 52px;
+  align-self: end;
+}
+
 .composer button:hover:not(:disabled) {
-  background: var(--accent-fill-hover);
+  color: var(--accent-fill-hover);
+  background: var(--accent-soft);
 }
 
 .composer button:disabled {
@@ -3996,26 +4019,35 @@ html[data-theme="dark"] .chat-context-menu button:hover {
 
 html[data-theme="dark"] .profile-search-form input,
 html[data-theme="dark"] .profile-editor-form input,
-html[data-theme="dark"] .profile-editor-form textarea,
-html[data-theme="dark"] .composer input {
+html[data-theme="dark"] .profile-editor-form textarea {
   border-color: rgba(255, 255, 255, 0.12);
   color: #f7efe7;
   background: rgba(255, 255, 255, 0.07);
 }
 
+html[data-theme="dark"] .composer textarea {
+  color: #f7efe7;
+  background: transparent;
+}
+
 html[data-theme="dark"] .profile-search-form input::placeholder,
 html[data-theme="dark"] .profile-editor-form input::placeholder,
 html[data-theme="dark"] .profile-editor-form textarea::placeholder,
-html[data-theme="dark"] .composer input::placeholder {
+html[data-theme="dark"] .composer textarea::placeholder {
   color: rgba(247, 239, 231, 0.48);
 }
 
 html[data-theme="dark"] .profile-search-form input:focus,
 html[data-theme="dark"] .profile-editor-form input:focus,
 html[data-theme="dark"] .profile-editor-form textarea:focus,
-html[data-theme="dark"] .composer input:focus {
+html[data-theme="dark"] .composer textarea:focus {
   outline-color: var(--accent-focus);
   border-color: var(--accent-text);
+}
+
+html[data-theme="dark"] .composer {
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
 }
 
 html[data-theme="dark"] .voice-recording-panel {
@@ -4317,6 +4349,8 @@ html[data-theme="dark"] .status {
 
   .composer {
     grid-template-columns: minmax(0, 1fr) auto auto auto;
+    margin: 8px -9px -11px;
+    padding: 8px 9px 11px;
   }
 
   .voice-recording-panel {

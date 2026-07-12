@@ -1,4 +1,10 @@
-import type { ChangeEvent, ClipboardEvent, RefObject } from "react";
+import {
+  useEffect,
+  useRef,
+  type ChangeEvent,
+  type ClipboardEvent,
+  type RefObject,
+} from "react";
 import { ClockArrowUp, Mic, Paperclip, Pencil } from "lucide-react";
 
 import { VoiceRecorderControls } from "@/components/chat/VoiceRecorderControls";
@@ -7,6 +13,7 @@ import type { ChatMessage } from "@/types";
 
 const FILE_MESSAGE_ACCEPT =
   "image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/mp4,audio/ogg,audio/wav,audio/webm,application/pdf,text/plain,text/csv,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const MAX_COMPOSER_VISIBLE_LINES = 13;
 
 type ChatComposerProps = {
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -21,7 +28,7 @@ type ChatComposerProps = {
   fileSending: boolean;
   voiceSending: boolean;
   onFileInputChange: (event: ChangeEvent<HTMLInputElement>) => void;
-  onPasteImages: (event: ClipboardEvent<HTMLInputElement>) => void;
+  onPasteImages: (event: ClipboardEvent<HTMLTextAreaElement>) => void;
   onRevealMessage: (messageId: number) => void;
   onCancelReply: () => void;
   onCancelEdit: () => void;
@@ -58,6 +65,47 @@ export function ChatComposer({
   getSenderName,
 }: ChatComposerProps) {
   const isEditing = editingMessage !== null;
+  const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
+
+  useEffect(() => {
+    const textarea = messageInputRef.current;
+
+    if (!textarea) {
+      return;
+    }
+
+    const style = window.getComputedStyle(textarea);
+    const fontSize = Number.parseFloat(style.fontSize) || 16;
+    const lineHeight =
+      Number.parseFloat(style.lineHeight) || fontSize * 1.35;
+    const verticalPadding =
+      Number.parseFloat(style.paddingTop) +
+      Number.parseFloat(style.paddingBottom);
+    const verticalBorder =
+      Number.parseFloat(style.borderTopWidth) +
+      Number.parseFloat(style.borderBottomWidth);
+    const maxHeight =
+      lineHeight * MAX_COMPOSER_VISIBLE_LINES +
+      verticalPadding +
+      verticalBorder;
+
+    textarea.style.height = "auto";
+    textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
+    textarea.style.overflowY =
+      textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+  }, [message]);
+
+  const insertNewlineAtCursor = (textarea: HTMLTextAreaElement) => {
+    const selectionStart = textarea.selectionStart;
+    const selectionEnd = textarea.selectionEnd;
+    const nextMessage = `${textarea.value.slice(0, selectionStart)}\n${textarea.value.slice(selectionEnd)}`;
+    const nextCursorPosition = selectionStart + 1;
+
+    onMessageChange(nextMessage);
+    window.requestAnimationFrame(() => {
+      textarea.setSelectionRange(nextCursorPosition, nextCursorPosition);
+    });
+  };
 
   return (
     <div className="composer">
@@ -127,15 +175,23 @@ export function ChatComposer({
         />
       ) : (
         <>
-          <input
+          <textarea
+            ref={messageInputRef}
             id="message"
-            type="text"
+            rows={1}
             value={message}
             placeholder="Write a message..."
             onChange={(event) => onMessageChange(event.target.value)}
             onPaste={onPasteImages}
             onKeyDown={(event) => {
               if (event.key === "Enter") {
+                if (event.metaKey || event.ctrlKey || event.shiftKey) {
+                  event.preventDefault();
+                  insertNewlineAtCursor(event.currentTarget);
+                  return;
+                }
+
+                event.preventDefault();
                 onSend();
                 return;
               }

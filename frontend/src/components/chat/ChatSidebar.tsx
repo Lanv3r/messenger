@@ -407,6 +407,8 @@ export function ChatSidebar({
             @
           </span>
           <input
+            id="profile-user-search"
+            name="profile-user-search"
             type="search"
             value={profileQuery}
             placeholder="Search users"
