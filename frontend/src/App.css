@@ -1290,11 +1290,13 @@ html[data-theme="dark"] {
 .chat-open-button {
   min-width: 0;
   width: 100%;
+  height: 70px;
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
+  grid-template-columns: 52px minmax(0, 1fr);
   align-items: center;
   gap: 5px;
-  padding: 5px 12px;
+  padding: 9px 12px 9px 9px;
+  box-sizing: border-box;
   border: 0;
   font: inherit;
   color: inherit;
@@ -1304,8 +1306,8 @@ html[data-theme="dark"] {
 }
 
 .chat-open-button img {
-  width: 38px;
-  height: 38px;
+  width: 52px;
+  height: 52px;
   border-radius: 50%;
   object-fit: cover;
   background: rgba(133, 144, 167, 0.14);
@@ -1322,6 +1324,7 @@ html[data-theme="dark"] {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
+  transform: translateY(5px);
 }
 
 .chat-preview-row {
@@ -1330,6 +1333,7 @@ html[data-theme="dark"] {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
+  transform: translateY(-5px);
 }
 
 .chat-row-pin {
