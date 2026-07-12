@@ -5,7 +5,7 @@ import {
   getMessageAttachments,
   getUploadedFileName,
   getVoiceAudioUrl,
-  highlightSearchText,
+  renderMessageText,
 } from "@/lib/message-helpers";
 import type { ChatMessage, MessageAttachment } from "@/types";
 
@@ -25,10 +25,10 @@ function renderMessageContent(
   const query = searchQuery.trim();
 
   if (!query || entry.id !== activeSearchResultId) {
-    return content;
+    return renderMessageText(content);
   }
 
-  return highlightSearchText(content, query);
+  return renderMessageText(content, query);
 }
 
 export function MessageBody({

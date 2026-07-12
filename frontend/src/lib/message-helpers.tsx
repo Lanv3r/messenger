@@ -1,4 +1,4 @@
-import { Fragment } from "react";
+import { Fragment, type ReactNode } from "react";
 
 import { API_URL } from "@/lib/api";
 import type {
@@ -60,6 +60,83 @@ export function highlightSearchText(content: string, query: string) {
       <Fragment key={`${part}-${index}`}>{part}</Fragment>
     ),
   );
+}
+
+const URL_PATTERN = /https?:\/\/[^\s<>"']+/gi;
+const TRAILING_URL_PUNCTUATION_PATTERN = /[.,!?;:)\]}]+$/;
+
+function splitTrailingUrlPunctuation(value: string) {
+  const punctuation = value.match(TRAILING_URL_PUNCTUATION_PATTERN)?.[0] ?? "";
+
+  if (!punctuation) {
+    return { url: value, trailing: "" };
+  }
+
+  return {
+    url: value.slice(0, -punctuation.length),
+    trailing: punctuation,
+  };
+}
+
+function renderSearchAwareText(value: string, query: string, key: string) {
+  const normalizedQuery = query.trim();
+
+  if (!normalizedQuery) {
+    return <Fragment key={key}>{value}</Fragment>;
+  }
+
+  return (
+    <Fragment key={key}>
+      {highlightSearchText(value, normalizedQuery)}
+    </Fragment>
+  );
+}
+
+export function renderMessageText(content: string, query = "") {
+  const nodes: ReactNode[] = [];
+  let lastIndex = 0;
+
+  for (const match of content.matchAll(URL_PATTERN)) {
+    const rawUrl = match[0];
+    const matchIndex = match.index ?? 0;
+    const beforeUrl = content.slice(lastIndex, matchIndex);
+    const { url, trailing } = splitTrailingUrlPunctuation(rawUrl);
+
+    if (beforeUrl) {
+      nodes.push(renderSearchAwareText(beforeUrl, query, `text-${lastIndex}`));
+    }
+
+    nodes.push(
+      <a
+        className="message-link"
+        href={url}
+        key={`url-${matchIndex}`}
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        {renderSearchAwareText(url, query, `url-text-${matchIndex}`)}
+      </a>,
+    );
+
+    if (trailing) {
+      nodes.push(
+        renderSearchAwareText(
+          trailing,
+          query,
+          `trailing-${matchIndex}-${url.length}`,
+        ),
+      );
+    }
+
+    lastIndex = matchIndex + rawUrl.length;
+  }
+
+  const remainingText = content.slice(lastIndex);
+  if (remainingText) {
+    nodes.push(renderSearchAwareText(remainingText, query, `text-${lastIndex}`));
+  }
+
+  return nodes.length > 0 ? nodes : content;
 }
 
 export function readNumberFromSessionStorage(key: string) {

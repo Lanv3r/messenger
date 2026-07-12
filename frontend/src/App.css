@@ -2589,6 +2589,28 @@
   max-width: 100%;
 }
 
+.message-link {
+  color: #b8462a;
+  font-weight: 750;
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.message-link:hover {
+  color: #8f321c;
+}
+
+#messages li.you .message-link {
+  color: #fff2cc;
+}
+
+#messages li.you .message-link:hover {
+  color: #ffffff;
+}
+
 #messages li.message-sequence-first .message-copy {
   border-bottom-left-radius: 7px;
 }
