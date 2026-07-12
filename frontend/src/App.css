@@ -2573,12 +2573,20 @@
 .message-copy {
   display: grid;
   min-width: 0;
+  max-width: 100%;
   gap: 5px;
   padding: 13px 16px;
   border: 1px solid rgba(163, 88, 66, 0.1);
   border-radius: 18px;
   background: #fff5ef;
   box-shadow: none;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.message-copy > span {
+  min-width: 0;
+  max-width: 100%;
 }
 
 #messages li.message-sequence-first .message-copy {
@@ -3078,9 +3086,15 @@
   background: rgba(255, 255, 255, 0.14);
 }
 
-.file-message-card span,
-.file-message-card small,
 .file-message-caption {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.file-message-card span,
+.file-message-card small {
   overflow: hidden;
   text-overflow: ellipsis;
 }
