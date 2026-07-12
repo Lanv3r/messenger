@@ -1324,7 +1324,7 @@ html[data-theme="dark"] {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
-  transform: translateY(5px);
+  transform: translateY(3px);
 }
 
 .chat-preview-row {
@@ -1333,7 +1333,7 @@ html[data-theme="dark"] {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
-  transform: translateY(-5px);
+  transform: translateY(-3px);
 }
 
 .chat-row-pin {
@@ -2769,23 +2769,26 @@ html[data-theme="dark"] {
 
 .message-link {
   color: var(--accent-fill);
-  font-weight: 750;
-  text-decoration: underline;
+  font-weight: inherit;
+  text-decoration: none;
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
   overflow-wrap: anywhere;
   word-break: break-word;
 }
 
-.message-link:hover {
+.message-link:hover,
+.message-link:focus-visible {
   color: var(--accent-fill-hover);
+  text-decoration: underline;
 }
 
 #messages li.you .message-link {
   color: var(--accent-on-fill);
 }
 
-#messages li.you .message-link:hover {
+#messages li.you .message-link:hover,
+#messages li.you .message-link:focus-visible {
   color: #5f2a1f;
 }
 
