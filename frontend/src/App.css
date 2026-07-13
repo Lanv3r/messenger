@@ -93,13 +93,14 @@ html[data-theme="dark"] {
 .chat-window-header {
   flex: 0 0 auto;
   position: relative;
+  z-index: 4;
 }
 
 .chat-top-stack {
   flex: 0 0 auto;
   display: grid;
   margin: -14px -14px 0;
-  overflow: hidden;
+  overflow: visible;
   background: rgba(255, 255, 255, 0.38);
 }
 
@@ -195,6 +196,9 @@ html[data-theme="dark"] {
 
 .chat-header-contact-menu button {
   width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 8px 10px;
   border: 0;
   border-radius: 8px;

@@ -1,4 +1,4 @@
-import { EllipsisVertical, Search } from "lucide-react";
+import { EllipsisVertical, Search, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 
 type ChatHeaderProps = {
@@ -9,11 +9,9 @@ type ChatHeaderProps = {
   searchEnabled: boolean;
   searchActive: boolean;
   showContactMenu: boolean;
-  isContact: boolean;
-  contactActionLoading: boolean;
   onClick: () => void;
   onSearchClick: () => void;
-  onToggleContact: () => void;
+  onViewProfile: () => void;
 };
 
 export function ChatHeader({
@@ -24,11 +22,9 @@ export function ChatHeader({
   searchEnabled,
   searchActive,
   showContactMenu,
-  isContact,
-  contactActionLoading,
   onClick,
   onSearchClick,
-  onToggleContact,
+  onViewProfile,
 }: ChatHeaderProps) {
   const [contactMenuOpen, setContactMenuOpen] = useState(false);
   const visibleContactMenu = showContactMenu && contactMenuOpen;
@@ -104,22 +100,29 @@ export function ChatHeader({
               aria-expanded={visibleContactMenu}
               aria-haspopup="menu"
               title="Contact options"
-              onClick={() => setContactMenuOpen((current) => !current)}
+              onClick={(event) => {
+                event.stopPropagation();
+                setContactMenuOpen((current) => !current);
+              }}
             >
               <EllipsisVertical size={19} aria-hidden="true" />
             </button>
             {visibleContactMenu ? (
-              <div className="chat-header-contact-menu" role="menu">
+              <div
+                className="chat-header-contact-menu"
+                role="menu"
+                onClick={(event) => event.stopPropagation()}
+              >
                 <button
                   type="button"
                   role="menuitem"
-                  disabled={contactActionLoading}
                   onClick={() => {
-                    onToggleContact();
+                    onViewProfile();
                     setContactMenuOpen(false);
                   }}
                 >
-                  {isContact ? "Delete contact" : "Add contact"}
+                  <UserRound size={16} aria-hidden="true" />
+                  <span>View profile</span>
                 </button>
               </div>
             ) : null}

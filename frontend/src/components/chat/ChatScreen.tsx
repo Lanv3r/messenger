@@ -1311,13 +1311,6 @@ export function ChatScreen({
               searchEnabled={activeChatId !== null && draftRecipient === null}
               searchActive={messageSearchOpen}
               showContactMenu={directContactUserId !== null}
-              isContact={
-                directContactUserId !== null && isContact(directContactUserId)
-              }
-              contactActionLoading={
-                directContactUserId !== null &&
-                contactSavingUserId === directContactUserId
-              }
               onSearchClick={() => {
                 if (activeChatId === null || draftRecipient !== null) {
                   return;
@@ -1332,11 +1325,7 @@ export function ChatScreen({
                   return !current;
                 });
               }}
-              onToggleContact={() => {
-                if (directContactUserId !== null) {
-                  void toggleContact(directContactUserId);
-                }
-              }}
+              onViewProfile={handleChatHeaderClick}
             />
             {!creatingGroup ? (
               <PinnedMessagesBar
