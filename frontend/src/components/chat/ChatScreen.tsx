@@ -214,6 +214,10 @@ export function ChatScreen({
     closeMessageStateForMessage,
   } = useMessageActionMenu();
   const messagesRef = useRef<HTMLUListElement | null>(null);
+  const [activePinnedMessageId, setActivePinnedMessageId] = useState<
+    number | null
+  >(null);
+  const pinnedBarActiveOverrideRef = useRef<number | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const {
     stopTypingActivity,
@@ -668,6 +672,138 @@ export function ChatScreen({
     activeChatId,
     messages,
   });
+
+  useEffect(() => {
+    const messagesElement = messagesRef.current;
+    const pinnedMessages = visibleMessages
+      .filter((entry) => entry.pinned_at || entry.is_pinned_for_me)
+      .sort((first, second) =>
+        (first.created_at ?? "").localeCompare(second.created_at ?? ""),
+      );
+    let animationFrameId: number | null = null;
+
+    const updateActivePinnedMessage = () => {
+      if (!messagesElement || pinnedMessages.length === 0) {
+        setActivePinnedMessageId((current) =>
+          current === null ? current : null,
+        );
+        return;
+      }
+
+      const containerRect = messagesElement.getBoundingClientRect();
+      const viewportAnchor =
+        messagesElement.scrollTop + messagesElement.clientHeight / 2;
+      let nextPinnedMessageId = pinnedMessages[0].id;
+
+      const getMessageBounds = (messageId: number) => {
+        const target = messagesElement.querySelector(
+          `[data-message-id="${messageId}"]`,
+        );
+
+        if (!(target instanceof HTMLElement)) {
+          return null;
+        }
+
+        const targetRect = target.getBoundingClientRect();
+        const targetTop =
+          targetRect.top - containerRect.top + messagesElement.scrollTop;
+
+        return {
+          top: targetTop,
+          bottom: targetTop + targetRect.height,
+        };
+      };
+
+      const overridePinnedMessageId = pinnedBarActiveOverrideRef.current;
+
+      if (overridePinnedMessageId !== null) {
+        const overrideStillExists = pinnedMessages.some(
+          (entry) => entry.id === overridePinnedMessageId,
+        );
+
+        if (overrideStillExists) {
+          setActivePinnedMessageId((current) =>
+            current === overridePinnedMessageId
+              ? current
+              : overridePinnedMessageId,
+          );
+          return;
+        }
+
+        pinnedBarActiveOverrideRef.current = null;
+      }
+
+      for (const entry of pinnedMessages) {
+        const targetBounds = getMessageBounds(entry.id);
+
+        if (!targetBounds) {
+          continue;
+        }
+
+        if (targetBounds.bottom <= viewportAnchor + 1) {
+          nextPinnedMessageId = entry.id;
+        } else {
+          break;
+        }
+      }
+
+      setActivePinnedMessageId((current) =>
+        current === nextPinnedMessageId ? current : nextPinnedMessageId,
+      );
+    };
+
+    const scheduleActivePinnedMessageUpdate = () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+      animationFrameId = window.requestAnimationFrame(updateActivePinnedMessage);
+    };
+
+    const clearPinnedBarOverride = () => {
+      if (pinnedBarActiveOverrideRef.current === null) {
+        return;
+      }
+
+      pinnedBarActiveOverrideRef.current = null;
+      scheduleActivePinnedMessageUpdate();
+    };
+
+    scheduleActivePinnedMessageUpdate();
+
+    if (!messagesElement) {
+      return () => {
+        if (animationFrameId !== null) {
+          window.cancelAnimationFrame(animationFrameId);
+        }
+      };
+    }
+
+    messagesElement.addEventListener("scroll", scheduleActivePinnedMessageUpdate, {
+      passive: true,
+    });
+    messagesElement.addEventListener("wheel", clearPinnedBarOverride, {
+      passive: true,
+    });
+    messagesElement.addEventListener("touchstart", clearPinnedBarOverride, {
+      passive: true,
+    });
+    messagesElement.addEventListener("pointerdown", clearPinnedBarOverride);
+    window.addEventListener("resize", scheduleActivePinnedMessageUpdate);
+
+    return () => {
+      if (animationFrameId !== null) {
+        window.cancelAnimationFrame(animationFrameId);
+      }
+      messagesElement.removeEventListener(
+        "scroll",
+        scheduleActivePinnedMessageUpdate,
+      );
+      messagesElement.removeEventListener("wheel", clearPinnedBarOverride);
+      messagesElement.removeEventListener("touchstart", clearPinnedBarOverride);
+      messagesElement.removeEventListener("pointerdown", clearPinnedBarOverride);
+      window.removeEventListener("resize", scheduleActivePinnedMessageUpdate);
+    };
+  }, [visibleMessages]);
   const composerEditingMessage =
     editingMessageId === null
       ? null
@@ -694,7 +830,22 @@ export function ChatScreen({
     getChatActivitySubtitle,
   });
 
-  const revealMessageById = (messageId: number) => {
+  const revealMessageById = (
+    messageId: number,
+    options?: { nextActivePinnedMessageId: number | null },
+  ) => {
+    const nextActivePinnedMessageId =
+      options?.nextActivePinnedMessageId ?? null;
+
+    pinnedBarActiveOverrideRef.current = nextActivePinnedMessageId;
+    if (nextActivePinnedMessageId !== null) {
+      setActivePinnedMessageId((current) =>
+        current === nextActivePinnedMessageId
+          ? current
+          : nextActivePinnedMessageId,
+      );
+    }
+
     if (searchHighlightTimeoutRef.current !== null) {
       window.clearTimeout(searchHighlightTimeoutRef.current);
     }
@@ -1042,6 +1193,7 @@ export function ChatScreen({
             {!creatingGroup ? (
               <PinnedMessagesBar
                 messages={visibleMessages}
+                activePinnedMessageId={activePinnedMessageId}
                 canUnpinMessage={canUnpinPinnedBarMessage}
                 onRequestUnpin={(entry) => {
                   openMessageActionDialog("pin", entry);
