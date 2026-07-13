@@ -1,4 +1,10 @@
-import { Fragment, useState, type ReactNode, type RefObject } from "react";
+import {
+  Fragment,
+  useState,
+  type MouseEvent as ReactMouseEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { Check, CheckCheck, ClockArrowUp, Pin } from "lucide-react";
 
 import {
@@ -9,13 +15,14 @@ import {
 } from "@/lib/date-format";
 import {
   canCopyImageMessage,
-  canCopyMessage,
+  getAttachmentFileUrl,
   getMessageAttachments,
 } from "@/lib/message-helpers";
 import { keepSubtleScrollbarVisible } from "@/lib/scrollbar";
 import type {
   Chat,
   ChatMessage,
+  MessageCopyTarget,
   MessageDeliveryStatus,
   MessageReplyPreview,
 } from "@/types";
@@ -39,13 +46,18 @@ type MessageListProps = {
   activeSearchResultId: number | null;
   openMessageMenuId: number | null;
   messageMenuPosition: MessageMenuPosition | null;
+  messageMenuCopyTarget: MessageCopyTarget | null;
   currentUserCanDeleteGroupMessages: boolean;
   renderMessageBody: (entry: ChatMessage) => ReactNode;
   renderReplyPreview: (reply: MessageReplyPreview) => ReactNode;
   getSenderAvatar: (entry: ChatMessage) => string;
   getMessageDeliveryStatus: (entry: ChatMessage) => MessageDeliveryStatus;
-  onOpenMessageMenu: (messageId: number, position: MessageMenuPosition) => void;
-  onCopyMessage: (entry: ChatMessage) => void;
+  onOpenMessageMenu: (
+    messageId: number,
+    position: MessageMenuPosition,
+    copyTarget: MessageCopyTarget | null,
+  ) => void;
+  onCopyMessage: (entry: ChatMessage, copyTarget: MessageCopyTarget | null) => void;
   onStartReply: (entry: ChatMessage) => void;
   onStartEdit: (entry: ChatMessage) => void;
   onOpenActionDialog: (kind: "pin" | "delete", entry: ChatMessage) => void;
@@ -170,6 +182,55 @@ function getMessageMenuPosition(clientX: number, clientY: number) {
   };
 }
 
+function getMessageCopyTarget(
+  entry: ChatMessage,
+  event: ReactMouseEvent,
+): MessageCopyTarget | null {
+  const target = event.target instanceof Element ? event.target : null;
+  const attachments = getMessageAttachments(entry);
+  const hasText = Boolean(entry.content);
+  const attachmentElement = target?.closest<HTMLElement>(
+    "[data-attachment-index]",
+  );
+  const attachmentIndex =
+    attachmentElement?.dataset.attachmentIndex !== undefined
+      ? Number(attachmentElement.dataset.attachmentIndex)
+      : null;
+
+  if (
+    attachmentIndex !== null &&
+    Number.isInteger(attachmentIndex) &&
+    attachmentIndex >= 0
+  ) {
+    const attachment = attachments[attachmentIndex];
+
+    if (
+      attachment?.message_type === "image" &&
+      getAttachmentFileUrl(attachment)
+    ) {
+      return { type: "image", attachmentIndex };
+    }
+  }
+
+  if (target?.closest(".file-message-caption") && hasText) {
+    return { type: "text" };
+  }
+
+  if (hasText && attachments.length > 0) {
+    return { type: "text" };
+  }
+
+  if (canCopyImageMessage(entry)) {
+    return { type: "image", attachmentIndex: 0 };
+  }
+
+  if (hasText) {
+    return { type: "text" };
+  }
+
+  return null;
+}
+
 export function MessageList({
   messagesRef,
   messages,
@@ -178,6 +239,7 @@ export function MessageList({
   activeSearchResultId,
   openMessageMenuId,
   messageMenuPosition,
+  messageMenuCopyTarget,
   currentUserCanDeleteGroupMessages,
   renderMessageBody,
   renderReplyPreview,
@@ -240,6 +302,7 @@ export function MessageList({
             entry.delivery_status !== "sending" &&
             entry.delivery_status !== "failed";
           const isMessageMenuOpen = openMessageMenuId === entry.id;
+          const copyTarget = isMessageMenuOpen ? messageMenuCopyTarget : null;
           const canDeleteGroupMessage =
             activeChat?.type === "group" &&
             (entry.sender_id === currentUserId ||
@@ -314,6 +377,7 @@ export function MessageList({
                   onOpenMessageMenu(
                     entry.id,
                     getMessageMenuPosition(event.clientX, event.clientY),
+                    getMessageCopyTarget(entry, event),
                   );
                 }}
               >
@@ -364,13 +428,15 @@ export function MessageList({
                           }
                           onClick={(event) => event.stopPropagation()}
                         >
-                          {canCopyMessage(entry) ? (
+                          {copyTarget ? (
                             <button
                               type="button"
                               role="menuitem"
-                              onClick={() => onCopyMessage(entry)}
+                              onClick={() => onCopyMessage(entry, copyTarget)}
                             >
-                              {canCopyImageMessage(entry) ? "Copy Image" : "Copy"}
+                              {copyTarget.type === "image"
+                                ? "Copy Image"
+                                : "Copy Text"}
                             </button>
                           ) : null}
                           <button

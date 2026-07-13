@@ -62,6 +62,7 @@ import type {
   AuthUser,
   Chat,
   ChatMessage,
+  MessageCopyTarget,
   ThemeMode,
   UserProfile,
 } from "@/types";
@@ -202,6 +203,7 @@ export function ChatScreen({
   const {
     openMessageMenuId,
     messageMenuPosition,
+    messageMenuCopyTarget,
     messageActionDialog,
     actionAlsoForOtherUser,
     setActionAlsoForOtherUser,
@@ -851,12 +853,25 @@ export function ChatScreen({
     handleFileInputChange(event);
   };
 
-  const copyMessage = async (entry: ChatMessage) => {
+  const copyMessage = async (
+    entry: ChatMessage,
+    copyTarget: MessageCopyTarget | null,
+  ) => {
     closeMessageMenu();
     setChatError(null);
 
     try {
-      await copyMessageToClipboard(entry);
+      if (copyTarget?.type === "image") {
+        await copyMessageImageToClipboard(entry, copyTarget.attachmentIndex);
+      } else if (copyTarget?.type === "text") {
+        if (!entry.content) {
+          throw new Error("This message has no text to copy.");
+        }
+
+        await navigator.clipboard.writeText(entry.content);
+      } else {
+        await copyMessageToClipboard(entry);
+      }
     } catch (error) {
       setChatError(
         error instanceof Error ? error.message : "Unable to copy message.",
@@ -1278,6 +1293,7 @@ export function ChatScreen({
           activeSearchResultId={activeSearchResultId}
           openMessageMenuId={openMessageMenuId}
           messageMenuPosition={messageMenuPosition}
+          messageMenuCopyTarget={messageMenuCopyTarget}
           currentUserCanDeleteGroupMessages={currentUserCanDeleteGroupMessages}
           renderMessageBody={(entry) => (
             <MessageBody
@@ -1299,8 +1315,8 @@ export function ChatScreen({
           getSenderAvatar={getSenderAvatar}
           getMessageDeliveryStatus={getMessageDeliveryStatus}
           onOpenMessageMenu={openMessageMenu}
-          onCopyMessage={(entry) => {
-            void copyMessage(entry);
+          onCopyMessage={(entry, copyTarget) => {
+            void copyMessage(entry, copyTarget);
           }}
           onStartReply={startReplyingToMessage}
           onStartEdit={startEditingMessageFromMenu}

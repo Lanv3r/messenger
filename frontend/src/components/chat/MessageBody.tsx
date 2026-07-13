@@ -135,6 +135,7 @@ export function MessageBody({
                 "file-message-attachment",
                 attachment.message_type,
               ].join(" ")}
+              data-attachment-index={index}
               key={`${attachment.file_url}-${index}`}
             >
               {renderAttachment(attachment, index)}

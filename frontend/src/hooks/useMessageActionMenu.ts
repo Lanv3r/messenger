@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 
-import type { ChatMessage, MessageActionDialogState } from "@/types";
+import type {
+  ChatMessage,
+  MessageActionDialogState,
+  MessageCopyTarget,
+} from "@/types";
 
 type MessageMenuPosition = {
   x: number;
@@ -13,6 +17,8 @@ export function useMessageActionMenu() {
   );
   const [messageMenuPosition, setMessageMenuPosition] =
     useState<MessageMenuPosition | null>(null);
+  const [messageMenuCopyTarget, setMessageMenuCopyTarget] =
+    useState<MessageCopyTarget | null>(null);
   const messageMenuOpenedAtRef = useRef(0);
   const [messageActionDialog, setMessageActionDialog] =
     useState<MessageActionDialogState | null>(null);
@@ -21,8 +27,10 @@ export function useMessageActionMenu() {
   const openMessageMenu = (
     messageId: number,
     position: MessageMenuPosition,
+    copyTarget: MessageCopyTarget | null,
   ) => {
     setMessageMenuPosition(position);
+    setMessageMenuCopyTarget(copyTarget);
     messageMenuOpenedAtRef.current = Date.now();
     setOpenMessageMenuId(messageId);
   };
@@ -30,6 +38,7 @@ export function useMessageActionMenu() {
   const closeMessageMenu = () => {
     setOpenMessageMenuId(null);
     setMessageMenuPosition(null);
+    setMessageMenuCopyTarget(null);
   };
 
   const openMessageActionDialog = (
@@ -51,6 +60,7 @@ export function useMessageActionMenu() {
       current === messageId ? null : current,
     );
     setMessageMenuPosition(null);
+    setMessageMenuCopyTarget(null);
     setMessageActionDialog((current) =>
       current?.entry.id === messageId ? null : current,
     );
@@ -64,6 +74,7 @@ export function useMessageActionMenu() {
     const closeOpenMenu = () => {
       setOpenMessageMenuId(null);
       setMessageMenuPosition(null);
+      setMessageMenuCopyTarget(null);
     };
 
     const handlePointerDown = (event: MouseEvent | PointerEvent) => {
@@ -101,6 +112,7 @@ export function useMessageActionMenu() {
   return {
     openMessageMenuId,
     messageMenuPosition,
+    messageMenuCopyTarget,
     messageActionDialog,
     actionAlsoForOtherUser,
     setActionAlsoForOtherUser,

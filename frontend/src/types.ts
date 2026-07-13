@@ -39,6 +39,10 @@ export type MessageAttachment = {
   message_type: string;
 };
 
+export type MessageCopyTarget =
+  | { type: "text" }
+  | { type: "image"; attachmentIndex: number };
+
 export type MessageActionDialogState = {
   kind: "pin" | "delete";
   entry: ChatMessage;
