@@ -2653,6 +2653,7 @@ html[data-theme="dark"] {
 }
 
 #messages {
+  position: relative;
   flex: 1 1 auto;
   min-height: 0;
   list-style: none;
@@ -2682,6 +2683,42 @@ html[data-theme="dark"] {
   text-align: left;
   color: #1f2937;
   background: transparent;
+}
+
+#messages li.sticky-group-avatar {
+  z-index: 4;
+  display: block;
+  width: var(--message-avatar-size);
+  height: var(--message-avatar-size);
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  pointer-events: none;
+}
+
+#messages li.sticky-group-avatar.fixed {
+  position: fixed;
+  top: var(--sticky-group-avatar-fixed-top, 0px);
+  left: var(--sticky-group-avatar-left, 0px);
+}
+
+#messages li.sticky-group-avatar.flow {
+  position: absolute;
+  top: var(--sticky-group-avatar-flow-top, 0px);
+  left: 0;
+}
+
+.sticky-group-avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 50%;
+  object-fit: cover;
+  background: transparent;
+}
+
+.message-avatar.sticky-group-avatar-source {
+  visibility: hidden;
 }
 
 #messages li:not(.media-message) {

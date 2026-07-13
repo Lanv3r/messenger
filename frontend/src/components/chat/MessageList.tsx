@@ -1,5 +1,7 @@
 import {
   Fragment,
+  useLayoutEffect,
+  useRef,
   useState,
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
@@ -37,6 +39,12 @@ type MessageMetaTooltipPlacement =
   | "below-left"
   | "above-right"
   | "above-left";
+
+type StickyGroupAvatar = {
+  messageId: string;
+  avatarUrl: string;
+  mode: "fixed" | "flow";
+};
 
 type MessageListProps = {
   messagesRef: RefObject<HTMLUListElement | null>;
@@ -104,6 +112,98 @@ function isGroupedWithPreviousMessage(
 
   const distanceMs = currentTimestamp - previousTimestamp;
   return distanceMs >= 0 && distanceMs <= GROUPED_MESSAGE_WINDOW_MS;
+}
+
+function getGroupedMessageEnd(startElement: HTMLElement) {
+  let currentElement = startElement.nextElementSibling;
+
+  while (currentElement instanceof HTMLElement) {
+    if (currentElement.classList.contains("message-sequence-last")) {
+      return currentElement;
+    }
+
+    if (!currentElement.classList.contains("message-sequence-inner")) {
+      return null;
+    }
+
+    currentElement = currentElement.nextElementSibling;
+  }
+
+  return null;
+}
+
+function updateStickyGroupAvatar(container: HTMLUListElement) {
+  const viewportRect = container.getBoundingClientRect();
+  let stickyAvatar: (StickyGroupAvatar & {
+    size: number;
+    groupTop: number;
+    groupOffsetTop: number;
+  }) | null = null;
+
+  for (const startElement of container.querySelectorAll<HTMLElement>(
+    "li.message-sequence-first",
+  )) {
+    const endElement = getGroupedMessageEnd(startElement);
+
+    if (!endElement) {
+      continue;
+    }
+
+    const startRect = startElement.getBoundingClientRect();
+    const endRect = endElement.getBoundingClientRect();
+
+    if (
+      startRect.top > viewportRect.bottom ||
+      endRect.bottom <= viewportRect.bottom
+    ) {
+      continue;
+    }
+
+    const avatar = endElement.querySelector<HTMLImageElement>(
+      ".message-avatar",
+    );
+
+    if (!avatar) {
+      continue;
+    }
+
+    stickyAvatar = {
+      messageId: endElement.dataset.messageId ?? avatar.currentSrc,
+      avatarUrl: avatar.currentSrc || avatar.src,
+      mode: "fixed",
+      size: avatar.getBoundingClientRect().height,
+      groupTop: startRect.top,
+      groupOffsetTop: startElement.offsetTop,
+    };
+  }
+
+  if (!stickyAvatar) {
+    container.style.removeProperty("--sticky-group-avatar-fixed-top");
+    container.style.removeProperty("--sticky-group-avatar-left");
+    container.style.removeProperty("--sticky-group-avatar-flow-top");
+    return null;
+  }
+
+  const fixedAvatarTop = viewportRect.bottom - stickyAvatar.size;
+
+  if (stickyAvatar.groupTop > fixedAvatarTop) {
+    stickyAvatar.mode = "flow";
+    container.style.setProperty(
+      "--sticky-group-avatar-flow-top",
+      `${stickyAvatar.groupOffsetTop}px`,
+    );
+  } else {
+    container.style.setProperty(
+      "--sticky-group-avatar-fixed-top",
+      `${fixedAvatarTop}px`,
+    );
+    container.style.setProperty(
+      "--sticky-group-avatar-left",
+      `${viewportRect.left}px`,
+    );
+  }
+
+  return stickyAvatar;
 }
 
 function getTooltipBoundaryRect(boundaryElement: HTMLElement | null) {
@@ -256,6 +356,9 @@ export function MessageList({
   const [tooltipPlacements, setTooltipPlacements] = useState<
     Record<number, MessageMetaTooltipPlacement>
   >({});
+  const [stickyGroupAvatar, setStickyGroupAvatar] =
+    useState<StickyGroupAvatar | null>(null);
+  const stickyAvatarFrameRef = useRef<number | null>(null);
   const firstUnreadMessageId =
     unreadSeparatorLastReadMessageId === null
       ? null
@@ -283,12 +386,65 @@ export function MessageList({
     );
   }
 
+  useLayoutEffect(() => {
+    const container = messagesRef.current;
+
+    if (!container) {
+      return;
+    }
+
+    const syncStickyGroupAvatar = () => {
+      const nextAvatar = updateStickyGroupAvatar(container);
+
+      setStickyGroupAvatar((current) =>
+        current?.messageId === nextAvatar?.messageId &&
+        current?.avatarUrl === nextAvatar?.avatarUrl &&
+        current?.mode === nextAvatar?.mode
+          ? current
+          : nextAvatar,
+      );
+    };
+    const animationFrame = window.requestAnimationFrame(syncStickyGroupAvatar);
+
+    window.addEventListener("resize", syncStickyGroupAvatar);
+
+    return () => {
+      window.cancelAnimationFrame(animationFrame);
+      if (stickyAvatarFrameRef.current !== null) {
+        window.cancelAnimationFrame(stickyAvatarFrameRef.current);
+        stickyAvatarFrameRef.current = null;
+      }
+      window.removeEventListener("resize", syncStickyGroupAvatar);
+    };
+  }, [activeChat?.id, messages, messagesRef, unreadSeparatorLastReadMessageId]);
+
   return (
     <ul
       id="messages"
       ref={messagesRef}
       className="subtle-scrollbar"
-      onScroll={keepSubtleScrollbarVisible}
+      onScroll={(event) => {
+        keepSubtleScrollbarVisible(event);
+
+        if (stickyAvatarFrameRef.current !== null) {
+          return;
+        }
+
+        const container = event.currentTarget;
+        stickyAvatarFrameRef.current = window.requestAnimationFrame(() => {
+          stickyAvatarFrameRef.current = null;
+
+          const nextAvatar = updateStickyGroupAvatar(container);
+
+          setStickyGroupAvatar((current) =>
+            current?.messageId === nextAvatar?.messageId &&
+            current?.avatarUrl === nextAvatar?.avatarUrl &&
+            current?.mode === nextAvatar?.mode
+              ? current
+              : nextAvatar,
+          );
+        });
+      }}
     >
       {messages.length === 0 ? (
         <li className="empty-state">No messages yet in this chat.</li>
@@ -407,7 +563,14 @@ export function MessageList({
                   <img
                     src={getSenderAvatar(entry)}
                     alt=""
-                    className="message-avatar"
+                    className={[
+                      "message-avatar",
+                      stickyGroupAvatar?.messageId === String(entry.id)
+                        ? "sticky-group-avatar-source"
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
                     onError={(event) => {
                       event.currentTarget.src = "/favicon.svg";
                     }}
@@ -574,6 +737,14 @@ export function MessageList({
           );
         })
       )}
+      {stickyGroupAvatar ? (
+        <li
+          className={`sticky-group-avatar ${stickyGroupAvatar.mode}`}
+          aria-hidden="true"
+        >
+          <img src={stickyGroupAvatar.avatarUrl} alt="" />
+        </li>
+      ) : null}
     </ul>
   );
 }
