@@ -2956,7 +2956,7 @@ html[data-theme="dark"] {
   gap: 6px;
   overflow-x: hidden;
   overflow-y: auto;
-  overscroll-behavior: contain;
+  overscroll-behavior: none;
   background: transparent;
   padding-right: 4px;
   margin-right: -4px;
@@ -2990,14 +2990,10 @@ html[data-theme="dark"] {
 
 #messages li.sticky-group-avatar.fixed {
   position: fixed;
-  top: var(--sticky-group-avatar-fixed-top, 0px);
-  left: var(--sticky-group-avatar-left, 0px);
 }
 
 #messages li.sticky-group-avatar.flow {
   position: absolute;
-  top: var(--sticky-group-avatar-flow-top, 0px);
-  left: 0;
 }
 
 .sticky-group-avatar img {

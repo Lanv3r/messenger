@@ -6,6 +6,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type ReactNode,
   type RefObject,
+  type WheelEvent as ReactWheelEvent,
 } from "react";
 import { Check, CheckCheck, ClockArrowUp, Pin } from "lucide-react";
 
@@ -44,6 +45,8 @@ type StickyGroupAvatar = {
   messageId: string;
   avatarUrl: string;
   mode: "fixed" | "flow";
+  top: number;
+  left: number;
 };
 
 type MessageListProps = {
@@ -172,6 +175,8 @@ function updateStickyGroupAvatar(container: HTMLUListElement) {
       messageId: endElement.dataset.messageId ?? avatar.currentSrc,
       avatarUrl: avatar.currentSrc || avatar.src,
       mode: "fixed",
+      top: 0,
+      left: 0,
       size: avatar.getBoundingClientRect().height,
       groupTop: startRect.top,
       groupOffsetTop: startElement.offsetTop,
@@ -179,9 +184,6 @@ function updateStickyGroupAvatar(container: HTMLUListElement) {
   }
 
   if (!stickyAvatar) {
-    container.style.removeProperty("--sticky-group-avatar-fixed-top");
-    container.style.removeProperty("--sticky-group-avatar-left");
-    container.style.removeProperty("--sticky-group-avatar-flow-top");
     return null;
   }
 
@@ -189,19 +191,10 @@ function updateStickyGroupAvatar(container: HTMLUListElement) {
 
   if (stickyAvatar.groupTop > fixedAvatarTop) {
     stickyAvatar.mode = "flow";
-    container.style.setProperty(
-      "--sticky-group-avatar-flow-top",
-      `${stickyAvatar.groupOffsetTop}px`,
-    );
+    stickyAvatar.top = stickyAvatar.groupOffsetTop;
   } else {
-    container.style.setProperty(
-      "--sticky-group-avatar-fixed-top",
-      `${fixedAvatarTop}px`,
-    );
-    container.style.setProperty(
-      "--sticky-group-avatar-left",
-      `${viewportRect.left}px`,
-    );
+    stickyAvatar.top = fixedAvatarTop;
+    stickyAvatar.left = viewportRect.left;
   }
 
   return stickyAvatar;
@@ -388,6 +381,23 @@ export function MessageList({
     );
   }
 
+  function preventBoundaryOverscroll(
+    event: ReactWheelEvent<HTMLUListElement>,
+  ) {
+    const container = event.currentTarget;
+    const isAtTop = container.scrollTop <= 0;
+    const isAtBottom =
+      container.scrollTop + container.clientHeight >=
+      container.scrollHeight - 1;
+
+    if (
+      (event.deltaY < 0 && isAtTop) ||
+      (event.deltaY > 0 && isAtBottom)
+    ) {
+      event.preventDefault();
+    }
+  }
+
   useLayoutEffect(() => {
     const container = messagesRef.current;
 
@@ -401,7 +411,9 @@ export function MessageList({
       setStickyGroupAvatar((current) =>
         current?.messageId === nextAvatar?.messageId &&
         current?.avatarUrl === nextAvatar?.avatarUrl &&
-        current?.mode === nextAvatar?.mode
+        current?.mode === nextAvatar?.mode &&
+        current?.top === nextAvatar?.top &&
+        current?.left === nextAvatar?.left
           ? current
           : nextAvatar,
       );
@@ -425,6 +437,7 @@ export function MessageList({
       id="messages"
       ref={messagesRef}
       className="subtle-scrollbar"
+      onWheel={preventBoundaryOverscroll}
       onScroll={(event) => {
         keepSubtleScrollbarVisible(event);
 
@@ -441,7 +454,9 @@ export function MessageList({
           setStickyGroupAvatar((current) =>
             current?.messageId === nextAvatar?.messageId &&
             current?.avatarUrl === nextAvatar?.avatarUrl &&
-            current?.mode === nextAvatar?.mode
+            current?.mode === nextAvatar?.mode &&
+            current?.top === nextAvatar?.top &&
+            current?.left === nextAvatar?.left
               ? current
               : nextAvatar,
           );
@@ -743,6 +758,10 @@ export function MessageList({
         <li
           className={`sticky-group-avatar ${stickyGroupAvatar.mode}`}
           aria-hidden="true"
+          style={{
+            top: stickyGroupAvatar.top,
+            left: stickyGroupAvatar.left,
+          }}
         >
           <img src={stickyGroupAvatar.avatarUrl} alt="" />
         </li>
