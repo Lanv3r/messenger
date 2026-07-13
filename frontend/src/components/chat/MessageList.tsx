@@ -329,17 +329,18 @@ export function MessageList({
                     }}
                   />
                 )}
-                <div className="message-copy">
+                <div
+                  className={[
+                    "message-copy",
+                    hasSharedPin || hasPersonalPin ? "pinned-message" : "",
+                    entry.edited_at ? "edited-message" : "",
+                    deliveryStatus ? "with-status" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
                   {entry.reply_to ? renderReplyPreview(entry.reply_to) : null}
                   {renderMessageBody(entry)}
-                  {hasSharedPin || hasPersonalPin ? (
-                    <span className="message-pin-state">
-                      <Pin size={12} aria-hidden="true" />
-                      {hasSharedPin ? "Pinned in chat" : null}
-                      {hasSharedPin && hasPersonalPin ? " · " : null}
-                      {hasPersonalPin ? "Pinned for me" : null}
-                    </span>
-                  ) : null}
                   {canUseMessageActions ? (
                     <span
                       className={[
@@ -440,6 +441,15 @@ export function MessageList({
                       }
                     }}
                   >
+                    {hasSharedPin || hasPersonalPin ? (
+                      <Pin
+                        className="message-meta-pin"
+                        size={12}
+                        aria-label={
+                          hasSharedPin ? "Pinned in chat" : "Pinned for me"
+                        }
+                      />
+                    ) : null}
                     {sentAt && entry.created_at ? (
                       <time dateTime={entry.created_at}>
                         {entry.edited_at ? `edited ${sentAt}` : sentAt}

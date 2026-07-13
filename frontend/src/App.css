@@ -2655,6 +2655,10 @@ html[data-theme="dark"] {
   background: transparent;
 }
 
+#messages li:not(.media-message) {
+  max-width: 88%;
+}
+
 #messages li.you {
   margin-right: auto;
   color: var(--accent-on-fill);
@@ -2751,6 +2755,7 @@ html[data-theme="dark"] {
 
 .message-copy {
   display: grid;
+  position: relative;
   min-width: 0;
   max-width: 100%;
   gap: 3px;
@@ -2761,6 +2766,42 @@ html[data-theme="dark"] {
   box-shadow: none;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+#messages li:not(.media-message) .message-copy {
+  padding: 7px 75px 5px 8px;
+}
+
+#messages li:not(.media-message) .message-copy.with-status {
+  padding-right: 97px;
+}
+
+#messages li:not(.media-message) .message-copy.pinned-message {
+  padding-right: 93px;
+}
+
+#messages li:not(.media-message) .message-copy.pinned-message.with-status {
+  padding-right: 115px;
+}
+
+#messages li:not(.media-message) .message-copy.edited-message {
+  padding-right: 133px;
+}
+
+#messages li:not(.media-message) .message-copy.edited-message.with-status {
+  padding-right: 155px;
+}
+
+#messages li:not(.media-message) .message-copy.edited-message.pinned-message {
+  padding-right: 153px;
+}
+
+#messages li:not(.media-message) .message-copy.edited-message.pinned-message.with-status {
+  padding-right: 175px;
+}
+
+#messages li:not(.media-message) .message-copy > :not(.message-meta) {
+  grid-column: auto;
 }
 
 .message-copy > span {
@@ -2865,7 +2906,6 @@ html[data-theme="dark"] {
   box-shadow: 0 12px 28px var(--accent-shadow);
 }
 
-.message-pin-state,
 .message-actions {
   display: inline-flex;
   align-items: center;
@@ -2876,22 +2916,13 @@ html[data-theme="dark"] {
   line-height: 1.2;
 }
 
-.message-pin-state {
-  width: fit-content;
-  padding: 3px 7px;
-  border-radius: 999px;
-  color: var(--accent-text);
-  background: var(--accent-soft);
-}
-
-#messages li.you .message-pin-state {
-  color: var(--accent-on-fill);
-  background: rgba(255, 255, 255, 0.22);
-}
-
 .message-actions {
-  position: relative;
-  width: fit-content;
+  position: absolute;
+  right: 8px;
+  bottom: 5px;
+  width: 0;
+  height: 0;
+  overflow: visible;
   opacity: 0;
   transition: opacity 150ms ease;
 }
@@ -3040,7 +3071,19 @@ html[data-theme="dark"] {
   font-size: 11px;
   font-weight: 700;
   line-height: 1;
+  white-space: nowrap;
   opacity: 0.64;
+}
+
+#messages li:not(.media-message) .message-meta {
+  position: absolute;
+  right: 8px;
+  bottom: 5px;
+  margin-bottom: 0;
+}
+
+.message-meta-pin {
+  flex: 0 0 auto;
 }
 
 .message-meta:hover,
