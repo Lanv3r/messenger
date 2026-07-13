@@ -401,7 +401,7 @@ export function MessageList({
                   );
                 }}
               >
-                {isGroupedWithPrevious ? (
+                {isGroupedWithNext ? (
                   <span className="message-avatar-spacer" aria-hidden="true" />
                 ) : (
                   <img
