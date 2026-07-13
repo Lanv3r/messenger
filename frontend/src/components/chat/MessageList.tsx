@@ -42,6 +42,7 @@ type MessageListProps = {
   messagesRef: RefObject<HTMLUListElement | null>;
   messages: ChatMessage[];
   currentUserId: number;
+  unreadSeparatorLastReadMessageId: number | null;
   activeChat: Chat | undefined;
   activeSearchResultId: number | null;
   openMessageMenuId: number | null;
@@ -235,6 +236,7 @@ export function MessageList({
   messagesRef,
   messages,
   currentUserId,
+  unreadSeparatorLastReadMessageId,
   activeChat,
   activeSearchResultId,
   openMessageMenuId,
@@ -254,6 +256,16 @@ export function MessageList({
   const [tooltipPlacements, setTooltipPlacements] = useState<
     Record<number, MessageMetaTooltipPlacement>
   >({});
+  const firstUnreadMessageId =
+    unreadSeparatorLastReadMessageId === null
+      ? null
+      : (messages.find(
+          (entry) =>
+            entry.sender_id !== currentUserId &&
+            entry.delivery_status !== "sending" &&
+            entry.delivery_status !== "failed" &&
+            entry.id > unreadSeparatorLastReadMessageId,
+        )?.id ?? null);
 
   function updateTooltipPlacement(
     messageId: number,
@@ -284,6 +296,7 @@ export function MessageList({
         messages.map((entry, index) => {
           const previousEntry = messages[index - 1];
           const nextEntry = messages[index + 1];
+          const showUnreadSeparator = entry.id === firstUnreadMessageId;
           const sentAt = formatMessageTime(entry.created_at);
           const sentAtFull = formatMessageFullTimestamp(entry.created_at);
           const editedAtFull = formatMessageFullTimestamp(entry.edited_at);
@@ -326,13 +339,15 @@ export function MessageList({
           const isGroupedWithPrevious = isGroupedWithPreviousMessage(
             entry,
             previousEntry,
-            showDaySeparator,
+            showDaySeparator || showUnreadSeparator,
           );
+          const nextShowsUnreadSeparator = nextEntry?.id === firstUnreadMessageId;
           const isGroupedWithNext = nextEntry
             ? isGroupedWithPreviousMessage(
                 nextEntry,
                 entry,
-                !isSameMessageDay(entry.created_at, nextEntry.created_at),
+                !isSameMessageDay(entry.created_at, nextEntry.created_at) ||
+                  nextShowsUnreadSeparator,
               )
             : false;
           const sequenceClass =
@@ -351,6 +366,11 @@ export function MessageList({
             <Fragment key={messageKey}>
               {showDaySeparator && dayLabel ? (
                 <li className="message-day-separator">{dayLabel}</li>
+              ) : null}
+              {showUnreadSeparator ? (
+                <li className="message-unread-separator">
+                  <span>Unread messages</span>
+                </li>
               ) : null}
 
               <li

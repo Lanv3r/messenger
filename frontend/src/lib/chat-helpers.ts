@@ -179,6 +179,37 @@ export function updateChatPreview(chats: Chat[], message: ChatMessage) {
   return upsertChatPreview(chats, existingChat, message);
 }
 
+export function updateChatPreviewWithUnread(
+  chats: Chat[],
+  message: ChatMessage,
+  currentUserId: number,
+) {
+  const existingChat = chats.find((chat) => chat.id === message.chat_id);
+
+  if (!existingChat) {
+    return chats;
+  }
+
+  const lastKnownMessageId = existingChat.last_message_id ?? 0;
+  const isNewIncomingMessage =
+    message.sender_id !== currentUserId &&
+    message.delivery_status !== "sending" &&
+    message.delivery_status !== "failed" &&
+    message.id > lastKnownMessageId &&
+    message.id > (existingChat.current_last_read_message_id ?? 0);
+  const nextChat = {
+    ...applyLastMessagePreview(existingChat, message),
+    unread_count: isNewIncomingMessage
+      ? existingChat.unread_count + 1
+      : existingChat.unread_count,
+  };
+  const existingIndex = chats.findIndex((chat) => chat.id === message.chat_id);
+  const nextChats = [...chats];
+
+  nextChats.splice(existingIndex, 1);
+  return sortChats([nextChat, ...nextChats]);
+}
+
 export function replaceTemporaryMessage(
   messages: ChatMessage[],
   tempId: string,

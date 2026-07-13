@@ -217,6 +217,12 @@ export function ChatScreen({
   const [activePinnedMessageId, setActivePinnedMessageId] = useState<
     number | null
   >(null);
+  const [
+    unreadSeparatorLastReadMessageId,
+    setUnreadSeparatorLastReadMessageId,
+  ] = useState<number | null>(null);
+  const unreadSeparatorChatIdRef = useRef<number | null>(null);
+  const unreadSeparatorInitialLastMessageIdRef = useRef<number | null>(null);
   const pinnedBarActiveOverrideRef = useRef<number | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const {
@@ -256,6 +262,33 @@ export function ChatScreen({
   const activeChat = chats.find(
     (chat) => chat.id === activeChatId,
   );
+
+  useEffect(() => {
+    if (activeChatId === null) {
+      unreadSeparatorChatIdRef.current = null;
+      unreadSeparatorInitialLastMessageIdRef.current = null;
+      setUnreadSeparatorLastReadMessageId(null);
+      return;
+    }
+
+    if (unreadSeparatorChatIdRef.current === activeChatId) {
+      return;
+    }
+
+    if (!activeChat) {
+      return;
+    }
+
+    unreadSeparatorChatIdRef.current = activeChatId;
+    unreadSeparatorInitialLastMessageIdRef.current =
+      activeChat.unread_count > 0 ? activeChat.last_message_id : null;
+    setUnreadSeparatorLastReadMessageId(
+      activeChat.unread_count > 0
+        ? (activeChat.current_last_read_message_id ?? 0)
+        : null,
+    );
+  }, [activeChat, activeChatId]);
+
   const {
     saveActiveChatId,
     getSavedActiveChatId,
@@ -529,6 +562,10 @@ export function ChatScreen({
     clearSavedActiveChat,
     resetChatInfoPanel,
     clearMemberRemoval,
+    onIncomingActiveChatMessage: () => {
+      unreadSeparatorInitialLastMessageIdRef.current = null;
+      setUnreadSeparatorLastReadMessageId(null);
+    },
     onChatError: setChatError,
   });
 
@@ -672,6 +709,32 @@ export function ChatScreen({
     activeChatId,
     messages,
   });
+
+  useEffect(() => {
+    if (
+      activeChatId === null ||
+      unreadSeparatorLastReadMessageId === null ||
+      unreadSeparatorInitialLastMessageIdRef.current === null
+    ) {
+      return;
+    }
+
+    const initialLastMessageId = unreadSeparatorInitialLastMessageIdRef.current;
+    const hasNewMessageAfterSeparator = visibleMessages.some(
+      (entry) =>
+        entry.delivery_status !== "failed" &&
+        entry.id > initialLastMessageId,
+    );
+
+    if (hasNewMessageAfterSeparator) {
+      unreadSeparatorInitialLastMessageIdRef.current = null;
+      setUnreadSeparatorLastReadMessageId(null);
+    }
+  }, [
+    activeChatId,
+    unreadSeparatorLastReadMessageId,
+    visibleMessages,
+  ]);
 
   useEffect(() => {
     const messagesElement = messagesRef.current;
@@ -1441,6 +1504,7 @@ export function ChatScreen({
           messagesRef={messagesRef}
           messages={visibleMessages}
           currentUserId={user.userId}
+          unreadSeparatorLastReadMessageId={unreadSeparatorLastReadMessageId}
           activeChat={activeChat}
           activeSearchResultId={activeSearchResultId}
           openMessageMenuId={openMessageMenuId}

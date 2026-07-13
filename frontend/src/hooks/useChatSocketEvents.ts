@@ -3,7 +3,7 @@ import type { Socket } from "socket.io-client";
 
 import {
   mergeChatMembershipUpdate,
-  updateChatPreview,
+  updateChatPreviewWithUnread,
   upsertChat,
 } from "@/lib/chat-helpers";
 import type {
@@ -51,6 +51,7 @@ type UseChatSocketEventsOptions = {
   clearSavedActiveChat: () => void;
   resetChatInfoPanel: () => void;
   clearMemberRemoval: () => void;
+  onIncomingActiveChatMessage: (message: ChatMessage) => void;
   onChatError: (message: string) => void;
 };
 
@@ -80,6 +81,7 @@ export function useChatSocketEvents({
   clearSavedActiveChat,
   resetChatInfoPanel,
   clearMemberRemoval,
+  onIncomingActiveChatMessage,
   onChatError,
 }: UseChatSocketEventsOptions) {
   function onBeforeDisconnect(socket: Socket) {
@@ -87,6 +89,10 @@ export function useChatSocketEvents({
   }
 
   function onMessage(data: ChatMessage) {
+    if (data.chat_id === activeChatIdRef.current && data.sender_id !== userId) {
+      onIncomingActiveChatMessage(data);
+    }
+
     setMessages((current) => {
       if (current.some((entry) => entry.id === data.id)) {
         return current;
@@ -97,12 +103,14 @@ export function useChatSocketEvents({
         { ...data, isOwn: data.sender_id === userId },
       ];
     });
-    setChats((current) => updateChatPreview(current, data));
+    setChats((current) => updateChatPreviewWithUnread(current, data, userId));
     clearUserActivity(data.chat_id, data.sender_id, data.sender_username);
   }
 
   function onChatUpdated(data: ChatUpdatedEvent) {
-    setChats((current) => updateChatPreview(current, data.last_message));
+    setChats((current) =>
+      updateChatPreviewWithUnread(current, data.last_message, userId),
+    );
     clearUserActivity(
       data.chat_id,
       data.last_message.sender_id,
@@ -112,6 +120,7 @@ export function useChatSocketEvents({
       data.chat_id === activeChatIdRef.current &&
       data.last_message.sender_id !== userId
     ) {
+      onIncomingActiveChatMessage(data.last_message);
       setMessages((current) => {
         if (current.some((entry) => entry.id === data.last_message.id)) {
           return current;

@@ -52,6 +52,7 @@ export function useMessageReadTracking({
   >({});
   const lastReadMessageIdByChatRef = useRef<Record<number, number>>({});
   const unreadCountOverrideByChatRef = useRef<Record<number, number>>({});
+  const isNearBottomByChatRef = useRef<Record<number, boolean>>({});
 
   function applyLocalReadState(chat: Chat) {
     const localLastReadMessageId =
@@ -63,9 +64,22 @@ export function useMessageReadTracking({
       localLastReadMessageId === undefined ||
       localLastReadMessageId <= (chat.current_last_read_message_id ?? 0)
     ) {
-      return unreadCountOverride === undefined
-        ? chat
-        : { ...chat, unread_count: unreadCountOverride };
+      if (unreadCountOverride === undefined) {
+        return chat;
+      }
+
+      const chatHasNewerUnreadMessages =
+        localLastReadMessageId !== undefined &&
+        chat.last_message_id !== null &&
+        chat.last_message_id > localLastReadMessageId &&
+        chat.unread_count > unreadCountOverride;
+
+      return {
+        ...chat,
+        unread_count: chatHasNewerUnreadMessages
+          ? chat.unread_count
+          : unreadCountOverride,
+      };
     }
 
     return {
@@ -173,6 +187,7 @@ export function useMessageReadTracking({
     delete lastReadMessageIdByChatRef.current[chatId];
     delete unreadCountOverrideByChatRef.current[chatId];
     delete readCoverageByChatRef.current[chatId];
+    delete isNearBottomByChatRef.current[chatId];
   }
 
   useEffect(() => {
@@ -288,7 +303,17 @@ export function useMessageReadTracking({
 
     let animationFrameId = requestAnimationFrame(updateReadCoverage);
 
+    const updateNearBottom = () => {
+      const distanceFromBottom =
+        messagesElement.scrollHeight -
+        messagesElement.scrollTop -
+        messagesElement.clientHeight;
+
+      isNearBottomByChatRef.current[activeChatId] = distanceFromBottom <= 80;
+    };
+
     const handleScroll = () => {
+      updateNearBottom();
       saveChatScrollPositionFromEffect(activeChatId, messagesElement.scrollTop);
       cancelAnimationFrame(animationFrameId);
       animationFrameId = requestAnimationFrame(updateReadCoverage);
@@ -319,10 +344,22 @@ export function useMessageReadTracking({
 
     requestAnimationFrame(() => {
       const pendingScroll = pendingMessageScrollRef.current;
+      const scrollToBottom = () => {
+        messagesElement.scrollTop = messagesElement.scrollHeight;
+        isNearBottomByChatRef.current[activeChatId] = true;
+        requestAnimationFrame(() => {
+          messagesElement.dispatchEvent(new Event("scroll"));
+        });
+      };
+
+      if (!pendingScroll || pendingScroll.chatId !== activeChatId) {
+        if (isNearBottomByChatRef.current[activeChatId]) {
+          scrollToBottom();
+        }
+        return;
+      }
 
       if (
-        pendingScroll &&
-        pendingScroll.chatId === activeChatId &&
         pendingScroll.scrollTop !== null &&
         pendingScroll.scrollTop !== undefined
       ) {
@@ -339,11 +376,7 @@ export function useMessageReadTracking({
         return;
       }
 
-      if (
-        pendingScroll &&
-        pendingScroll.chatId === activeChatId &&
-        pendingScroll.unreadCount > 0
-      ) {
+      if (pendingScroll.unreadCount > 0) {
         const firstUnreadMessage = activeMessages.find(
           (entry) =>
             entry.sender_id !== currentUserId &&
@@ -369,11 +402,8 @@ export function useMessageReadTracking({
         }
       }
 
-      messagesElement.scrollTop = messagesElement.scrollHeight;
       pendingMessageScrollRef.current = null;
-      requestAnimationFrame(() => {
-        messagesElement.dispatchEvent(new Event("scroll"));
-      });
+      scrollToBottom();
     });
   }, [activeChatId, currentUserId, messages.length, messagesRef]);
 

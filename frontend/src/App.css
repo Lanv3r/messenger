@@ -2761,6 +2761,35 @@ html[data-theme="dark"] {
   background: rgba(133, 144, 167, 0.12);
 }
 
+#messages li.message-unread-separator {
+  width: 100%;
+  max-width: 100%;
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 10px;
+  margin: 2px 0;
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+  background: transparent;
+}
+
+#messages li.message-unread-separator::before,
+#messages li.message-unread-separator::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  border-radius: 999px;
+  background: rgba(255, 157, 132, 0.48);
+}
+
+#messages li.message-unread-separator span {
+  flex: 0 0 auto;
+  padding: 0 2px;
+}
+
 .message-avatar {
   align-self: end;
   width: 38px;
