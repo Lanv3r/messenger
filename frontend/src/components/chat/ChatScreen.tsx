@@ -64,11 +64,24 @@ import type {
   AuthResponse,
   AuthUser,
   Chat,
+  ChatMember,
   ChatMessage,
   MessageCopyTarget,
   ThemeMode,
   UserProfile,
 } from "@/types";
+
+function toUserProfile(member: ChatMember): UserProfile {
+  return {
+    id: member.user_id,
+    username: member.username,
+    first_name: member.first_name,
+    last_name: member.last_name,
+    bio: member.bio,
+    avatar_url: member.avatar_url,
+    status: member.status,
+  };
+}
 
 export function ChatScreen({
   user,
@@ -949,6 +962,10 @@ export function ChatScreen({
   });
   const directContactUserId =
     activeChat?.type === "direct" ? activeChat.other_user_id : null;
+  const selectedDirectProfile =
+    selectedChatMember && activeChat?.type === "direct"
+      ? toUserProfile(selectedChatMember)
+      : null;
 
   const revealMessageById = (
     messageId: number,
@@ -1456,19 +1473,29 @@ export function ChatScreen({
           />
         ) : null}
 
-        {selectedChatMember ? (
+        {selectedDirectProfile ? (
+          <UserProfileDialog
+            profile={selectedDirectProfile}
+            isContact={isContact(selectedDirectProfile.id)}
+            contactActionLoading={
+              contactSavingUserId === selectedDirectProfile.id
+            }
+            onClose={() => setSelectedChatMember(null)}
+            onMessage={() => {
+              setSelectedChatMember(null);
+              void openDraftChat(selectedDirectProfile);
+            }}
+            onToggleContact={() => {
+              void toggleContact(selectedDirectProfile.id);
+            }}
+          />
+        ) : null}
+
+        {selectedChatMember && activeChat?.type !== "direct" ? (
           <MemberProfileDialog
             member={selectedChatMember}
             currentUserId={user.userId}
             showManagement={activeChat?.type === "group"}
-            showContactAction={
-              activeChat?.type === "direct" &&
-              selectedChatMember.user_id !== user.userId
-            }
-            isContact={isContact(selectedChatMember.user_id)}
-            contactActionLoading={
-              contactSavingUserId === selectedChatMember.user_id
-            }
             mode={selectedMemberManagementMode}
             adminPermissionsLoading={
               adminPermissionsLoadingUserId === selectedChatMember.user_id
@@ -1497,9 +1524,6 @@ export function ChatScreen({
             }
             getChatMemberDisplayName={getChatMemberDisplayName}
             onClose={() => setSelectedChatMember(null)}
-            onToggleContact={() => {
-              void toggleContact(selectedChatMember.user_id);
-            }}
             onModeChange={setSelectedMemberManagementMode}
             onSelectedMemberBooleanPermissionChange={
               updateSelectedMemberBooleanPermission
@@ -1716,7 +1740,11 @@ export function ChatScreen({
         </section>
       </div>
       {editingProfile ? (
-        <div className="profile-editor-backdrop">
+        <div
+          className="profile-editor-backdrop"
+          role="presentation"
+          onClick={requestCloseProfileEditor}
+        >
           <ProfileEditor
             username={user.username}
             firstName={profileFirstName}

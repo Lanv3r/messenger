@@ -82,6 +82,7 @@ export function ProfileEditor({
       role="dialog"
       aria-modal="true"
       aria-label="Edit your profile"
+      onClick={(event) => event.stopPropagation()}
     >
       <div className="profile-editor-header">
         <span>
