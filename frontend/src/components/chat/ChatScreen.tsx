@@ -12,6 +12,7 @@ import { ChatAccountRail } from "@/components/chat/ChatAccountRail";
 import { ChatComposer } from "@/components/chat/ChatComposer";
 import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
+import { ContactsSidebar } from "@/components/chat/ContactsSidebar";
 import { CreateGroupPanel } from "@/components/chat/CreateGroupPanel";
 import { GroupInfoPanel } from "@/components/chat/GroupInfoPanel";
 import { ImageViewerDialog } from "@/components/chat/ImageViewerDialog";
@@ -57,6 +58,7 @@ import { useMessageDisplay } from "@/hooks/useMessageDisplay";
 import { useChatPresentation } from "@/hooks/useChatPresentation";
 import { useChatSocketEvents } from "@/hooks/useChatSocketEvents";
 import { useChatData } from "@/hooks/useChatData";
+import { useContacts } from "@/hooks/useContacts";
 import type {
   AuthResponse,
   AuthUser,
@@ -98,6 +100,7 @@ export function ChatScreen({
   );
   const [profileCloseConfirmOpen, setProfileCloseConfirmOpen] = useState(false);
   const [messageSearchOpen, setMessageSearchOpen] = useState(false);
+  const [contactsOpen, setContactsOpen] = useState(false);
   const [imageViewer, setImageViewer] = useState<{
     src: string;
     alt: string;
@@ -135,6 +138,15 @@ export function ChatScreen({
     clearResult: clearProfileSearchResult,
     clearSearch: clearProfileSearch,
   } = useProfileSearch({ onSessionExpired });
+  const {
+    contacts,
+    loading: contactsLoading,
+    error: contactsError,
+    savingUserId: contactSavingUserId,
+    isContact,
+    toggleContact,
+    refreshContacts,
+  } = useContacts({ onSessionExpired });
   const {
     editing: editingProfile,
     firstName: profileFirstName,
@@ -929,6 +941,8 @@ export function ChatScreen({
     messageActionDialog,
     getChatActivitySubtitle,
   });
+  const directContactUserId =
+    activeChat?.type === "direct" ? activeChat.other_user_id : null;
 
   const revealMessageById = (
     messageId: number,
@@ -1219,7 +1233,16 @@ export function ChatScreen({
         <ChatAccountRail
           user={user}
           themeMode={themeMode}
+          contactsOpen={contactsOpen}
           onToggleProfileEditor={openProfileEditor}
+          onToggleContacts={() => {
+            if (!contactsOpen) {
+              setMessageSearchOpen(false);
+              resetMessageSearch();
+              void refreshContacts();
+            }
+            setContactsOpen(!contactsOpen);
+          }}
           onSignOut={onSignOut}
           onToggleTheme={onToggleTheme}
         />
@@ -1241,6 +1264,15 @@ export function ChatScreen({
               getSenderName={getSenderName}
             />
           </aside>
+        ) : contactsOpen ? (
+          <ContactsSidebar
+            contacts={contacts}
+            loading={contactsLoading}
+            error={contactsError}
+            onOpenContact={(contact) => {
+              void openDraftChat(contact);
+            }}
+          />
         ) : (
           <ChatSidebar
             profileQuery={profileQuery}
@@ -1270,6 +1302,7 @@ export function ChatScreen({
         <section className="chat-card">
           <div className="chat-top-stack">
             <ChatHeader
+              key={activeChatId ?? "draft"}
               title={chatHeaderTitle}
               subtitle={chatHeaderSubtitle}
               avatarUrl={chatHeaderAvatar}
@@ -1277,6 +1310,14 @@ export function ChatScreen({
               onClick={handleChatHeaderClick}
               searchEnabled={activeChatId !== null && draftRecipient === null}
               searchActive={messageSearchOpen}
+              showContactMenu={directContactUserId !== null}
+              isContact={
+                directContactUserId !== null && isContact(directContactUserId)
+              }
+              contactActionLoading={
+                directContactUserId !== null &&
+                contactSavingUserId === directContactUserId
+              }
               onSearchClick={() => {
                 if (activeChatId === null || draftRecipient !== null) {
                   return;
@@ -1285,9 +1326,16 @@ export function ChatScreen({
                 setMessageSearchOpen((current) => {
                   if (current) {
                     resetMessageSearch();
+                  } else {
+                    setContactsOpen(false);
                   }
                   return !current;
                 });
+              }}
+              onToggleContact={() => {
+                if (directContactUserId !== null) {
+                  void toggleContact(directContactUserId);
+                }
               }}
             />
             {!creatingGroup ? (
@@ -1395,6 +1443,14 @@ export function ChatScreen({
             member={selectedChatMember}
             currentUserId={user.userId}
             showManagement={activeChat?.type === "group"}
+            showContactAction={
+              activeChat?.type === "direct" &&
+              selectedChatMember.user_id !== user.userId
+            }
+            isContact={isContact(selectedChatMember.user_id)}
+            contactActionLoading={
+              contactSavingUserId === selectedChatMember.user_id
+            }
             mode={selectedMemberManagementMode}
             adminPermissionsLoading={
               adminPermissionsLoadingUserId === selectedChatMember.user_id
@@ -1423,6 +1479,9 @@ export function ChatScreen({
             }
             getChatMemberDisplayName={getChatMemberDisplayName}
             onClose={() => setSelectedChatMember(null)}
+            onToggleContact={() => {
+              void toggleContact(selectedChatMember.user_id);
+            }}
             onModeChange={setSelectedMemberManagementMode}
             onSelectedMemberBooleanPermissionChange={
               updateSelectedMemberBooleanPermission

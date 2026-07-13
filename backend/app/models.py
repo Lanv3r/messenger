@@ -67,6 +67,26 @@ class UserUpdate(UserBase):
     deleted_at: datetime | None = None
 
 
+class Contact(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "contacts"
+
+    owner_user_id: int = Field(
+        foreign_key="users.id",
+        primary_key=True,
+        ondelete="CASCADE",
+    )
+    contact_user_id: int = Field(
+        foreign_key="users.id",
+        primary_key=True,
+        ondelete="CASCADE",
+    )
+    created_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime,
+        sa_column_kwargs={"server_default": func.now(), "nullable": False},
+    )
+
+
 class LoginRequest(SQLModel):
     username: str
     password: str

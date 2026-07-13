@@ -122,6 +122,10 @@ html[data-theme="dark"] {
     transform 160ms ease;
 }
 
+.chat-window-header.has-contact-menu .chat-window-header-button {
+  padding-right: 94px;
+}
+
 .chat-window-header-button:not(:disabled):hover {
   transform: none;
   background: rgba(255, 255, 255, 0.32);
@@ -131,10 +135,19 @@ html[data-theme="dark"] {
   cursor: default;
 }
 
-.chat-header-search-button {
+.chat-header-actions {
   position: absolute;
   top: 50%;
-  right: 14px;
+  right: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  transform: translateY(-50%);
+}
+
+.chat-header-search-button,
+.chat-header-menu-button {
   width: 38px;
   height: 38px;
   display: grid;
@@ -145,24 +158,63 @@ html[data-theme="dark"] {
   background: transparent;
   box-shadow: none;
   cursor: pointer;
-  transform: translateY(-50%);
   transition:
     background 160ms ease,
     color 160ms ease,
-    transform 160ms ease,
     opacity 160ms ease;
 }
 
 .chat-header-search-button:hover:not(:disabled),
-.chat-header-search-button.active {
+.chat-header-search-button.active,
+.chat-header-menu-button:hover {
   color: var(--accent-text);
   background: var(--accent-soft);
-  transform: translateY(-50%);
 }
 
 .chat-header-search-button:disabled {
   cursor: default;
   opacity: 0.42;
+}
+
+.chat-header-contact-menu-wrap {
+  position: relative;
+}
+
+.chat-header-contact-menu {
+  position: absolute;
+  top: calc(100% + 7px);
+  right: 0;
+  z-index: 8;
+  min-width: 146px;
+  padding: 5px;
+  border: 1px solid rgba(163, 88, 66, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 252, 249, 0.98);
+  box-shadow: 0 12px 28px rgba(106, 58, 45, 0.16);
+}
+
+.chat-header-contact-menu button {
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  color: #5d4030;
+  background: transparent;
+  cursor: pointer;
+}
+
+.chat-header-contact-menu button:hover:not(:disabled) {
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+
+.chat-header-contact-menu button:disabled {
+  cursor: wait;
+  opacity: 0.6;
 }
 
 .chat-window-header-button img {
@@ -874,6 +926,29 @@ html[data-theme="dark"] {
   margin-top: 6px;
 }
 
+.profile-contact-button {
+  margin-top: 8px;
+  padding: 8px 13px;
+  border: 0;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 800;
+  color: #5d4030;
+  background: var(--accent-soft);
+  cursor: pointer;
+}
+
+.profile-contact-button:hover:not(:disabled) {
+  color: var(--accent-on-fill);
+  background: var(--accent-fill);
+}
+
+.profile-contact-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
 .chat-info-profile,
 .chat-member-main {
   display: grid;
@@ -1142,6 +1217,12 @@ html[data-theme="dark"] {
   padding: 0;
 }
 
+.account-rail-button.active {
+  border-color: var(--accent-focus);
+  color: var(--accent-on-fill);
+  background: var(--accent-fill);
+}
+
 .chat-sidebar {
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
@@ -1158,6 +1239,136 @@ html[data-theme="dark"] {
 
 .chat-sidebar.profile-search-mode {
   grid-template-rows: auto auto minmax(0, 1fr);
+}
+
+.contacts-sidebar {
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 12px;
+}
+
+.contacts-sidebar-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.contacts-sidebar-heading > span {
+  min-width: 22px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 800;
+  text-align: center;
+  color: #8b5e34;
+  background: rgba(163, 88, 66, 0.1);
+}
+
+.contacts-list {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 1px;
+  width: calc(100% + 40px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin-inline: -20px;
+}
+
+.contact-list-item {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 11px;
+  padding: 10px 20px;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  color: #1f2937;
+  background: transparent;
+  cursor: pointer;
+  transition: background 160ms ease;
+}
+
+.contact-list-item:hover {
+  background: rgba(255, 255, 255, 0.34);
+}
+
+.contact-list-item img {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(133, 144, 167, 0.14);
+}
+
+.contact-list-item > span {
+  min-width: 0;
+  display: grid;
+  align-content: center;
+  gap: 2px;
+}
+
+.contact-list-item strong,
+.contact-list-item small,
+.contact-list-item em {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contact-list-item strong {
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.contact-list-item small {
+  font-size: 12px;
+  line-height: 1.15;
+  color: #6b7280;
+}
+
+.contact-list-item em {
+  font-size: 11px;
+  font-style: normal;
+  line-height: 1.15;
+  color: #1f8c64;
+}
+
+.contacts-status,
+.contacts-empty-state {
+  margin: 0;
+  color: #8b5e34;
+}
+
+.contacts-status {
+  padding: 10px 20px;
+  font-size: 13px;
+}
+
+.contacts-empty-state {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  padding: 48px 26px;
+  text-align: center;
+}
+
+.contacts-empty-state svg {
+  color: var(--accent-text);
+}
+
+.contacts-empty-state strong {
+  font-size: 14px;
+  color: #1f2937;
+}
+
+.contacts-empty-state p {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .theme-toggle-button {
@@ -3896,6 +4107,7 @@ html[data-theme="dark"] .retry-button {
 
 html[data-theme="dark"] .chat-window-header-button,
 html[data-theme="dark"] .chat-header-search-button,
+html[data-theme="dark"] .chat-header-menu-button,
 html[data-theme="dark"] .profile-card,
 html[data-theme="dark"] .chat-info-panel,
 html[data-theme="dark"] .chat-info-nested-panel,
@@ -3935,6 +4147,22 @@ html[data-theme="dark"] .chat-header-search-button {
   border: 0;
   background: transparent;
   box-shadow: none;
+}
+
+html[data-theme="dark"] .chat-header-menu-button {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .chat-header-contact-menu {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(26, 32, 45, 0.98);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.3);
+}
+
+html[data-theme="dark"] .chat-header-contact-menu button {
+  color: #f7efe7;
 }
 
 html[data-theme="dark"] .pinned-messages-bar {
@@ -4112,6 +4340,7 @@ html[data-theme="dark"] .attachment-caption-field textarea:focus {
 
 html[data-theme="dark"] .chat-window-header-button,
 html[data-theme="dark"] .chat-header-search-button,
+html[data-theme="dark"] .chat-header-menu-button,
 html[data-theme="dark"] .theme-toggle-button,
 html[data-theme="dark"] .account-rail-button,
 html[data-theme="dark"] .avatar-upload-button,
@@ -4125,6 +4354,7 @@ html[data-theme="dark"] .sidebar-add-chat-button {
 html[data-theme="dark"] .chat-window-header-button:not(:disabled):hover,
 html[data-theme="dark"] .chat-header-search-button:hover:not(:disabled),
 html[data-theme="dark"] .chat-header-search-button.active,
+html[data-theme="dark"] .chat-header-menu-button:hover,
 html[data-theme="dark"] .theme-toggle-button:hover,
 html[data-theme="dark"] .account-rail-button:hover,
 html[data-theme="dark"] .account-rail-avatar-button:hover,
@@ -4143,6 +4373,48 @@ html[data-theme="dark"] .account-rail-avatar-button:hover {
 html[data-theme="dark"] .account-rail-avatar-button:hover::after,
 html[data-theme="dark"] .account-rail-avatar-button:focus-visible::after {
   border-color: var(--accent-text);
+}
+
+html[data-theme="dark"] .account-rail-button.active {
+  color: var(--accent-on-fill);
+  background: var(--accent-fill);
+}
+
+html[data-theme="dark"] .contacts-sidebar-heading > span {
+  color: #d8c2b1;
+  background: rgba(255, 255, 255, 0.09);
+}
+
+html[data-theme="dark"] .contact-list-item {
+  color: #f7efe7;
+}
+
+html[data-theme="dark"] .contact-list-item:hover {
+  background: rgba(255, 255, 255, 0.045);
+}
+
+html[data-theme="dark"] .contact-list-item small,
+html[data-theme="dark"] .contacts-status,
+html[data-theme="dark"] .contacts-empty-state {
+  color: #c8b6a7;
+}
+
+html[data-theme="dark"] .contact-list-item em {
+  color: #72e0ad;
+}
+
+html[data-theme="dark"] .contacts-empty-state strong {
+  color: #f7efe7;
+}
+
+html[data-theme="dark"] .profile-contact-button {
+  color: #f7efe7;
+  background: rgba(255, 157, 132, 0.16);
+}
+
+html[data-theme="dark"] .profile-contact-button:hover:not(:disabled) {
+  color: var(--accent-on-fill);
+  background: var(--accent-fill);
 }
 
 html[data-theme="dark"] .chat-list-item:hover {

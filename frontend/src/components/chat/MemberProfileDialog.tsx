@@ -11,6 +11,9 @@ type MemberProfileDialogProps = {
   member: ChatMember;
   currentUserId: number;
   showManagement: boolean;
+  showContactAction: boolean;
+  isContact: boolean;
+  contactActionLoading: boolean;
   mode: MemberManagementMode;
   adminPermissionsLoading: boolean;
   hasActions: boolean;
@@ -35,6 +38,7 @@ type MemberProfileDialogProps = {
   adminPermissionIsForcedByMemberDefault: (key: string) => boolean;
   getChatMemberDisplayName: (member: ChatMember) => string;
   onClose: () => void;
+  onToggleContact: () => void;
   onModeChange: (mode: MemberManagementMode) => void;
   onSelectedMemberBooleanPermissionChange: (
     key: string,
@@ -57,6 +61,9 @@ export function MemberProfileDialog({
   member,
   currentUserId,
   showManagement,
+  showContactAction,
+  isContact,
+  contactActionLoading,
   mode,
   adminPermissionsLoading,
   hasActions,
@@ -81,6 +88,7 @@ export function MemberProfileDialog({
   adminPermissionIsForcedByMemberDefault,
   getChatMemberDisplayName,
   onClose,
+  onToggleContact,
   onModeChange,
   onSelectedMemberBooleanPermissionChange,
   onSelectedMemberNumericPermissionChange,
@@ -120,6 +128,16 @@ export function MemberProfileDialog({
           <p className="profile-username">@{member.username}</p>
           {member.bio ? <p className="profile-bio">{member.bio}</p> : null}
           <span className="profile-status">{member.status}</span>
+          {showContactAction ? (
+            <button
+              type="button"
+              className="profile-contact-button"
+              disabled={contactActionLoading}
+              onClick={onToggleContact}
+            >
+              {isContact ? "Delete contact" : "Add contact"}
+            </button>
+          ) : null}
           {showManagement ? (
             <MemberManagementPanel
               member={member}

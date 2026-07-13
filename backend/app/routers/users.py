@@ -6,7 +6,7 @@ from sqlmodel import col, select
 
 from app.db import SessionDep
 from app.dependencies import get_current_user
-from app.models import User, UserProfileUpdate, UserPublic
+from app.models import Contact, User, UserProfileUpdate, UserPublic
 from app.services.uploads import save_avatar_upload
 from app.services.users import is_valid_username
 
@@ -83,6 +83,74 @@ async def read_users_me(
     current_user: Annotated[User, Depends(get_current_user)],
 ) -> User:
     return current_user
+
+
+@router.get("/users/me/contacts", response_model=list[UserPublic])
+def get_contacts(
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    current_user_id = current_user.id
+    if current_user_id is None:
+        raise HTTPException(status_code=500, detail="User was not loaded correctly")
+
+    return session.exec(
+        select(User)
+        .join(Contact, col(Contact.contact_user_id) == col(User.id))
+        .where(col(Contact.owner_user_id) == current_user_id)
+        .order_by(col(User.first_name), col(User.last_name), col(User.username))
+    ).all()
+
+
+@router.put("/users/me/contacts/{user_id}", response_model=UserPublic)
+def add_contact(
+    user_id: int,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    current_user_id = current_user.id
+    if current_user_id is None:
+        raise HTTPException(status_code=500, detail="User was not loaded correctly")
+    if user_id == current_user_id:
+        raise HTTPException(status_code=400, detail="You cannot add yourself as a contact")
+
+    contact_user = session.get(User, user_id)
+    if contact_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    contact = session.get(Contact, (current_user_id, user_id))
+    if contact is None:
+        session.add(
+            Contact(
+                owner_user_id=current_user_id,
+                contact_user_id=user_id,
+            )
+        )
+        session.commit()
+
+    return contact_user
+
+
+@router.delete("/users/me/contacts/{user_id}", response_model=UserPublic)
+def remove_contact(
+    user_id: int,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    current_user_id = current_user.id
+    if current_user_id is None:
+        raise HTTPException(status_code=500, detail="User was not loaded correctly")
+
+    contact_user = session.get(User, user_id)
+    if contact_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    contact = session.get(Contact, (current_user_id, user_id))
+    if contact is not None:
+        session.delete(contact)
+        session.commit()
+
+    return contact_user
 
 
 @router.patch("/users/me/", response_model=UserPublic)
