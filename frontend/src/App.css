@@ -1192,10 +1192,17 @@ html[data-theme="dark"] {
 
 .chat-account-rail {
   display: grid;
-  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
   justify-items: center;
   gap: 14px;
   padding: 14px 10px;
+}
+
+.account-rail-bottom-actions {
+  grid-row: 5;
+  display: grid;
+  justify-items: center;
+  gap: 14px;
 }
 
 .account-rail-avatar-button,
@@ -1275,7 +1282,7 @@ html[data-theme="dark"] {
 }
 
 .account-rail-button.theme-toggle-button {
-  align-self: end;
+  align-self: auto;
   gap: 0;
   padding: 0;
 }

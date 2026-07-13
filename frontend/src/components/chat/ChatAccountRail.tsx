@@ -75,34 +75,36 @@ export function ChatAccountRail({
         <ContactRound size={18} aria-hidden="true" />
       </button>
 
-      <button
-        type="button"
-        className="account-rail-button"
-        aria-label="Sign out"
-        title="Sign out"
-        onClick={onSignOut}
-      >
-        <LogOut size={18} aria-hidden="true" />
-      </button>
+      <div className="account-rail-bottom-actions">
+        <button
+          type="button"
+          className="account-rail-button"
+          aria-label="Sign out"
+          title="Sign out"
+          onClick={onSignOut}
+        >
+          <LogOut size={18} aria-hidden="true" />
+        </button>
 
-      <button
-        type="button"
-        className="account-rail-button theme-toggle-button"
-        aria-label={
-          themeMode === "dark"
-            ? "Switch to light theme"
-            : "Switch to dark theme"
-        }
-        aria-pressed={themeMode === "dark"}
-        title={themeMode === "dark" ? "Light theme" : "Dark theme"}
-        onClick={onToggleTheme}
-      >
-        {themeMode === "dark" ? (
-          <Sun size={18} aria-hidden="true" />
-        ) : (
-          <Moon size={18} aria-hidden="true" />
-        )}
-      </button>
+        <button
+          type="button"
+          className="account-rail-button theme-toggle-button"
+          aria-label={
+            themeMode === "dark"
+              ? "Switch to light theme"
+              : "Switch to dark theme"
+          }
+          aria-pressed={themeMode === "dark"}
+          title={themeMode === "dark" ? "Light theme" : "Dark theme"}
+          onClick={onToggleTheme}
+        >
+          {themeMode === "dark" ? (
+            <Sun size={18} aria-hidden="true" />
+          ) : (
+            <Moon size={18} aria-hidden="true" />
+          )}
+        </button>
+      </div>
     </aside>
   );
 }
