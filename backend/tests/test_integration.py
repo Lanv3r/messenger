@@ -756,6 +756,75 @@ class MessengerIntegrationTest(unittest.TestCase):
         )
         self.assertEqual(empty_file.status_code, 400)
 
+    def test_blocked_user_cannot_send_direct_messages(self):
+        sender_client, sender = self.signup("sender")
+        blocker_client, blocker = self.signup("blocker")
+
+        direct = sender_client.post(
+            "/messages/direct",
+            json={"recipient_id": blocker["id"], "content": "before block"},
+        )
+        self.assertEqual(direct.status_code, 200, direct.text)
+        chat_id = direct.json()["chat"]["id"]
+        message_id = direct.json()["message"]["id"]
+
+        block = blocker_client.put(f"/users/me/blocks/{sender['id']}")
+        self.assertEqual(block.status_code, 200, block.text)
+        self.assertEqual(block.json()["id"], sender["id"])
+
+        blocks = blocker_client.get("/users/me/blocks")
+        self.assertEqual(blocks.status_code, 200, blocks.text)
+        self.assertEqual([entry["id"] for entry in blocks.json()], [sender["id"]])
+
+        sender_chats = sender_client.get("/chats")
+        self.assertEqual(sender_chats.status_code, 200, sender_chats.text)
+        sender_chat = next(
+            entry for entry in sender_chats.json() if entry["id"] == chat_id
+        )
+        self.assertTrue(sender_chat["is_blocked_by_other"])
+
+        blocked_requests = [
+            sender_client.post(
+                "/messages/direct",
+                json={"recipient_id": blocker["id"], "content": "new direct"},
+            ),
+            sender_client.post(
+                f"/chats/{chat_id}/messages",
+                json={"content": "text after block"},
+            ),
+            sender_client.post(
+                f"/chats/{chat_id}/messages/voice",
+                data={"duration_ms": "1000"},
+                files={"file": ("voice.webm", b"audio", "audio/webm")},
+            ),
+            sender_client.post(
+                f"/chats/{chat_id}/messages/files",
+                files={"files": ("image.png", b"image", "image/png")},
+            ),
+            sender_client.patch(
+                f"/messages/{message_id}",
+                json={"content": "edited after block"},
+            ),
+        ]
+        for response in blocked_requests:
+            self.assertEqual(response.status_code, 403, response.text)
+
+        unblock = blocker_client.delete(f"/users/me/blocks/{sender['id']}")
+        self.assertEqual(unblock.status_code, 200, unblock.text)
+
+        sender_chats = sender_client.get("/chats")
+        self.assertEqual(sender_chats.status_code, 200, sender_chats.text)
+        sender_chat = next(
+            entry for entry in sender_chats.json() if entry["id"] == chat_id
+        )
+        self.assertFalse(sender_chat["is_blocked_by_other"])
+
+        allowed_message = sender_client.post(
+            f"/chats/{chat_id}/messages",
+            json={"content": "after unblock"},
+        )
+        self.assertEqual(allowed_message.status_code, 200, allowed_message.text)
+
     def test_direct_chat_lookup_returns_existing_chat_and_self_chat(self):
         sender_client, sender = self.signup("sender")
         _recipient_client, recipient = self.signup("recipient")

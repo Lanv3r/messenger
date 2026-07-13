@@ -21,13 +21,18 @@ from app.models import (
     User,
 )
 from app.rate_limit import message_rate_limiter, upload_rate_limiter
-from app.services.chats import require_active_participant, require_chat_permission
+from app.services.chats import (
+    assert_direct_chat_message_allowed,
+    require_active_participant,
+    require_chat_permission,
+)
 from app.services.messages import (
     build_message_reply_preview,
     get_reply_target,
     get_uploaded_file_message_type_and_permission,
     to_message_public,
 )
+from app.services.users import assert_direct_message_allowed
 from app.socket import sio
 from app.upload_constants import (
     FILE_MESSAGE_ALLOWED_TYPES,
@@ -305,6 +310,8 @@ async def create_direct_message(
             detail="Can't start a direct chat with yourself",
         )
 
+    assert_direct_message_allowed(session, sender_id, payload.recipient_id)
+
     participant_ids = [sender_id, payload.recipient_id]
 
     matching_chat_ids = (
@@ -441,6 +448,7 @@ async def create_message(
             status_code=500,
             detail="Chat was not found",
         )
+    assert_direct_chat_message_allowed(session, chat, user_id)
 
     reply_target = get_reply_target(
         session,
@@ -526,6 +534,11 @@ async def create_voice_message(
         "send_voice_messages",
     )
 
+    chat = session.get(Chat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    assert_direct_chat_message_allowed(session, chat, user_id)
+
     if duration_ms <= 0 or duration_ms > 10 * 60 * 1000:
         raise HTTPException(
             status_code=400,
@@ -546,10 +559,6 @@ async def create_voice_message(
         raise HTTPException(status_code=400, detail="Voice message is empty")
     if len(audio_bytes) > VOICE_MESSAGE_MAX_BYTES:
         raise HTTPException(status_code=413, detail="Voice message is too large")
-
-    chat = session.get(Chat, chat_id)
-    if chat is None:
-        raise HTTPException(status_code=404, detail="Chat not found")
 
     reply_target = get_reply_target(
         session,
@@ -642,6 +651,12 @@ async def create_file_message(
     if not files:
         raise HTTPException(status_code=400, detail="Attach at least one file")
 
+    chat = session.get(Chat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    require_active_participant(session, chat_id, user_id)
+    assert_direct_chat_message_allowed(session, chat, user_id)
+
     prepared_attachments = [
         await prepare_file_attachment(file)
         for file in files
@@ -658,10 +673,6 @@ async def create_file_message(
         require_chat_permission(session, chat_id, user_id, permission_name)
 
     caption = parse_file_caption(content)
-
-    chat = session.get(Chat, chat_id)
-    if chat is None:
-        raise HTTPException(status_code=404, detail="Chat not found")
 
     reply_target = get_reply_target(
         session,
@@ -756,6 +767,10 @@ async def apply_file_message_edit(
         raise HTTPException(status_code=401, detail="Invalid user")
 
     require_active_participant(session, message.chat_id, user_id)
+    chat = session.get(Chat, message.chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    assert_direct_chat_message_allowed(session, chat, user_id)
 
     if message.sender_id != user_id:
         raise HTTPException(
@@ -1200,6 +1215,10 @@ async def edit_message(
         raise HTTPException(status_code=401, detail="Invalid user")
 
     require_active_participant(session, message.chat_id, user_id)
+    chat = session.get(Chat, message.chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    assert_direct_chat_message_allowed(session, chat, user_id)
 
     if message.sender_id != user_id:
         raise HTTPException(

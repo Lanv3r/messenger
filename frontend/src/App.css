@@ -943,6 +943,22 @@ html[data-theme="dark"] {
   cursor: pointer;
 }
 
+.profile-block-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 13px;
+  border: 1px solid rgba(180, 35, 24, 0.3);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: #a63229;
+  background: rgba(180, 35, 24, 0.08);
+  cursor: pointer;
+}
+
 .profile-user-actions {
   display: flex;
   justify-content: center;
@@ -953,6 +969,12 @@ html[data-theme="dark"] {
 
 .profile-user-actions .profile-contact-button {
   margin-top: 0;
+}
+
+.profile-block-button:hover:not(:disabled) {
+  color: #fff;
+  border-color: #b42318;
+  background: #b42318;
 }
 
 .profile-message-button {
@@ -981,6 +1003,11 @@ html[data-theme="dark"] {
 }
 
 .profile-contact-button:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
+.profile-block-button:disabled {
   cursor: wait;
   opacity: 0.6;
 }
@@ -2814,6 +2841,25 @@ html[data-theme="dark"] {
   box-shadow: inset 0 0 0 2px rgba(255, 157, 132, 0.52);
 }
 
+.direct-message-blocked-notice {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border: 1px solid rgba(180, 35, 24, 0.34);
+  border-radius: 999px;
+  color: #9f2f27;
+  background: rgba(180, 35, 24, 0.11);
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.direct-message-blocked-notice svg {
+  flex: 0 0 auto;
+}
+
 .pinned-message-segments {
   width: 4px;
   height: 30px;
@@ -4480,6 +4526,24 @@ html[data-theme="dark"] .profile-contact-button {
 html[data-theme="dark"] .profile-contact-button:hover:not(:disabled) {
   color: var(--accent-on-fill);
   background: var(--accent-fill);
+}
+
+html[data-theme="dark"] .direct-message-blocked-notice {
+  border-color: rgba(255, 107, 95, 0.38);
+  color: #ff9f96;
+  background: rgba(255, 107, 95, 0.14);
+}
+
+html[data-theme="dark"] .profile-block-button {
+  color: #ff8a80;
+  border-color: rgba(255, 107, 95, 0.34);
+  background: rgba(255, 107, 95, 0.12);
+}
+
+html[data-theme="dark"] .profile-block-button:hover:not(:disabled) {
+  color: #fff;
+  border-color: #d9453a;
+  background: #d9453a;
 }
 
 html[data-theme="dark"] .profile-message-button {

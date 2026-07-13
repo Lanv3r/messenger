@@ -1,4 +1,4 @@
-import { MessageCircle } from "lucide-react";
+import { Ban, MessageCircle } from "lucide-react";
 
 import { getAssetUrl } from "@/lib/message-helpers";
 import type { UserProfile } from "@/types";
@@ -7,9 +7,12 @@ type UserProfileDialogProps = {
   profile: UserProfile;
   isContact: boolean;
   contactActionLoading: boolean;
+  isBlocked: boolean;
+  blockActionLoading: boolean;
   onClose: () => void;
   onMessage: () => void;
   onToggleContact: () => void;
+  onToggleBlock: () => void;
 };
 
 function getProfileDisplayName(profile: UserProfile) {
@@ -20,9 +23,12 @@ export function UserProfileDialog({
   profile,
   isContact,
   contactActionLoading,
+  isBlocked,
+  blockActionLoading,
   onClose,
   onMessage,
   onToggleContact,
+  onToggleBlock,
 }: UserProfileDialogProps) {
   return (
     <div className="profile-card-backdrop" role="presentation" onClick={onClose}>
@@ -69,6 +75,15 @@ export function UserProfileDialog({
               onClick={onToggleContact}
             >
               {isContact ? "Delete contact" : "Add contact"}
+            </button>
+            <button
+              type="button"
+              className="profile-block-button"
+              disabled={blockActionLoading}
+              onClick={onToggleBlock}
+            >
+              <Ban size={16} aria-hidden="true" />
+              {isBlocked ? "Unblock user" : "Block user"}
             </button>
           </div>
         </div>

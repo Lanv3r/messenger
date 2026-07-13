@@ -119,6 +119,7 @@ export type Chat = {
   display_title: string;
   display_avatar_url: string;
   other_user_id: number | null;
+  is_blocked_by_other: boolean;
   member_ids: number[];
   member_count: number;
   current_user_role: string | null;
@@ -147,6 +148,11 @@ export type ChatReadEvent = {
   user_id: number;
   last_read_message_id: number;
   last_read_at: string | null;
+};
+
+export type DirectMessageAccessUpdatedEvent = {
+  other_user_id: number;
+  is_blocked_by_other: boolean;
 };
 
 export type ChatActivityUser = {

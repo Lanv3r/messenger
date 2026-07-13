@@ -87,6 +87,26 @@ class Contact(SQLModel, table=True):
     )
 
 
+class UserBlock(SQLModel, table=True):
+    __tablename__: ClassVar[str] = "user_blocks"
+
+    blocker_user_id: int = Field(
+        foreign_key="users.id",
+        primary_key=True,
+        ondelete="CASCADE",
+    )
+    blocked_user_id: int = Field(
+        foreign_key="users.id",
+        primary_key=True,
+        ondelete="CASCADE",
+    )
+    created_at: datetime | None = Field(
+        default=None,
+        sa_type=DateTime,
+        sa_column_kwargs={"server_default": func.now(), "nullable": False},
+    )
+
+
 class LoginRequest(SQLModel):
     username: str
     password: str
@@ -304,6 +324,7 @@ class ChatListItem(SQLModel):
 
     # Direct-chat-only
     other_user_id: int | None = None
+    is_blocked_by_other: bool = False
     # Group-chat-only
     member_ids: list[int] = Field(default_factory=list)
     member_count: int = 0

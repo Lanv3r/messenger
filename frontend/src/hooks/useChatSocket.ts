@@ -10,6 +10,7 @@ import type {
   ChatRecordingVoiceEvent,
   ChatTypingEvent,
   ChatUpdatedEvent,
+  DirectMessageAccessUpdatedEvent,
   MessageDeletedEvent,
   MessagePinUpdatedEvent,
   RemovedFromChatEvent,
@@ -30,6 +31,9 @@ type UseChatSocketOptions = {
   onMessageUpdated: (data: ChatMessage) => void;
   onMessageDeleted: (data: MessageDeletedEvent) => void;
   onChatRead: (data: ChatReadEvent) => void;
+  onDirectMessageAccessUpdated: (
+    data: DirectMessageAccessUpdatedEvent,
+  ) => void;
   onTyping: (data: ChatTypingEvent) => void;
   onRecordingVoice: (data: ChatRecordingVoiceEvent) => void;
   onDisconnected: (reason: Socket.DisconnectReason) => void;
@@ -50,6 +54,7 @@ export function useChatSocket({
   onMessageUpdated,
   onMessageDeleted,
   onChatRead,
+  onDirectMessageAccessUpdated,
   onTyping,
   onRecordingVoice,
   onDisconnected,
@@ -68,6 +73,9 @@ export function useChatSocket({
   const handleMessageUpdated = useEffectEvent(onMessageUpdated);
   const handleMessageDeleted = useEffectEvent(onMessageDeleted);
   const handleChatRead = useEffectEvent(onChatRead);
+  const handleDirectMessageAccessUpdated = useEffectEvent(
+    onDirectMessageAccessUpdated,
+  );
   const handleTyping = useEffectEvent(onTyping);
   const handleRecordingVoice = useEffectEvent(onRecordingVoice);
   const handleDisconnected = useEffectEvent(onDisconnected);
@@ -97,6 +105,10 @@ export function useChatSocket({
     socket.on("message_updated", handleMessageUpdated);
     socket.on("message_deleted", handleMessageDeleted);
     socket.on("chat_read", handleChatRead);
+    socket.on(
+      "direct_message_access_updated",
+      handleDirectMessageAccessUpdated,
+    );
     socket.on("typing", handleTyping);
     socket.on("recording_voice", handleRecordingVoice);
 

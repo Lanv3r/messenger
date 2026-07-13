@@ -7,7 +7,11 @@ from app.db import engine
 from app.dependencies import decode_access_token, get_cookie_from_environ
 from app.models import Chat, ChatParticipant, Message, User
 from app.rate_limit import message_rate_limiter
-from app.services.chats import require_active_participant, require_chat_permission
+from app.services.chats import (
+    assert_direct_chat_message_allowed,
+    require_active_participant,
+    require_chat_permission,
+)
 from app.services.messages import (
     build_message_reply_preview,
     get_reply_target,
@@ -129,6 +133,10 @@ async def emit_chat_activity(sid, data, event_name, activity):
     with Session(engine) as db:
         try:
             require_active_participant(db, chat_id, user_id)
+            chat = db.get(Chat, chat_id)
+            if chat is None:
+                return {"ok": False, "error": "Chat was not found"}
+            assert_direct_chat_message_allowed(db, chat, user_id)
         except HTTPException as exc:
             return {"ok": False, "error": exc.detail}
         participant_ids = db.exec(
@@ -229,6 +237,10 @@ async def message(sid, data):
         chat = db.get(Chat, chat_id)
         if chat is None:
             return {"ok": False, "error": "Chat was not found"}
+        try:
+            assert_direct_chat_message_allowed(db, chat, sender_id)
+        except HTTPException as exc:
+            return {"ok": False, "error": exc.detail}
 
         message = Message(
             chat_id=chat_id,

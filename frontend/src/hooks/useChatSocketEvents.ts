@@ -15,6 +15,7 @@ import type {
   ChatRecordingVoiceEvent,
   ChatTypingEvent,
   ChatUpdatedEvent,
+  DirectMessageAccessUpdatedEvent,
   MessageDeletedEvent,
   MessagePinUpdatedEvent,
   RemovedFromChatEvent,
@@ -232,6 +233,18 @@ export function useChatSocketEvents({
     void refreshChats();
   }
 
+  function onDirectMessageAccessUpdated(
+    data: DirectMessageAccessUpdatedEvent,
+  ) {
+    setChats((current) =>
+      current.map((chat) =>
+        chat.type === "direct" && chat.other_user_id === data.other_user_id
+          ? { ...chat, is_blocked_by_other: data.is_blocked_by_other }
+          : chat,
+      ),
+    );
+  }
+
   return {
     onBeforeDisconnect,
     onMessage,
@@ -243,6 +256,7 @@ export function useChatSocketEvents({
     onMessageUpdated,
     onMessageDeleted,
     onChatRead,
+    onDirectMessageAccessUpdated,
     onTyping: handleTypingActivity,
     onRecordingVoice: handleRecordingVoiceActivity,
     onDisconnected: clearChatActivity,

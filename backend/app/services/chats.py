@@ -7,6 +7,7 @@ from app.permissions import (
     OWNER_PERMISSIONS,
     SYSTEM_ROLE_DEFAULTS,
 )
+from app.services.users import assert_direct_message_allowed
 from fastapi import HTTPException
 from sqlmodel import Session, col, select
 
@@ -157,6 +158,29 @@ def require_chat_permission(
         raise HTTPException(status_code=403, detail="Missing permission")
 
     return participant
+
+
+def assert_direct_chat_message_allowed(
+    session: Session,
+    chat: Chat,
+    sender_id: int,
+) -> None:
+    if chat.type != "direct":
+        return
+    if chat.id is None:
+        raise HTTPException(status_code=500, detail="Chat was not loaded correctly")
+
+    recipient_id = session.exec(
+        select(col(ChatParticipant.user_id)).where(
+            col(ChatParticipant.chat_id) == chat.id,
+            col(ChatParticipant.user_id) != sender_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).first()
+    if recipient_id is None:
+        raise HTTPException(status_code=403, detail="Direct chat participant not found")
+
+    assert_direct_message_allowed(session, sender_id, recipient_id)
 
 
 def assert_valid_permission_list(permissions: dict):

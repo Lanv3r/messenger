@@ -6,6 +6,7 @@ import {
   type ClipboardEvent,
 } from "react";
 import type { Socket } from "socket.io-client";
+import { Ban } from "lucide-react";
 
 import { AttachmentPreviewDialog } from "@/components/chat/AttachmentPreviewDialog";
 import { ChatAccountRail } from "@/components/chat/ChatAccountRail";
@@ -59,6 +60,7 @@ import { useMessageDisplay } from "@/hooks/useMessageDisplay";
 import { useChatPresentation } from "@/hooks/useChatPresentation";
 import { useChatSocketEvents } from "@/hooks/useChatSocketEvents";
 import { useChatData } from "@/hooks/useChatData";
+import { useBlocks } from "@/hooks/useBlocks";
 import { useContacts } from "@/hooks/useContacts";
 import type {
   AuthResponse,
@@ -164,6 +166,11 @@ export function ChatScreen({
     toggleContact,
     refreshContacts,
   } = useContacts({ onSessionExpired });
+  const {
+    isBlocked,
+    blockingUserId,
+    toggleBlock,
+  } = useBlocks({ onSessionExpired });
   const {
     editing: editingProfile,
     firstName: profileFirstName,
@@ -292,6 +299,8 @@ export function ChatScreen({
   const activeChat = chats.find(
     (chat) => chat.id === activeChatId,
   );
+  const isMessagingBlocked =
+    activeChat?.type === "direct" && activeChat.is_blocked_by_other === true;
 
   useEffect(() => {
     if (activeChatId === null) {
@@ -651,6 +660,14 @@ export function ChatScreen({
     }
   };
 
+  useEffect(() => {
+    if (!isMessagingBlocked || voiceRecorder === null) {
+      return;
+    }
+
+    void stopRecording(false);
+  }, [isMessagingBlocked, stopRecording, voiceRecorder]);
+
   const {
     joinChat,
     handleChatHeaderClick,
@@ -742,7 +759,8 @@ export function ChatScreen({
       imageViewer ||
       attachmentDrafts.length > 0 ||
       editingAttachmentMessage ||
-      voiceRecorder
+      voiceRecorder ||
+      isMessagingBlocked
     ) {
       return;
     }
@@ -763,6 +781,7 @@ export function ChatScreen({
     messageActionDialog,
     selectedChatMember,
     voiceRecorder,
+    isMessagingBlocked,
   ]);
 
   const {
@@ -1462,6 +1481,10 @@ export function ChatScreen({
             contactActionLoading={
               contactSavingUserId === selectedContactProfile.id
             }
+            isBlocked={isBlocked(selectedContactProfile.id)}
+            blockActionLoading={
+              blockingUserId === selectedContactProfile.id
+            }
             onClose={() => setSelectedContactProfile(null)}
             onMessage={() => {
               setSelectedContactProfile(null);
@@ -1469,6 +1492,9 @@ export function ChatScreen({
             }}
             onToggleContact={() => {
               void toggleContact(selectedContactProfile.id);
+            }}
+            onToggleBlock={() => {
+              void toggleBlock(selectedContactProfile.id);
             }}
           />
         ) : null}
@@ -1480,6 +1506,8 @@ export function ChatScreen({
             contactActionLoading={
               contactSavingUserId === selectedDirectProfile.id
             }
+            isBlocked={isBlocked(selectedDirectProfile.id)}
+            blockActionLoading={blockingUserId === selectedDirectProfile.id}
             onClose={() => setSelectedChatMember(null)}
             onMessage={() => {
               setSelectedChatMember(null);
@@ -1487,6 +1515,9 @@ export function ChatScreen({
             }}
             onToggleContact={() => {
               void toggleContact(selectedDirectProfile.id);
+            }}
+            onToggleBlock={() => {
+              void toggleBlock(selectedDirectProfile.id);
             }}
           />
         ) : null}
@@ -1638,6 +1669,13 @@ export function ChatScreen({
           <p className="profile-error">{chatError}</p>
         ) : null}
 
+        {isMessagingBlocked ? (
+          <div className="direct-message-blocked-notice" role="status">
+            <Ban size={17} aria-hidden="true" />
+            <span>This user blocked you from messaging them.</span>
+          </div>
+        ) : null}
+
         <MessageList
           messagesRef={messagesRef}
           messages={visibleMessages}
@@ -1683,6 +1721,7 @@ export function ChatScreen({
           messageInputRef={messageInputRef}
           activeChatId={activeChatId}
           hasDraftRecipient={draftRecipient !== null}
+          isMessagingBlocked={isMessagingBlocked}
           message={
             composerEditingMessage ? editingMessageText : message
           }

@@ -19,6 +19,7 @@ type ChatComposerProps = {
   messageInputRef: RefObject<HTMLTextAreaElement | null>;
   activeChatId: number | null;
   hasDraftRecipient: boolean;
+  isMessagingBlocked: boolean;
   message: string;
   editingMessage: ChatMessage | null;
   editingMessageSaving: boolean;
@@ -45,6 +46,7 @@ export function ChatComposer({
   messageInputRef,
   activeChatId,
   hasDraftRecipient,
+  isMessagingBlocked,
   message,
   editingMessage,
   editingMessageSaving,
@@ -115,6 +117,7 @@ export function ChatComposer({
         type="file"
         multiple
         accept={FILE_MESSAGE_ACCEPT}
+        disabled={isMessagingBlocked}
         onChange={onFileInputChange}
       />
       {isEditing ? (
@@ -167,7 +170,7 @@ export function ChatComposer({
           </button>
         </div>
       ) : null}
-      {voiceRecorder ? (
+      {voiceRecorder && !isMessagingBlocked ? (
         <VoiceRecorderControls
           elapsedMs={voiceRecordingElapsedMs}
           onCancel={onCancelVoiceRecording}
@@ -180,7 +183,12 @@ export function ChatComposer({
             id="message"
             rows={1}
             value={message}
-            placeholder="Write a message..."
+            placeholder={
+              isMessagingBlocked
+                ? "You cannot message this user"
+                : "Write a message..."
+            }
+            disabled={isMessagingBlocked}
             onChange={(event) => onMessageChange(event.target.value)}
             onPaste={onPasteImages}
             onKeyDown={(event) => {
@@ -210,7 +218,8 @@ export function ChatComposer({
               activeChatId === null ||
               hasDraftRecipient ||
               fileSending ||
-              editingMessageSaving
+              editingMessageSaving ||
+              isMessagingBlocked
             }
             onClick={() => {
               fileInputRef.current?.click();
@@ -235,7 +244,8 @@ export function ChatComposer({
               activeChatId === null ||
               hasDraftRecipient ||
               voiceSending ||
-              isEditing
+              isEditing ||
+              isMessagingBlocked
             }
             onClick={onStartVoiceRecording}
           >
@@ -255,7 +265,8 @@ export function ChatComposer({
             onClick={onSend}
             disabled={
               (activeChatId === null && !hasDraftRecipient) ||
-              editingMessageSaving
+              editingMessageSaving ||
+              isMessagingBlocked
             }
           >
             {isEditing ? (

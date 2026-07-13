@@ -6,9 +6,10 @@ from sqlmodel import col, select
 
 from app.db import SessionDep
 from app.dependencies import get_current_user
-from app.models import Contact, User, UserProfileUpdate, UserPublic
+from app.models import Contact, User, UserBlock, UserProfileUpdate, UserPublic
 from app.services.uploads import save_avatar_upload
 from app.services.users import is_valid_username
+from app.socket import sio
 
 router = APIRouter(tags=["users"])
 
@@ -151,6 +152,92 @@ def remove_contact(
         session.commit()
 
     return contact_user
+
+
+@router.get("/users/me/blocks", response_model=list[UserPublic])
+def get_blocks(
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    current_user_id = current_user.id
+    if current_user_id is None:
+        raise HTTPException(status_code=500, detail="User was not loaded correctly")
+
+    return session.exec(
+        select(User)
+        .join(UserBlock, col(UserBlock.blocked_user_id) == col(User.id))
+        .where(col(UserBlock.blocker_user_id) == current_user_id)
+        .order_by(col(User.first_name), col(User.last_name), col(User.username))
+    ).all()
+
+
+@router.put("/users/me/blocks/{user_id}", response_model=UserPublic)
+async def block_user(
+    user_id: int,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    current_user_id = current_user.id
+    if current_user_id is None:
+        raise HTTPException(status_code=500, detail="User was not loaded correctly")
+    if user_id == current_user_id:
+        raise HTTPException(status_code=400, detail="You cannot block yourself")
+
+    blocked_user = session.get(User, user_id)
+    if blocked_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    block = session.get(UserBlock, (current_user_id, user_id))
+    if block is None:
+        session.add(
+            UserBlock(
+                blocker_user_id=current_user_id,
+                blocked_user_id=user_id,
+            )
+        )
+        session.commit()
+
+    await sio.emit(
+        "direct_message_access_updated",
+        {
+            "other_user_id": current_user_id,
+            "is_blocked_by_other": True,
+        },
+        room=f"user:{user_id}",
+    )
+
+    return blocked_user
+
+
+@router.delete("/users/me/blocks/{user_id}", response_model=UserPublic)
+async def unblock_user(
+    user_id: int,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    current_user_id = current_user.id
+    if current_user_id is None:
+        raise HTTPException(status_code=500, detail="User was not loaded correctly")
+
+    blocked_user = session.get(User, user_id)
+    if blocked_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    block = session.get(UserBlock, (current_user_id, user_id))
+    if block is not None:
+        session.delete(block)
+        session.commit()
+
+    await sio.emit(
+        "direct_message_access_updated",
+        {
+            "other_user_id": current_user_id,
+            "is_blocked_by_other": False,
+        },
+        room=f"user:{user_id}",
+    )
+
+    return blocked_user
 
 
 @router.patch("/users/me/", response_model=UserPublic)

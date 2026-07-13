@@ -19,6 +19,7 @@ from app.models import (
     PinnedChatOrderResponse,
     PinnedChatOrderUpdate,
     User,
+    UserBlock,
 )
 from app.permissions import SYSTEM_ROLE_DEFAULTS
 from app.services.chats import (
@@ -125,6 +126,7 @@ def get_chats(
         other_user_id = None
         other_last_read_at = None
         other_last_read_message_id = None
+        is_blocked_by_other = False
         member_ids: list[int] = []
         member_count = 0
         current_user_role = None
@@ -162,6 +164,10 @@ def get_chats(
                     display_avatar_url = other_user.avatar_url
                     other_last_read_message_id = other_participant.last_read_message_id
                     other_last_read_at = other_participant.last_read_at
+                    is_blocked_by_other = (
+                        session.get(UserBlock, (other_user_id, current_user_id))
+                        is not None
+                    )
         else:
             member_ids = list(
                 session.exec(
@@ -217,6 +223,7 @@ def get_chats(
                 display_title=display_title or "Chat",
                 display_avatar_url=display_avatar_url,
                 other_user_id=other_user_id,
+                is_blocked_by_other=is_blocked_by_other,
                 member_ids=member_ids,
                 member_count=member_count,
                 current_user_role=current_user_role,
@@ -393,6 +400,11 @@ def get_direct_chat_by_user(
         ),
         display_avatar_url=other_user.avatar_url,
         other_user_id=other_user.id,
+        is_blocked_by_other=session.get(
+            UserBlock,
+            (other_user.id, current_user_id),
+        )
+        is not None,
         last_message_id=last_message.id if last_message else None,
         last_message_text=get_message_preview_text(last_message)
         if last_message
