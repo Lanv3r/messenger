@@ -214,6 +214,7 @@ export function ChatScreen({
     closeMessageStateForMessage,
   } = useMessageActionMenu();
   const messagesRef = useRef<HTMLUListElement | null>(null);
+  const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [activePinnedMessageId, setActivePinnedMessageId] = useState<
     number | null
   >(null);
@@ -697,6 +698,42 @@ export function ChatScreen({
       joinChat(createdChat);
     },
   });
+
+  useEffect(() => {
+    if (
+      (activeChatId === null && draftRecipient === null) ||
+      creatingGroup ||
+      editingProfile ||
+      chatInfoOpen ||
+      selectedChatMember ||
+      memberRemovalCandidate ||
+      messageActionDialog ||
+      imageViewer ||
+      attachmentDrafts.length > 0 ||
+      editingAttachmentMessage ||
+      voiceRecorder
+    ) {
+      return;
+    }
+
+    requestAnimationFrame(() => {
+      messageInputRef.current?.focus({ preventScroll: true });
+    });
+  }, [
+    activeChatId,
+    attachmentDrafts.length,
+    chatInfoOpen,
+    creatingGroup,
+    draftRecipient,
+    editingAttachmentMessage,
+    editingProfile,
+    imageViewer,
+    memberRemovalCandidate,
+    messageActionDialog,
+    selectedChatMember,
+    voiceRecorder,
+  ]);
+
   const {
     visibleMessages,
     getReplySenderName,
@@ -1541,6 +1578,7 @@ export function ChatScreen({
 
         <ChatComposer
           fileInputRef={fileInputRef}
+          messageInputRef={messageInputRef}
           activeChatId={activeChatId}
           hasDraftRecipient={draftRecipient !== null}
           message={

@@ -1,6 +1,5 @@
 import {
   useEffect,
-  useRef,
   type ChangeEvent,
   type ClipboardEvent,
   type RefObject,
@@ -17,6 +16,7 @@ const MAX_COMPOSER_VISIBLE_LINES = 13;
 
 type ChatComposerProps = {
   fileInputRef: RefObject<HTMLInputElement | null>;
+  messageInputRef: RefObject<HTMLTextAreaElement | null>;
   activeChatId: number | null;
   hasDraftRecipient: boolean;
   message: string;
@@ -42,6 +42,7 @@ type ChatComposerProps = {
 
 export function ChatComposer({
   fileInputRef,
+  messageInputRef,
   activeChatId,
   hasDraftRecipient,
   message,
@@ -65,7 +66,6 @@ export function ChatComposer({
   getSenderName,
 }: ChatComposerProps) {
   const isEditing = editingMessage !== null;
-  const messageInputRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     const textarea = messageInputRef.current;
@@ -93,7 +93,7 @@ export function ChatComposer({
     textarea.style.height = `${Math.min(textarea.scrollHeight, maxHeight)}px`;
     textarea.style.overflowY =
       textarea.scrollHeight > maxHeight ? "auto" : "hidden";
-  }, [message]);
+  }, [message, messageInputRef]);
 
   const insertNewlineAtCursor = (textarea: HTMLTextAreaElement) => {
     const selectionStart = textarea.selectionStart;
