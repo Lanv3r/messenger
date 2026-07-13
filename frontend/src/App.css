@@ -41,6 +41,7 @@ html[data-theme="dark"] {
 }
 
 .chat-card {
+  --message-area-bg: #fffaf7;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -2663,14 +2664,17 @@ html[data-theme="dark"] {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+  background: var(--message-area-bg);
   padding-right: 4px;
   margin-right: -4px;
 }
 
 #messages li {
+  --message-avatar-size: calc(1lh + 14px);
+
   position: relative;
   display: grid;
-  grid-template-columns: 38px minmax(0, 1fr);
+  grid-template-columns: var(--message-avatar-size) minmax(0, 1fr);
   align-items: end;
   gap: 5px;
   max-width: 80%;
@@ -2792,9 +2796,9 @@ html[data-theme="dark"] {
 
 .message-avatar {
   align-self: end;
-  width: 38px;
-  height: 38px;
-  margin-bottom: 3px;
+  width: var(--message-avatar-size);
+  height: var(--message-avatar-size);
+  margin-bottom: 0;
   border-radius: 50%;
   object-fit: cover;
   background: transparent;
@@ -2802,9 +2806,9 @@ html[data-theme="dark"] {
 
 .message-avatar-spacer {
   align-self: end;
-  width: 38px;
-  height: 38px;
-  margin-bottom: 3px;
+  width: var(--message-avatar-size);
+  height: var(--message-avatar-size);
+  margin-bottom: 0;
 }
 
 .message-copy {
@@ -2900,6 +2904,28 @@ html[data-theme="dark"] {
 
 #messages li.message-sequence-last .message-copy {
   border-top-left-radius: 7px;
+  border-bottom-left-radius: 0;
+}
+
+#messages
+  li:not(.media-message):not(.message-sequence-first):not(.message-sequence-inner)
+  .message-copy {
+  border-bottom-left-radius: 0;
+}
+
+#messages
+  li:not(.media-message):not(.message-sequence-first):not(.message-sequence-inner)
+  .message-copy::before {
+  content: "";
+  position: absolute;
+  left: -22px;
+  bottom: -1px;
+  width: 24px;
+  height: 16px;
+  background: inherit;
+  mask: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M24 5.3C21.3 10 19.3 14.3 13.3 16H24V5.3Z' fill='black'/%3E%3C/svg%3E") 0 0 / 100% 100% no-repeat;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M24 5.3C21.3 10 19.3 14.3 13.3 16H24V5.3Z' fill='black'/%3E%3C/svg%3E") 0 0 / 100% 100% no-repeat;
+  pointer-events: none;
 }
 
 #messages li.you .message-copy {
@@ -3771,6 +3797,7 @@ html[data-theme="dark"] .chat-shell {
 html[data-theme="dark"] .chat-card,
 html[data-theme="dark"] .chat-account-rail,
 html[data-theme="dark"] .chat-sidebar {
+  --message-area-bg: #111722;
   border-color: rgba(255, 255, 255, 0.1);
   background:
     linear-gradient(180deg, rgba(26, 32, 45, 0.96), rgba(15, 20, 30, 0.96)),
