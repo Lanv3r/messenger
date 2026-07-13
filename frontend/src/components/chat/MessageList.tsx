@@ -49,6 +49,7 @@ type StickyGroupAvatar = {
 type MessageListProps = {
   messagesRef: RefObject<HTMLUListElement | null>;
   messages: ChatMessage[];
+  isLoading: boolean;
   currentUserId: number;
   unreadSeparatorLastReadMessageId: number | null;
   activeChat: Chat | undefined;
@@ -335,6 +336,7 @@ function getMessageCopyTarget(
 export function MessageList({
   messagesRef,
   messages,
+  isLoading,
   currentUserId,
   unreadSeparatorLastReadMessageId,
   activeChat,
@@ -446,9 +448,9 @@ export function MessageList({
         });
       }}
     >
-      {messages.length === 0 ? (
+      {messages.length === 0 && !isLoading ? (
         <li className="empty-state">No messages yet in this chat.</li>
-      ) : (
+      ) : messages.length > 0 ? (
         messages.map((entry, index) => {
           const previousEntry = messages[index - 1];
           const nextEntry = messages[index + 1];
@@ -736,7 +738,7 @@ export function MessageList({
             </Fragment>
           );
         })
-      )}
+      ) : null}
       {stickyGroupAvatar ? (
         <li
           className={`sticky-group-avatar ${stickyGroupAvatar.mode}`}

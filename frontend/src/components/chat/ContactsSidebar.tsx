@@ -8,7 +8,7 @@ type ContactsSidebarProps = {
   contacts: UserProfile[];
   loading: boolean;
   error: string | null;
-  onOpenContact: (contact: UserProfile) => void;
+  onViewContact: (contact: UserProfile) => void;
 };
 
 function getContactDisplayName(contact: UserProfile) {
@@ -19,7 +19,7 @@ export function ContactsSidebar({
   contacts,
   loading,
   error,
-  onOpenContact,
+  onViewContact,
 }: ContactsSidebarProps) {
   return (
     <aside className="chat-sidebar contacts-sidebar" aria-label="Contacts">
@@ -45,7 +45,7 @@ export function ContactsSidebar({
             key={contact.id}
             type="button"
             className="contact-list-item"
-            onClick={() => onOpenContact(contact)}
+            onClick={() => onViewContact(contact)}
           >
             <img
               src={getAssetUrl(contact.avatar_url)}

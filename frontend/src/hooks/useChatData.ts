@@ -25,6 +25,7 @@ type UseChatDataOptions = {
   socketRef: MutableRefObject<Socket | null>;
   setChats: Dispatch<SetStateAction<Chat[]>>;
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
+  setMessagesLoading: Dispatch<SetStateAction<boolean>>;
   setActiveChatId: Dispatch<SetStateAction<number | null>>;
   applyLocalReadState: (chat: Chat) => Chat;
   prepareMessageScroll: (options: PrepareMessageScrollOptions) => void;
@@ -48,6 +49,7 @@ export function useChatData({
   socketRef,
   setChats,
   setMessages,
+  setMessagesLoading,
   setActiveChatId,
   applyLocalReadState,
   prepareMessageScroll,
@@ -111,6 +113,7 @@ export function useChatData({
         activeChatIdRef.current = selectedChat.id;
         saveActiveChatId(selectedChat.id);
         socketRef.current?.emit("join_room", String(selectedChat.id));
+        setMessagesLoading(true);
         setActiveChatId(selectedChat.id);
         restoreComposerDraft(selectedChat.id, []);
       }
@@ -145,6 +148,7 @@ export function useChatData({
 
     const chatId = activeChatId;
     const controller = new AbortController();
+    setMessagesLoading(true);
 
     async function loadMessages() {
       try {
@@ -157,12 +161,16 @@ export function useChatData({
 
         setMessages(chatMessages);
         restoreLoadedMessagesFromEffect(chatId, chatMessages);
+        setMessagesLoading(false);
       } catch (error) {
         if (error instanceof DOMException && error.name === "AbortError") {
           return;
         }
 
         console.error(error);
+        if (!controller.signal.aborted) {
+          setMessagesLoading(false);
+        }
       }
     }
 
@@ -171,7 +179,7 @@ export function useChatData({
     return () => {
       controller.abort();
     };
-  }, [activeChatId, setMessages]);
+  }, [activeChatId, setMessages, setMessagesLoading]);
 
   return { refreshChats };
 }

@@ -33,6 +33,7 @@ type UseChatNavigationOptions = {
   setActiveChatId: Dispatch<SetStateAction<number | null>>;
   setDraftRecipient: Dispatch<SetStateAction<UserProfile | null>>;
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
+  setMessagesLoading: Dispatch<SetStateAction<boolean>>;
   setMessage: Dispatch<SetStateAction<string>>;
   setReplyToMessage: Dispatch<SetStateAction<ChatMessage | null>>;
   setSelectedChatMember: Dispatch<SetStateAction<ChatMember | null>>;
@@ -78,6 +79,7 @@ export function useChatNavigation({
   setActiveChatId,
   setDraftRecipient,
   setMessages,
+  setMessagesLoading,
   setMessage,
   setReplyToMessage,
   setSelectedChatMember,
@@ -124,6 +126,7 @@ export function useChatNavigation({
     saveActiveChatId(chatId);
     setActiveChatId(chatId);
     setDraftRecipient(null);
+    setMessagesLoading(true);
     setMessages([]);
     restoreComposerDraft(chatId, []);
     resetEditingState();
@@ -194,7 +197,9 @@ export function useChatNavigation({
     );
 
     if (existingDirectChat) {
-      joinChat(existingDirectChat);
+      if (activeChatIdRef.current !== existingDirectChat.id) {
+        joinChat(existingDirectChat);
+      }
       clearProfileSearchResult();
       return;
     }
@@ -207,7 +212,9 @@ export function useChatNavigation({
       if (serverDirectChat) {
         const resolvedChat = applyLocalReadState(serverDirectChat);
         setChats((current) => upsertChat(current, resolvedChat));
-        joinChat(resolvedChat);
+        if (activeChatIdRef.current !== resolvedChat.id) {
+          joinChat(resolvedChat);
+        }
         clearProfileSearchResult();
         return;
       }
@@ -236,6 +243,7 @@ export function useChatNavigation({
     activeChatIdRef.current = null;
     setActiveChatId(null);
     setDraftRecipient(profile);
+    setMessagesLoading(false);
     setMessages([]);
     setMessage("");
     setReplyToMessage(null);

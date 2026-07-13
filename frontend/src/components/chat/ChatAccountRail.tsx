@@ -1,12 +1,14 @@
-import { ContactRound, LogOut, Moon, Sun } from "lucide-react";
+import { ContactRound, LogOut, MessagesSquare, Moon, Sun } from "lucide-react";
 
 import type { AuthUser, ThemeMode } from "@/types";
 
 type ChatAccountRailProps = {
   user: AuthUser;
   themeMode: ThemeMode;
+  chatsActive: boolean;
   contactsOpen: boolean;
   onToggleProfileEditor: () => void;
+  onOpenChats: () => void;
   onToggleContacts: () => void;
   onSignOut: () => void;
   onToggleTheme: () => void;
@@ -15,8 +17,10 @@ type ChatAccountRailProps = {
 export function ChatAccountRail({
   user,
   themeMode,
+  chatsActive,
   contactsOpen,
   onToggleProfileEditor,
+  onOpenChats,
   onToggleContacts,
   onSignOut,
   onToggleTheme,
@@ -37,6 +41,22 @@ export function ChatAccountRail({
             event.currentTarget.src = "/favicon.svg";
           }}
         />
+      </button>
+
+      <button
+        type="button"
+        className={[
+          "account-rail-button",
+          chatsActive ? "active" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        aria-label="Chats"
+        aria-pressed={chatsActive}
+        title="Chats"
+        onClick={onOpenChats}
+      >
+        <MessagesSquare size={18} aria-hidden="true" />
       </button>
 
       <button

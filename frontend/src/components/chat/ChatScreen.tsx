@@ -25,6 +25,7 @@ import { MessageReplyPreviewButton } from "@/components/chat/MessageReplyPreview
 import { MessageSearch } from "@/components/chat/MessageSearch";
 import { PinnedMessagesBar } from "@/components/chat/PinnedMessagesBar";
 import { ProfileEditor } from "@/components/chat/ProfileEditor";
+import { UserProfileDialog } from "@/components/chat/UserProfileDialog";
 import { apiFetch } from "@/lib/api";
 import {
   getChatMemberDisplayName,
@@ -95,12 +96,15 @@ export function ChatScreen({
   const [message, setMessage] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messagesLoading, setMessagesLoading] = useState(true);
   const [chatError, setChatError] = useState<string | null>(
     null,
   );
   const [profileCloseConfirmOpen, setProfileCloseConfirmOpen] = useState(false);
   const [messageSearchOpen, setMessageSearchOpen] = useState(false);
   const [contactsOpen, setContactsOpen] = useState(false);
+  const [selectedContactProfile, setSelectedContactProfile] =
+    useState<UserProfile | null>(null);
   const [imageViewer, setImageViewer] = useState<{
     src: string;
     alt: string;
@@ -467,6 +471,7 @@ export function ChatScreen({
     socketRef,
     setChats,
     setMessages,
+    setMessagesLoading,
     setActiveChatId,
     applyLocalReadState,
     prepareMessageScroll,
@@ -650,6 +655,7 @@ export function ChatScreen({
     setActiveChatId,
     setDraftRecipient,
     setMessages,
+    setMessagesLoading,
     setMessage,
     setReplyToMessage,
     setSelectedChatMember,
@@ -1233,8 +1239,13 @@ export function ChatScreen({
         <ChatAccountRail
           user={user}
           themeMode={themeMode}
+          chatsActive={!contactsOpen && !messageSearchOpen}
           contactsOpen={contactsOpen}
           onToggleProfileEditor={openProfileEditor}
+          onOpenChats={() => {
+            setContactsOpen(false);
+            closeMessageSearch();
+          }}
           onToggleContacts={() => {
             if (!contactsOpen) {
               setMessageSearchOpen(false);
@@ -1269,8 +1280,8 @@ export function ChatScreen({
             contacts={contacts}
             loading={contactsLoading}
             error={contactsError}
-            onOpenContact={(contact) => {
-              void openDraftChat(contact);
+            onViewContact={(contact) => {
+              setSelectedContactProfile(contact);
             }}
           />
         ) : (
@@ -1423,6 +1434,24 @@ export function ChatScreen({
             onMemberNumericPermissionChange={updateMemberNumericPermission}
             onSaveMemberDefaultPermissions={() => {
               void saveMemberDefaultPermissions();
+            }}
+          />
+        ) : null}
+
+        {selectedContactProfile ? (
+          <UserProfileDialog
+            profile={selectedContactProfile}
+            isContact={isContact(selectedContactProfile.id)}
+            contactActionLoading={
+              contactSavingUserId === selectedContactProfile.id
+            }
+            onClose={() => setSelectedContactProfile(null)}
+            onMessage={() => {
+              setSelectedContactProfile(null);
+              void openDraftChat(selectedContactProfile);
+            }}
+            onToggleContact={() => {
+              void toggleContact(selectedContactProfile.id);
             }}
           />
         ) : null}
@@ -1588,6 +1617,7 @@ export function ChatScreen({
         <MessageList
           messagesRef={messagesRef}
           messages={visibleMessages}
+          isLoading={messagesLoading}
           currentUserId={user.userId}
           unreadSeparatorLastReadMessageId={unreadSeparatorLastReadMessageId}
           activeChat={activeChat}
