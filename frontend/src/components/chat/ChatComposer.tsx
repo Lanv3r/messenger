@@ -5,7 +5,7 @@ import {
   type ClipboardEvent,
   type RefObject,
 } from "react";
-import { ClockArrowUp, Mic, Paperclip, Pencil } from "lucide-react";
+import { ClockArrowUp, Mic, Paperclip, Pencil, SendHorizontal } from "lucide-react";
 
 import { VoiceRecorderControls } from "@/components/chat/VoiceRecorderControls";
 import { getMessagePreviewText } from "@/lib/message-helpers";
@@ -247,14 +247,26 @@ export function ChatComposer({
           </button>
           <button
             type="button"
-            className="send-button"
+            className={["send-button", isEditing ? "text" : ""]
+              .filter(Boolean)
+              .join(" ")}
+            aria-label={isEditing ? "Save edited message" : "Send message"}
+            title={isEditing ? "Save edited message" : "Send message"}
             onClick={onSend}
             disabled={
               (activeChatId === null && !hasDraftRecipient) ||
               editingMessageSaving
             }
           >
-            {isEditing ? (editingMessageSaving ? "Saving..." : "Save") : "Send"}
+            {isEditing ? (
+              editingMessageSaving ? (
+                "Saving..."
+              ) : (
+                "Save"
+              )
+            ) : (
+              <SendHorizontal aria-hidden="true" size={19} />
+            )}
           </button>
         </>
       )}
