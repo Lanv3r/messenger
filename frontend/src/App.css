@@ -3016,6 +3016,10 @@ html[data-theme="dark"] {
   background: rgba(133, 144, 167, 0.12);
 }
 
+#messages > li:first-child.message-day-separator {
+  margin-top: 5px;
+}
+
 #messages li.message-unread-separator {
   width: 100%;
   max-width: 100%;
