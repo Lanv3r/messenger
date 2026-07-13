@@ -3177,16 +3177,26 @@ html[data-theme="dark"] {
   bottom: -1px;
   width: 24px;
   height: 16px;
-  background: inherit;
+  background: #fff5ef;
   mask: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M24 5.3C21.3 10 19.3 14.3 13.3 16H24V5.3Z' fill='black'/%3E%3C/svg%3E") 0 0 / 100% 100% no-repeat;
   -webkit-mask: url("data:image/svg+xml,%3Csvg viewBox='0 0 24 16' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M24 5.3C21.3 10 19.3 14.3 13.3 16H24V5.3Z' fill='black'/%3E%3C/svg%3E") 0 0 / 100% 100% no-repeat;
   pointer-events: none;
 }
 
 #messages li.you .message-copy {
-  border-color: rgba(255, 255, 255, 0.16);
+  border-color: var(--accent-fill);
   background: var(--accent-fill);
   box-shadow: none;
+}
+
+#messages li.server .message-copy {
+  border-color: #fff5ef;
+}
+
+#messages
+  li.you:not(.media-message):not(.message-sequence-first):not(.message-sequence-inner)
+  .message-copy::before {
+  background: var(--accent-fill);
 }
 
 #messages li.media-message {
@@ -4132,6 +4142,21 @@ html[data-theme="dark"] .profile-editor-close {
   background: rgba(255, 255, 255, 0.055);
 }
 
+html[data-theme="dark"] .message-copy {
+  background: #202734;
+}
+
+html[data-theme="dark"] #messages li.server .message-copy {
+  border-color: #202734;
+}
+
+html[data-theme="dark"]
+  #messages
+  li:not(.media-message):not(.message-sequence-first):not(.message-sequence-inner)
+  .message-copy::before {
+  background: #202734;
+}
+
 html[data-theme="dark"] .chat-info-panel {
   background:
     radial-gradient(circle at top, rgba(244, 111, 84, 0.14), transparent 40%),
@@ -4709,8 +4734,15 @@ html[data-theme="dark"] .member-rights-section {
 }
 
 html[data-theme="dark"] #messages li.you .message-copy {
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: var(--accent-fill);
   color: var(--accent-on-fill);
+  background: var(--accent-fill);
+}
+
+html[data-theme="dark"]
+  #messages
+  li.you:not(.media-message):not(.message-sequence-first):not(.message-sequence-inner)
+  .message-copy::before {
   background: var(--accent-fill);
 }
 
