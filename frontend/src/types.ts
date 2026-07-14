@@ -202,6 +202,7 @@ export type ChatPermissionsUpdatedEvent = {
 export type RemovedFromChatEvent = {
   chat_id: number;
   removed_by: number | null;
+  left_by_self?: boolean;
 };
 
 export type MessagePinUpdatedEvent = {

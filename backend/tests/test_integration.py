@@ -461,6 +461,28 @@ class MessengerIntegrationTest(unittest.TestCase):
         )
         self.assertEqual(owner_response.status_code, 200, owner_response.text)
 
+    def test_member_can_leave_group_but_owner_cannot(self):
+        owner_client, _owner = self.signup("owner")
+        member_client, member = self.signup("member")
+        group = self.create_group(owner_client, [member["id"]])
+
+        owner_leave = owner_client.post(f"/chats/{group['id']}/leave")
+        self.assertEqual(owner_leave.status_code, 403, owner_leave.text)
+
+        member_leave = member_client.post(f"/chats/{group['id']}/leave")
+        self.assertEqual(member_leave.status_code, 200, member_leave.text)
+
+        member_chats = member_client.get("/chats")
+        self.assertEqual(member_chats.status_code, 200, member_chats.text)
+        self.assertNotIn(group["id"], [chat["id"] for chat in member_chats.json()])
+
+        remaining_members = owner_client.get(f"/chats/{group['id']}/members")
+        self.assertEqual(remaining_members.status_code, 200, remaining_members.text)
+        self.assertNotIn(
+            member["id"],
+            [chat_member["user_id"] for chat_member in remaining_members.json()],
+        )
+
     def test_multiple_file_uploads_create_one_message(self):
         client, _user = self.signup("album")
         chats = client.get("/chats")

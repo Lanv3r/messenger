@@ -1,4 +1,5 @@
 import type { FormEvent } from "react";
+import { LogOut } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { GroupSettingsPanel } from "@/components/chat/GroupSettingsPanel";
@@ -42,6 +43,7 @@ type GroupInfoPanelProps = {
   onMemberBooleanPermissionChange: (key: string, value: boolean) => void;
   onMemberNumericPermissionChange: (key: string, value: number) => void;
   onSaveMemberDefaultPermissions: () => void;
+  onLeaveGroup: () => void;
 };
 
 export function GroupInfoPanel({
@@ -81,6 +83,7 @@ export function GroupInfoPanel({
   onMemberBooleanPermissionChange,
   onMemberNumericPermissionChange,
   onSaveMemberDefaultPermissions,
+  onLeaveGroup,
 }: GroupInfoPanelProps) {
   return (
     <div
@@ -127,10 +130,11 @@ export function GroupInfoPanel({
           <Button
             type="button"
             size="sm"
-            variant="outline"
-            disabled
-            title="Leaving groups is not implemented yet."
+            variant="destructive"
+            className="chat-info-leave-button"
+            onClick={onLeaveGroup}
           >
+            <LogOut size={15} aria-hidden="true" />
             Leave
           </Button>
         </div>

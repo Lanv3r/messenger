@@ -198,7 +198,9 @@ export function useChatSocketEvents({
     resetChatInfoPanel();
     setSelectedChatMember(null);
     clearMemberRemoval();
-    onChatError("You were removed from this group.");
+    if (!data.left_by_self) {
+      onChatError("You were removed from this group.");
+    }
   }
 
   function onMessagePinUpdated(data: MessagePinUpdatedEvent) {

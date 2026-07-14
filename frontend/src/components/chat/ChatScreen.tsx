@@ -18,6 +18,7 @@ import { CreateGroupPanel } from "@/components/chat/CreateGroupPanel";
 import { DeleteChatDialog } from "@/components/chat/DeleteChatDialog";
 import { GroupInfoPanel } from "@/components/chat/GroupInfoPanel";
 import { ImageViewerDialog } from "@/components/chat/ImageViewerDialog";
+import { LeaveGroupDialog } from "@/components/chat/LeaveGroupDialog";
 import { MemberProfileDialog } from "@/components/chat/MemberProfileDialog";
 import { MemberRemovalDialog } from "@/components/chat/MemberRemovalDialog";
 import { MessageActionDialog } from "@/components/chat/MessageActionDialog";
@@ -135,6 +136,8 @@ export function ChatScreen({
   const [deleteChatMessagesForEveryone, setDeleteChatMessagesForEveryone] =
     useState(false);
   const [chatDeleting, setChatDeleting] = useState(false);
+  const [groupLeaveTarget, setGroupLeaveTarget] = useState<Chat | null>(null);
+  const [groupLeaving, setGroupLeaving] = useState(false);
   const searchHighlightTimeoutRef = useRef<number | null>(null);
   const {
     drafts: attachmentDrafts,
@@ -762,6 +765,8 @@ export function ChatScreen({
       joinChat(createdChat);
     },
   });
+  const showChatSelectionPlaceholder =
+    !creatingGroup && activeChat === undefined && draftRecipient === null;
 
   useEffect(() => {
     if (
@@ -773,6 +778,7 @@ export function ChatScreen({
       memberRemovalCandidate ||
       messageActionDialog ||
       chatDeleteTarget ||
+      groupLeaveTarget ||
       imageViewer ||
       attachmentDrafts.length > 0 ||
       editingAttachmentMessage ||
@@ -797,6 +803,7 @@ export function ChatScreen({
     memberRemovalCandidate,
     messageActionDialog,
     chatDeleteTarget,
+    groupLeaveTarget,
     selectedChatMember,
     voiceRecorder,
     canSendTextMessages,
@@ -1302,6 +1309,50 @@ export function ChatScreen({
     setDeleteChatMessagesForEveryone(false);
   };
 
+  const openLeaveGroupDialog = (chat: Chat) => {
+    if (chat.type !== "group") {
+      return;
+    }
+
+    setGroupLeaveTarget(chat);
+    setChatError(null);
+  };
+
+  const closeLeaveGroupDialog = () => {
+    if (!groupLeaving) {
+      setGroupLeaveTarget(null);
+    }
+  };
+
+  const confirmLeaveGroup = async () => {
+    const chat = groupLeaveTarget;
+    if (!chat) {
+      return;
+    }
+
+    setGroupLeaving(true);
+
+    try {
+      await apiFetch<{ ok: boolean }>(`/chats/${chat.id}/leave`, {
+        method: "POST",
+      });
+      setGroupLeaveTarget(null);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to leave group.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setGroupLeaveTarget(null);
+      setChatError(message);
+    } finally {
+      setGroupLeaving(false);
+    }
+  };
+
   const confirmChatDelete = async () => {
     const chat = chatDeleteTarget;
     if (!chat) {
@@ -1462,6 +1513,7 @@ export function ChatScreen({
               void toggleChatPin(chat);
             }}
             onDeleteChat={openChatDeleteDialog}
+            onLeaveGroup={openLeaveGroupDialog}
             onReorderPinnedChats={(chatIds) => {
               void reorderPinnedChats(chatIds);
             }}
@@ -1471,54 +1523,62 @@ export function ChatScreen({
           />
         )}
         <section className="chat-card">
-          <div className="chat-top-stack">
-            <ChatHeader
-              key={activeChatId ?? "draft"}
-              title={chatHeaderTitle}
-              subtitle={chatHeaderSubtitle}
-              avatarUrl={chatHeaderAvatar}
-              clickable={chatHeaderClickable}
-              onClick={handleChatHeaderClick}
-              searchEnabled={activeChatId !== null && draftRecipient === null}
-              searchActive={messageSearchOpen}
-              showChatMenu={activeChatId !== null && draftRecipient === null}
-              showContactMenu={directContactUserId !== null}
-              clearHistoryAction={
-                activeChat?.type === "group" && activeChat.member_count >= 2
-              }
-              onSearchClick={() => {
-                if (activeChatId === null || draftRecipient !== null) {
-                  return;
+          {!showChatSelectionPlaceholder ? (
+            <div className="chat-top-stack">
+              <ChatHeader
+                key={activeChatId ?? "draft"}
+                title={chatHeaderTitle}
+                subtitle={chatHeaderSubtitle}
+                avatarUrl={chatHeaderAvatar}
+                clickable={chatHeaderClickable}
+                onClick={handleChatHeaderClick}
+                searchEnabled={activeChatId !== null && draftRecipient === null}
+                searchActive={messageSearchOpen}
+                showChatMenu={activeChatId !== null && draftRecipient === null}
+                showContactMenu={directContactUserId !== null}
+                showLeaveGroup={activeChat?.type === "group"}
+                clearHistoryAction={
+                  activeChat?.type === "group" && activeChat.member_count >= 2
                 }
-
-                setMessageSearchOpen((current) => {
-                  if (current) {
-                    resetMessageSearch();
-                  } else {
-                    setContactsOpen(false);
+                onSearchClick={() => {
+                  if (activeChatId === null || draftRecipient !== null) {
+                    return;
                   }
-                  return !current;
-                });
-              }}
-              onViewProfile={handleChatHeaderClick}
-              onDeleteChat={() => {
-                if (activeChat) {
-                  openChatDeleteDialog(activeChat);
-                }
-              }}
-            />
-            {!creatingGroup ? (
-              <PinnedMessagesBar
-                messages={visibleMessages}
-                activePinnedMessageId={activePinnedMessageId}
-                canUnpinMessage={canUnpinPinnedBarMessage}
-                onRequestUnpin={(entry) => {
-                  openMessageActionDialog("pin", entry);
+
+                  setMessageSearchOpen((current) => {
+                    if (current) {
+                      resetMessageSearch();
+                    } else {
+                      setContactsOpen(false);
+                    }
+                    return !current;
+                  });
                 }}
-                onRevealMessage={revealMessageById}
+                onViewProfile={handleChatHeaderClick}
+                onDeleteChat={() => {
+                  if (activeChat) {
+                    openChatDeleteDialog(activeChat);
+                  }
+                }}
+                onLeaveGroup={() => {
+                  if (activeChat) {
+                    openLeaveGroupDialog(activeChat);
+                  }
+                }}
               />
-            ) : null}
-          </div>
+              {!creatingGroup ? (
+                <PinnedMessagesBar
+                  messages={visibleMessages}
+                  activePinnedMessageId={activePinnedMessageId}
+                  canUnpinMessage={canUnpinPinnedBarMessage}
+                  onRequestUnpin={(entry) => {
+                    openMessageActionDialog("pin", entry);
+                  }}
+                  onRevealMessage={revealMessageById}
+                />
+              ) : null}
+            </div>
+          ) : null}
 
           {creatingGroup ? (
             <CreateGroupPanel
@@ -1604,6 +1664,7 @@ export function ChatScreen({
             onSaveMemberDefaultPermissions={() => {
               void saveMemberDefaultPermissions();
             }}
+            onLeaveGroup={() => openLeaveGroupDialog(activeChat)}
           />
         ) : null}
 
@@ -1791,6 +1852,16 @@ export function ChatScreen({
           />
         ) : null}
 
+        {groupLeaveTarget ? (
+          <LeaveGroupDialog
+            leaving={groupLeaving}
+            onClose={closeLeaveGroupDialog}
+            onConfirm={() => {
+              void confirmLeaveGroup();
+            }}
+          />
+        ) : null}
+
         {imageViewer ? (
           <ImageViewerDialog
             src={imageViewer.src}
@@ -1813,116 +1884,122 @@ export function ChatScreen({
           />
         ) : null}
 
-        {chatError ? (
-          <p className="profile-error">{chatError}</p>
-        ) : null}
-
-        {isMessagingBlocked ? (
-          <div className="direct-message-blocked-notice" role="status">
-            <Ban size={17} aria-hidden="true" />
-            <span>This user blocked you from messaging them.</span>
+        {showChatSelectionPlaceholder ? (
+          <div className="chat-selection-placeholder">
+            Select a chat to start messaging
           </div>
-        ) : null}
-
-        <MessageList
-          messagesRef={messagesRef}
-          messages={visibleMessages}
-          isLoading={messagesLoading}
-          currentUserId={user.userId}
-          unreadSeparatorLastReadMessageId={unreadSeparatorLastReadMessageId}
-          activeChat={activeChat}
-          activeSearchResultId={activeSearchResultId}
-          openMessageMenuId={openMessageMenuId}
-          messageMenuPosition={messageMenuPosition}
-          messageMenuCopyTarget={messageMenuCopyTarget}
-          currentUserCanDeleteGroupMessages={currentUserCanDeleteGroupMessages}
-          renderMessageBody={(entry) => (
-            <MessageBody
-              entry={entry}
-              searchQuery={messageSearchQuery}
-              activeSearchResultId={activeSearchResultId}
-              onOpenImage={(src, alt, attachmentIndex) =>
-                setImageViewer({ src, alt, entry, attachmentIndex })
-              }
-            />
-          )}
-          renderReplyPreview={(reply) => (
-            <MessageReplyPreviewButton
-              reply={reply}
-              getSenderName={getReplySenderName}
-              onRevealMessage={revealMessageById}
-            />
-          )}
-          getSenderAvatar={getSenderAvatar}
-          getMessageDeliveryStatus={getMessageDeliveryStatus}
-          onOpenMessageMenu={openMessageMenu}
-          onCopyMessage={(entry, copyTarget) => {
-            void copyMessage(entry, copyTarget);
-          }}
-          onStartReply={startReplyingToMessage}
-          onStartEdit={startEditingMessageFromMenu}
-          onOpenActionDialog={openMessageActionDialog}
-        />
-
-        <ChatComposer
-          fileInputRef={fileInputRef}
-          messageInputRef={messageInputRef}
-          activeChatId={activeChatId}
-          hasDraftRecipient={draftRecipient !== null}
-          isMessagingBlocked={isMessagingBlocked}
-          canSendTextMessages={canSendTextMessages}
-          message={
-            composerEditingMessage ? editingMessageText : message
-          }
-          editingMessage={composerEditingMessage}
-          editingMessageSaving={editingMessageSaving}
-          replyToMessage={replyToMessage}
-          voiceRecorder={voiceRecorder}
-          voiceRecordingElapsedMs={voiceRecordingElapsedMs}
-          fileSending={fileSending}
-          voiceSending={voiceSending}
-          onFileInputChange={handleComposerFileInputChange}
-          onPasteImages={handlePasteImages}
-          onRevealMessage={revealMessageById}
-          onCancelReply={() => setReplyToMessage(null)}
-          onCancelEdit={cancelEditingMessage}
-          onCancelVoiceRecording={() => {
-            void stopVoiceRecording(false);
-          }}
-          onSendVoiceRecording={() => {
-            void stopVoiceRecording(true);
-          }}
-          onMessageChange={(value) => {
-            if (composerEditingMessage) {
-              setEditingMessageText(value);
-              return;
-            }
-
-            handleMessageInputChange(value);
-          }}
-          onSend={() => {
-            if (composerEditingMessage) {
-              void saveMessageEdit(composerEditingMessage);
-              return;
-            }
-
-            sendTextMessage();
-          }}
-          onStartVoiceRecording={() => {
-            void startVoiceRecording();
-          }}
-          getSenderName={getSenderName}
-        />
-        {status !== "Connected" ? (
-          <div className="connection-retry">
-            {connectionError ? (
-              <p className="status-copy">{connectionError}</p>
+        ) : (
+          <>
+            {chatError ? (
+              <p className="profile-error">{chatError}</p>
             ) : null}
-            <button className="retry-button" onClick={retrySocketConnection}>
-              Retry connection
-            </button>
-          </div>
-        ) : null}
+
+            {isMessagingBlocked ? (
+              <div className="direct-message-blocked-notice" role="status">
+                <Ban size={17} aria-hidden="true" />
+                <span>This user blocked you from messaging them.</span>
+              </div>
+            ) : null}
+
+            <MessageList
+              messagesRef={messagesRef}
+              messages={visibleMessages}
+              isLoading={messagesLoading}
+              currentUserId={user.userId}
+              unreadSeparatorLastReadMessageId={unreadSeparatorLastReadMessageId}
+              activeChat={activeChat}
+              activeSearchResultId={activeSearchResultId}
+              openMessageMenuId={openMessageMenuId}
+              messageMenuPosition={messageMenuPosition}
+              messageMenuCopyTarget={messageMenuCopyTarget}
+              currentUserCanDeleteGroupMessages={currentUserCanDeleteGroupMessages}
+              renderMessageBody={(entry) => (
+                <MessageBody
+                  entry={entry}
+                  searchQuery={messageSearchQuery}
+                  activeSearchResultId={activeSearchResultId}
+                  onOpenImage={(src, alt, attachmentIndex) =>
+                    setImageViewer({ src, alt, entry, attachmentIndex })
+                  }
+                />
+              )}
+              renderReplyPreview={(reply) => (
+                <MessageReplyPreviewButton
+                  reply={reply}
+                  getSenderName={getReplySenderName}
+                  onRevealMessage={revealMessageById}
+                />
+              )}
+              getSenderAvatar={getSenderAvatar}
+              getMessageDeliveryStatus={getMessageDeliveryStatus}
+              onOpenMessageMenu={openMessageMenu}
+              onCopyMessage={(entry, copyTarget) => {
+                void copyMessage(entry, copyTarget);
+              }}
+              onStartReply={startReplyingToMessage}
+              onStartEdit={startEditingMessageFromMenu}
+              onOpenActionDialog={openMessageActionDialog}
+            />
+
+            <ChatComposer
+              fileInputRef={fileInputRef}
+              messageInputRef={messageInputRef}
+              activeChatId={activeChatId}
+              hasDraftRecipient={draftRecipient !== null}
+              isMessagingBlocked={isMessagingBlocked}
+              canSendTextMessages={canSendTextMessages}
+              message={composerEditingMessage ? editingMessageText : message}
+              editingMessage={composerEditingMessage}
+              editingMessageSaving={editingMessageSaving}
+              replyToMessage={replyToMessage}
+              voiceRecorder={voiceRecorder}
+              voiceRecordingElapsedMs={voiceRecordingElapsedMs}
+              fileSending={fileSending}
+              voiceSending={voiceSending}
+              onFileInputChange={handleComposerFileInputChange}
+              onPasteImages={handlePasteImages}
+              onRevealMessage={revealMessageById}
+              onCancelReply={() => setReplyToMessage(null)}
+              onCancelEdit={cancelEditingMessage}
+              onCancelVoiceRecording={() => {
+                void stopVoiceRecording(false);
+              }}
+              onSendVoiceRecording={() => {
+                void stopVoiceRecording(true);
+              }}
+              onMessageChange={(value) => {
+                if (composerEditingMessage) {
+                  setEditingMessageText(value);
+                  return;
+                }
+
+                handleMessageInputChange(value);
+              }}
+              onSend={() => {
+                if (composerEditingMessage) {
+                  void saveMessageEdit(composerEditingMessage);
+                  return;
+                }
+
+                sendTextMessage();
+              }}
+              onStartVoiceRecording={() => {
+                void startVoiceRecording();
+              }}
+              getSenderName={getSenderName}
+            />
+            {status !== "Connected" ? (
+              <div className="connection-retry">
+                {connectionError ? (
+                  <p className="status-copy">{connectionError}</p>
+                ) : null}
+                <button className="retry-button" onClick={retrySocketConnection}>
+                  Retry connection
+                </button>
+              </div>
+            ) : null}
+          </>
+        )}
             </>
           )}
         </section>

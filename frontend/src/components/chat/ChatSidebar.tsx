@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { Eraser, Pin, Trash2, X } from "lucide-react";
+import { Eraser, LogOut, Pin, Trash2, X } from "lucide-react";
 
 import { formatChatTime } from "@/lib/date-format";
 import { getAssetUrl } from "@/lib/message-helpers";
@@ -21,6 +21,7 @@ type ChatSidebarProps = {
   onJoinChat: (chat: Chat) => void;
   onToggleChatPin: (chat: Chat) => void;
   onDeleteChat: (chat: Chat) => void;
+  onLeaveGroup: (chat: Chat) => void;
   onReorderPinnedChats: (chatIds: number[]) => void;
   getChatTitle: (chat: Chat) => string;
   getChatSubtitle: (chat: Chat) => string;
@@ -35,7 +36,7 @@ type ChatMenuState = {
 
 function getChatMenuPosition(clientX: number, clientY: number) {
   const menuWidth = 150;
-  const menuMaxHeight = 108;
+  const menuMaxHeight = 144;
   const viewportPadding = 8;
   const maxX = Math.max(
     viewportPadding,
@@ -144,6 +145,7 @@ export function ChatSidebar({
   onJoinChat,
   onToggleChatPin,
   onDeleteChat,
+  onLeaveGroup,
   onReorderPinnedChats,
   getChatTitle,
   getChatSubtitle,
@@ -693,7 +695,9 @@ export function ChatSidebar({
             <button
               type="button"
               role="menuitem"
-              className="danger"
+              className={
+                clearsGroupHistory(chatMenu.chat) ? undefined : "danger"
+              }
               onClick={() => {
                 onDeleteChat(chatMenu.chat);
                 setChatMenu(null);
@@ -706,6 +710,20 @@ export function ChatSidebar({
               )}
               {clearsGroupHistory(chatMenu.chat) ? "Clear history" : "Delete chat"}
             </button>
+            {chatMenu.chat.type === "group" ? (
+              <button
+                type="button"
+                role="menuitem"
+                className="danger"
+                onClick={() => {
+                  onLeaveGroup(chatMenu.chat);
+                  setChatMenu(null);
+                }}
+              >
+                <LogOut size={15} aria-hidden="true" />
+                Leave group
+              </button>
+            ) : null}
           </div>
         ) : null}
       </div>

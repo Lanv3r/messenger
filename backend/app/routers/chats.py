@@ -1237,6 +1237,96 @@ async def dismiss_admin(
     return {"ok": True}
 
 
+@router.post("/chats/{chat_id}/leave")
+async def leave_group_chat(
+    chat_id: int,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    participant = require_active_participant(session, chat_id, user_id)
+    chat = session.get(Chat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if chat.type != "group":
+        raise HTTPException(status_code=403, detail="Only group chats can be left")
+    if participant.role == "owner":
+        raise HTTPException(
+            status_code=403,
+            detail="Transfer ownership before leaving this group",
+        )
+
+    participant.left_at = datetime.now(timezone.utc)
+    participant.role = "member"
+    participant.admin_permissions = {}
+    participant.promoted_by = None
+    participant.promoted_at = None
+    session.add(participant)
+    session.commit()
+
+    remaining_participants = session.exec(
+        select(ChatParticipant).where(
+            col(ChatParticipant.chat_id) == chat_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).all()
+    roles_by_user_id = {
+        remaining_participant.user_id: remaining_participant.role
+        for remaining_participant in remaining_participants
+    }
+    remaining_member_ids = list(roles_by_user_id.keys())
+    chat_list_item = ChatListItem(
+        id=chat_id,
+        type=chat.type,
+        title=chat.title,
+        description=chat.description,
+        avatar_url=chat.avatar_url,
+        display_title=chat.title if chat.title is not None else "New group chat",
+        display_avatar_url=chat.avatar_url or "/favicon.svg",
+        member_ids=remaining_member_ids,
+        member_count=len(remaining_member_ids),
+        current_user_role=participant.role,
+        last_message_id=None,
+        last_message_text=None,
+        last_message_sender_id=None,
+        last_message_created_at=None,
+        created_at=chat.created_at,
+        updated_at=chat.updated_at,
+        pinned_order=None,
+    )
+
+    await sio.emit(
+        "removed_from_chat",
+        {
+            "chat_id": chat_id,
+            "removed_by": user_id,
+            "left_by_self": True,
+        },
+        room=f"user:{user_id}",
+    )
+
+    for member_id in remaining_member_ids:
+        member_chat_list_item = chat_list_item.model_copy(
+            update={"current_user_role": roles_by_user_id[member_id]},
+        )
+        await sio.emit(
+            "chat_members_updated",
+            {
+                "chat": member_chat_list_item.model_dump(mode="json"),
+                "added_member_ids": [],
+                "added_by": user_id,
+                "removed_member_ids": [user_id],
+                "removed_by": user_id,
+            },
+            room=f"user:{member_id}",
+        )
+
+    return {"ok": True}
+
+
 @router.delete("/chats/{chat_id}/members/{user_id}")
 async def remove_user(
     chat_id: int,

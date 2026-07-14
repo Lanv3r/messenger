@@ -54,6 +54,18 @@ html[data-theme="dark"] {
   box-shadow: 0 24px 80px rgba(106, 58, 45, 0.12);
 }
 
+.chat-selection-placeholder {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 700;
+  color: #8b5e34;
+}
+
 .subtle-scrollbar {
   scrollbar-width: thin;
   scrollbar-color: transparent transparent;
@@ -429,6 +441,18 @@ html[data-theme="dark"] {
 
 .chat-info-actions button {
   width: 100%;
+}
+
+.chat-info-actions .chat-info-leave-button {
+  border-color: rgba(180, 35, 24, 0.32);
+  color: #b42318;
+  background: rgba(180, 35, 24, 0.1);
+}
+
+.chat-info-actions .chat-info-leave-button:hover:not(:disabled) {
+  border-color: #b42318;
+  color: #fff7f0;
+  background: #b42318;
 }
 
 .chat-members-heading {
@@ -4177,6 +4201,10 @@ html[data-theme="dark"] .chat-sidebar {
   box-shadow: 0 24px 80px rgba(0, 0, 0, 0.3);
 }
 
+html[data-theme="dark"] .chat-selection-placeholder {
+  color: #c8b6a7;
+}
+
 html[data-theme="dark"] .subtle-scrollbar:focus-within,
 html[data-theme="dark"] .subtle-scrollbar.is-scrolling {
   scrollbar-color: rgba(231, 207, 184, 0.28) transparent;
@@ -4831,6 +4859,18 @@ html[data-theme="dark"] .member-rights-section > button:hover:not(:disabled) {
   border-color: var(--accent-focus);
   color: var(--accent-text);
   background: var(--accent-soft);
+}
+
+html[data-theme="dark"] .chat-info-actions .chat-info-leave-button {
+  border-color: rgba(255, 107, 95, 0.34);
+  color: #ff9f92;
+  background: rgba(180, 35, 24, 0.22);
+}
+
+html[data-theme="dark"] .chat-info-actions .chat-info-leave-button:hover:not(:disabled) {
+  border-color: #d9453a;
+  color: #fff7f0;
+  background: #d9453a;
 }
 
 html[data-theme="dark"] .chat-member-row,

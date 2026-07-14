@@ -1,6 +1,7 @@
 import {
   EllipsisVertical,
   Eraser,
+  LogOut,
   Search,
   Trash2,
   UserRound,
@@ -17,10 +18,12 @@ type ChatHeaderProps = {
   showChatMenu: boolean;
   showContactMenu: boolean;
   clearHistoryAction: boolean;
+  showLeaveGroup: boolean;
   onClick: () => void;
   onSearchClick: () => void;
   onViewProfile: () => void;
   onDeleteChat: () => void;
+  onLeaveGroup: () => void;
 };
 
 export function ChatHeader({
@@ -33,10 +36,12 @@ export function ChatHeader({
   showChatMenu,
   showContactMenu,
   clearHistoryAction,
+  showLeaveGroup,
   onClick,
   onSearchClick,
   onViewProfile,
   onDeleteChat,
+  onLeaveGroup,
 }: ChatHeaderProps) {
   const [contactMenuOpen, setContactMenuOpen] = useState(false);
   const visibleContactMenu = showChatMenu && contactMenuOpen;
@@ -141,7 +146,7 @@ export function ChatHeader({
                 <button
                   type="button"
                   role="menuitem"
-                  className="danger"
+                  className={clearHistoryAction ? undefined : "danger"}
                   onClick={() => {
                     onDeleteChat();
                     setContactMenuOpen(false);
@@ -156,6 +161,20 @@ export function ChatHeader({
                     {clearHistoryAction ? "Clear history" : "Delete chat"}
                   </span>
                 </button>
+                {showLeaveGroup ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="danger"
+                    onClick={() => {
+                      onLeaveGroup();
+                      setContactMenuOpen(false);
+                    }}
+                  >
+                    <LogOut size={16} aria-hidden="true" />
+                    <span>Leave group</span>
+                  </button>
+                ) : null}
               </div>
             ) : null}
           </div>
