@@ -63,6 +63,7 @@ import { useChatSocketEvents } from "@/hooks/useChatSocketEvents";
 import { useChatData } from "@/hooks/useChatData";
 import { useBlocks } from "@/hooks/useBlocks";
 import { useContacts } from "@/hooks/useContacts";
+import { useChatPermissions } from "@/hooks/useChatPermissions";
 import type {
   AuthResponse,
   AuthUser,
@@ -306,6 +307,12 @@ export function ChatScreen({
   );
   const isMessagingBlocked =
     activeChat?.type === "direct" && activeChat.is_blocked_by_other === true;
+  const {
+    canSendTextMessages: hasGroupWritePermission,
+    refreshPermissions: refreshChatPermissions,
+  } = useChatPermissions({ activeChat, onSessionExpired });
+  const canSendTextMessages =
+    !isMessagingBlocked && hasGroupWritePermission;
 
   useEffect(() => {
     if (activeChatId === null) {
@@ -560,6 +567,7 @@ export function ChatScreen({
     activeChatIdRef,
     socketRef,
     draftRecipient,
+    canSendTextMessages,
     message,
     replyToMessage,
     attachmentDrafts,
@@ -598,6 +606,7 @@ export function ChatScreen({
     removeMessageLocally,
     removeMessagesLocally,
     refreshChats,
+    refreshChatPermissions,
     emitTypingStoppedBeforeDisconnect,
     clearUserActivity,
     handleTypingActivity,
@@ -768,7 +777,7 @@ export function ChatScreen({
       attachmentDrafts.length > 0 ||
       editingAttachmentMessage ||
       voiceRecorder ||
-      isMessagingBlocked
+      !canSendTextMessages
     ) {
       return;
     }
@@ -790,7 +799,7 @@ export function ChatScreen({
     chatDeleteTarget,
     selectedChatMember,
     voiceRecorder,
-    isMessagingBlocked,
+    canSendTextMessages,
   ]);
 
   const {
@@ -1861,6 +1870,7 @@ export function ChatScreen({
           activeChatId={activeChatId}
           hasDraftRecipient={draftRecipient !== null}
           isMessagingBlocked={isMessagingBlocked}
+          canSendTextMessages={canSendTextMessages}
           message={
             composerEditingMessage ? editingMessageText : message
           }

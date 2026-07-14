@@ -20,6 +20,7 @@ type ChatComposerProps = {
   activeChatId: number | null;
   hasDraftRecipient: boolean;
   isMessagingBlocked: boolean;
+  canSendTextMessages: boolean;
   message: string;
   editingMessage: ChatMessage | null;
   editingMessageSaving: boolean;
@@ -47,6 +48,7 @@ export function ChatComposer({
   activeChatId,
   hasDraftRecipient,
   isMessagingBlocked,
+  canSendTextMessages,
   message,
   editingMessage,
   editingMessageSaving,
@@ -186,9 +188,11 @@ export function ChatComposer({
             placeholder={
               isMessagingBlocked
                 ? "You cannot message this user"
+                : !canSendTextMessages
+                  ? "You do not have permission to send messages"
                 : "Write a message..."
             }
-            disabled={isMessagingBlocked}
+            disabled={!canSendTextMessages}
             onChange={(event) => onMessageChange(event.target.value)}
             onPaste={onPasteImages}
             onKeyDown={(event) => {
@@ -266,7 +270,7 @@ export function ChatComposer({
             disabled={
               (activeChatId === null && !hasDraftRecipient) ||
               editingMessageSaving ||
-              isMessagingBlocked
+              !canSendTextMessages
             }
           >
             {isEditing ? (

@@ -29,6 +29,7 @@ type UseMessageSendingOptions = {
   activeChatIdRef: MutableRefObject<number | null>;
   socketRef: MutableRefObject<Socket | null>;
   draftRecipient: UserProfile | null;
+  canSendTextMessages: boolean;
   message: string;
   replyToMessage: ChatMessage | null;
   attachmentDrafts: AttachmentDraft[];
@@ -62,6 +63,7 @@ export function useMessageSending({
   activeChatIdRef,
   socketRef,
   draftRecipient,
+  canSendTextMessages,
   message,
   replyToMessage,
   attachmentDrafts,
@@ -301,7 +303,7 @@ export function useMessageSending({
 
   async function sendTextMessage() {
     const socket = socketRef.current;
-    if (!message.trim()) {
+    if (!canSendTextMessages || !message.trim()) {
       return;
     }
 

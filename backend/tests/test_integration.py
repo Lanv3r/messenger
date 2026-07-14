@@ -264,6 +264,9 @@ class MessengerIntegrationTest(unittest.TestCase):
             outsider_client.get(
                 f"/chats/{group['id']}/member-default-permissions",
             ),
+            outsider_client.get(
+                f"/chats/{group['id']}/permissions",
+            ),
             outsider_client.patch(
                 f"/chats/{group['id']}/member-default-permissions",
                 json=SYSTEM_ROLE_DEFAULTS["member"],
@@ -433,6 +436,18 @@ class MessengerIntegrationTest(unittest.TestCase):
             group["id"],
             {"send_messages": False},
         )
+
+        member_permissions = member_client.get(
+            f"/chats/{group['id']}/permissions",
+        )
+        self.assertEqual(member_permissions.status_code, 200, member_permissions.text)
+        self.assertFalse(member_permissions.json()["send_messages"])
+
+        owner_permissions = owner_client.get(
+            f"/chats/{group['id']}/permissions",
+        )
+        self.assertEqual(owner_permissions.status_code, 200, owner_permissions.text)
+        self.assertTrue(owner_permissions.json()["send_messages"])
 
         blocked_response = member_client.post(
             f"/chats/{group['id']}/messages",

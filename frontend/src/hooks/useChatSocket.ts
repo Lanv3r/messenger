@@ -7,6 +7,7 @@ import type {
   ChatMessagesDeletedEvent,
   ChatMembersUpdatedEvent,
   ChatMessage,
+  ChatPermissionsUpdatedEvent,
   ChatReadEvent,
   ChatRecordingVoiceEvent,
   ChatTypingEvent,
@@ -27,6 +28,7 @@ type UseChatSocketOptions = {
   onChatUpdated: (data: ChatUpdatedEvent) => void;
   onChatCreated: (data: Chat) => void;
   onChatMembersUpdated: (data: ChatMembersUpdatedEvent) => void;
+  onChatPermissionsUpdated: (data: ChatPermissionsUpdatedEvent) => void;
   onRemovedFromChat: (data: RemovedFromChatEvent, socket: Socket) => void;
   onMessagePinUpdated: (data: MessagePinUpdatedEvent) => void;
   onMessageUpdated: (data: ChatMessage) => void;
@@ -51,6 +53,7 @@ export function useChatSocket({
   onChatUpdated,
   onChatCreated,
   onChatMembersUpdated,
+  onChatPermissionsUpdated,
   onRemovedFromChat,
   onMessagePinUpdated,
   onMessageUpdated,
@@ -71,6 +74,7 @@ export function useChatSocket({
   const handleChatUpdated = useEffectEvent(onChatUpdated);
   const handleChatCreated = useEffectEvent(onChatCreated);
   const handleChatMembersUpdated = useEffectEvent(onChatMembersUpdated);
+  const handleChatPermissionsUpdated = useEffectEvent(onChatPermissionsUpdated);
   const handleRemovedFromChat = useEffectEvent(onRemovedFromChat);
   const handleMessagePinUpdated = useEffectEvent(onMessagePinUpdated);
   const handleMessageUpdated = useEffectEvent(onMessageUpdated);
@@ -102,6 +106,7 @@ export function useChatSocket({
     socket.on("chat_updated", handleChatUpdated);
     socket.on("chat_created", handleChatCreated);
     socket.on("chat_members_updated", handleChatMembersUpdated);
+    socket.on("chat_permissions_updated", handleChatPermissionsUpdated);
     socket.on("removed_from_chat", (data: RemovedFromChatEvent) => {
       handleRemovedFromChat(data, socket);
     });

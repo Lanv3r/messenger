@@ -92,6 +92,18 @@ def get_next_pinned_order(session: Session, user_id: int) -> int:
     return (max_order or 0) + 1
 
 
+async def emit_chat_permissions_updated(
+    chat_id: int,
+    user_ids: list[int],
+) -> None:
+    for user_id in set(user_ids):
+        await sio.emit(
+            "chat_permissions_updated",
+            {"chat_id": chat_id},
+            room=f"user:{user_id}",
+        )
+
+
 @router.get("/chats", response_model=list[ChatListItem])
 def get_chats(
     session: SessionDep,
@@ -612,6 +624,28 @@ def get_chat_members(
     return members
 
 
+@router.get("/chats/{chat_id}/permissions")
+def get_current_user_chat_permissions(
+    chat_id: int,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    participant = require_active_participant(session, chat_id, user_id)
+    chat = session.get(Chat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    # Direct and self chats have no configurable group permissions.
+    if chat.type != "group":
+        return {"send_messages": True}
+
+    return get_effective_permissions(participant, session)
+
+
 @router.patch("/chats/pinned-order", response_model=PinnedChatOrderResponse)
 def reorder_pinned_chats(
     payload: PinnedChatOrderUpdate,
@@ -939,7 +973,7 @@ def get_chat_default_permissions(
 
 
 @router.patch("/chats/{chat_id}/member-default-permissions")
-def patch_chat_default_permissions(
+async def patch_chat_default_permissions(
     chat_id: int,
     new_permissions: dict,
     session: SessionDep,
@@ -974,13 +1008,17 @@ def patch_chat_default_permissions(
 
     session.add(chat_member_permissions)
     session.commit()
+    await emit_chat_permissions_updated(
+        chat_id,
+        [participant.user_id for participant in participants],
+    )
 
 
 @router.patch(
     "/chats/{chat_id}/members/{user_id}/permissions",
     response_model=ChatMemberPublic,
 )
-def patch_member_permissions(
+async def patch_member_permissions(
     chat_id: int,
     user_id: int,
     new_permissions: dict,
@@ -1051,6 +1089,7 @@ def patch_member_permissions(
     if target_user is None:
         raise HTTPException(status_code=404, detail="User not found")
 
+    await emit_chat_permissions_updated(chat_id, [target_participant.user_id])
     return to_chat_member_public(target_participant, target_user)
 
 
@@ -1085,7 +1124,7 @@ def get_admin_permissions(
 
 
 @router.patch("/chats/{chat_id}/admins/{user_id}/permissions")
-def patch_admin_permissions(
+async def patch_admin_permissions(
     chat_id: int,
     user_id: int,
     new_permissions: dict,
@@ -1120,10 +1159,11 @@ def patch_admin_permissions(
     target_participant.admin_permissions = new_permissions
     session.add(target_participant)
     session.commit()
+    await emit_chat_permissions_updated(chat_id, [target_participant.user_id])
 
 
 @router.post("/chats/{chat_id}/admins/{user_id}/promote")
-def promote_admin(
+async def promote_admin(
     chat_id: int,
     user_id: int,
     new_permissions: dict,
@@ -1159,11 +1199,12 @@ def promote_admin(
 
     session.add(target_participant)
     session.commit()
+    await emit_chat_permissions_updated(chat_id, [target_participant.user_id])
     return {"ok": True}
 
 
 @router.post("/chats/{chat_id}/admins/{user_id}/dismiss")
-def dismiss_admin(
+async def dismiss_admin(
     chat_id: int,
     user_id: int,
     session: SessionDep,
@@ -1192,6 +1233,7 @@ def dismiss_admin(
 
     session.add(target_participant)
     session.commit()
+    await emit_chat_permissions_updated(chat_id, [target_participant.user_id])
     return {"ok": True}
 
 

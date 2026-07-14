@@ -195,6 +195,10 @@ export type ChatMembersUpdatedEvent = {
   removed_by?: number | null;
 };
 
+export type ChatPermissionsUpdatedEvent = {
+  chat_id: number;
+};
+
 export type RemovedFromChatEvent = {
   chat_id: number;
   removed_by: number | null;

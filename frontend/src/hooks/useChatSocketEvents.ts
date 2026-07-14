@@ -12,6 +12,7 @@ import type {
   ChatMember,
   ChatMembersUpdatedEvent,
   ChatMessage,
+  ChatPermissionsUpdatedEvent,
   ChatReadEvent,
   ChatRecordingVoiceEvent,
   ChatTypingEvent,
@@ -39,6 +40,7 @@ type UseChatSocketEventsOptions = {
   removeMessageLocally: (messageId: number, chatId: number) => void;
   removeMessagesLocally: (messageIds: number[], chatId: number) => void;
   refreshChats: () => void;
+  refreshChatPermissions: (chatId: number) => void;
   emitTypingStoppedBeforeDisconnect: (socket: Socket) => void;
   clearUserActivity: (
     chatId: number,
@@ -74,6 +76,7 @@ export function useChatSocketEvents({
   removeMessageLocally,
   removeMessagesLocally,
   refreshChats,
+  refreshChatPermissions,
   emitTypingStoppedBeforeDisconnect,
   clearUserActivity,
   handleTypingActivity,
@@ -168,6 +171,11 @@ export function useChatSocketEvents({
     }
   }
 
+  function onChatPermissionsUpdated(data: ChatPermissionsUpdatedEvent) {
+    refreshChatPermissions(data.chat_id);
+    void refreshChats();
+  }
+
   function onRemovedFromChat(data: RemovedFromChatEvent, socket: Socket) {
     setChats((current) =>
       current.filter((chat) => chat.id !== data.chat_id),
@@ -259,6 +267,7 @@ export function useChatSocketEvents({
     onChatUpdated,
     onChatCreated,
     onChatMembersUpdated,
+    onChatPermissionsUpdated,
     onRemovedFromChat,
     onMessagePinUpdated,
     onMessageUpdated,
