@@ -21,6 +21,10 @@ function getDeleteMessagesPrompt(chat: Chat) {
   return null;
 }
 
+function clearsGroupHistory(chat: Chat) {
+  return chat.type === "group" && chat.member_count >= 2;
+}
+
 export function DeleteChatDialog({
   chat,
   deleting,
@@ -30,6 +34,7 @@ export function DeleteChatDialog({
   onConfirm,
 }: DeleteChatDialogProps) {
   const deleteMessagesPrompt = getDeleteMessagesPrompt(chat);
+  const clearHistory = clearsGroupHistory(chat);
 
   return (
     <div
@@ -45,9 +50,13 @@ export function DeleteChatDialog({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="message-action-dialog-copy">
-          <strong id="delete-chat-title">Delete this chat?</strong>
+          <strong id="delete-chat-title">
+            {clearHistory ? "Clear this chat's history?" : "Delete this chat?"}
+          </strong>
           <p>
-            This removes the chat and its previous history from your chat list.
+            {clearHistory
+              ? "This removes the previous messages from your view. The group stays in your chat list."
+              : "This removes the chat and its previous history from your chat list."}
           </p>
         </div>
         {deleteMessagesPrompt ? (
@@ -73,7 +82,9 @@ export function DeleteChatDialog({
             disabled={deleting}
             onClick={onConfirm}
           >
-            {deleting ? "Deleting..." : "Delete"}
+            {deleting
+              ? (clearHistory ? "Clearing..." : "Deleting...")
+              : (clearHistory ? "Clear history" : "Delete")}
           </button>
         </div>
       </section>

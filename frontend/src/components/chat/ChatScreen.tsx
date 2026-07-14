@@ -1310,16 +1310,41 @@ export function ChatScreen({
       });
 
       const isActiveChat = activeChatIdRef.current === chat.id;
+      const clearsGroupHistory =
+        chat.type === "group" && chat.member_count >= 2;
       const nextChat = chats.find(
         (candidate) => candidate.id !== chat.id && candidate.type === "self",
       ) ?? chats.find((candidate) => candidate.id !== chat.id) ?? null;
 
-      setChats((current) => current.filter((candidate) => candidate.id !== chat.id));
+      setChats((current) =>
+        clearsGroupHistory
+          ? current.map((candidate) =>
+              candidate.id === chat.id
+                ? {
+                    ...candidate,
+                    last_message_id: null,
+                    last_message_text: null,
+                    last_message_sender_id: null,
+                    last_message_created_at: null,
+                    unread_count: 0,
+                  }
+                : candidate,
+            )
+          : current.filter((candidate) => candidate.id !== chat.id),
+      );
       clearChatReadState(chat.id);
       clearComposerDraft(chat.id);
 
       if (isActiveChat) {
-        if (nextChat) {
+        if (clearsGroupHistory) {
+          setMessages([]);
+          setMessagesLoading(false);
+          setMessage("");
+          setReplyToMessage(null);
+          setMessageSearchOpen(false);
+          resetMessageSearch();
+          resetEditingState();
+        } else if (nextChat) {
           joinChat(nextChat);
         } else {
           socketRef.current?.emit("leave_room", String(chat.id));
@@ -1336,6 +1361,10 @@ export function ChatScreen({
           resetChatInfoPanel();
           clearMemberRemoval();
         }
+      }
+
+      if (clearsGroupHistory) {
+        void refreshChats();
       }
 
       setChatDeleteTarget(null);
@@ -1445,6 +1474,9 @@ export function ChatScreen({
               searchActive={messageSearchOpen}
               showChatMenu={activeChatId !== null && draftRecipient === null}
               showContactMenu={directContactUserId !== null}
+              clearHistoryAction={
+                activeChat?.type === "group" && activeChat.member_count >= 2
+              }
               onSearchClick={() => {
                 if (activeChatId === null || draftRecipient !== null) {
                   return;

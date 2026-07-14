@@ -1,4 +1,10 @@
-import { EllipsisVertical, Search, Trash2, UserRound } from "lucide-react";
+import {
+  EllipsisVertical,
+  Eraser,
+  Search,
+  Trash2,
+  UserRound,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 
 type ChatHeaderProps = {
@@ -10,6 +16,7 @@ type ChatHeaderProps = {
   searchActive: boolean;
   showChatMenu: boolean;
   showContactMenu: boolean;
+  clearHistoryAction: boolean;
   onClick: () => void;
   onSearchClick: () => void;
   onViewProfile: () => void;
@@ -25,6 +32,7 @@ export function ChatHeader({
   searchActive,
   showChatMenu,
   showContactMenu,
+  clearHistoryAction,
   onClick,
   onSearchClick,
   onViewProfile,
@@ -139,8 +147,14 @@ export function ChatHeader({
                     setContactMenuOpen(false);
                   }}
                 >
-                  <Trash2 size={16} aria-hidden="true" />
-                  <span>Delete chat</span>
+                  {clearHistoryAction ? (
+                    <Eraser size={16} aria-hidden="true" />
+                  ) : (
+                    <Trash2 size={16} aria-hidden="true" />
+                  )}
+                  <span>
+                    {clearHistoryAction ? "Clear history" : "Delete chat"}
+                  </span>
                 </button>
               </div>
             ) : null}

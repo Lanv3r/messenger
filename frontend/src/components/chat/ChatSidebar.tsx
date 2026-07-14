@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 
-import { Pin, Trash2, X } from "lucide-react";
+import { Eraser, Pin, Trash2, X } from "lucide-react";
 
 import { formatChatTime } from "@/lib/date-format";
 import { getAssetUrl } from "@/lib/message-helpers";
@@ -58,6 +58,10 @@ function getProfileDisplayName(profile: UserProfile) {
 
 function getPinnedChatIds(chats: Chat[]) {
   return chats.filter((chat) => chat.is_pinned).map((chat) => chat.id);
+}
+
+function clearsGroupHistory(chat: Chat) {
+  return chat.type === "group" && chat.member_count >= 2;
 }
 
 function areChatIdListsEqual(first: number[], second: number[]) {
@@ -695,8 +699,12 @@ export function ChatSidebar({
                 setChatMenu(null);
               }}
             >
-              <Trash2 size={15} aria-hidden="true" />
-              Delete chat
+              {clearsGroupHistory(chatMenu.chat) ? (
+                <Eraser size={15} aria-hidden="true" />
+              ) : (
+                <Trash2 size={15} aria-hidden="true" />
+              )}
+              {clearsGroupHistory(chatMenu.chat) ? "Clear history" : "Delete chat"}
             </button>
           </div>
         ) : null}

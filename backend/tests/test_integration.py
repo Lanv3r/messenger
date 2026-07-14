@@ -365,6 +365,44 @@ class MessengerIntegrationTest(unittest.TestCase):
             ["reply"],
         )
 
+    def test_clearing_populated_group_history_keeps_group_in_chat_list(self):
+        owner_client, _owner = self.signup("owner")
+        member_client, member = self.signup("member")
+        group = self.create_group(owner_client, [member["id"]])
+
+        message_response = owner_client.post(
+            f"/chats/{group['id']}/messages",
+            json={"content": "group history"},
+        )
+        self.assertEqual(message_response.status_code, 200, message_response.text)
+
+        clear_response = owner_client.request(
+            "DELETE",
+            f"/chats/{group['id']}",
+            json={"delete_messages_for_everyone": False},
+        )
+        self.assertEqual(clear_response.status_code, 200, clear_response.text)
+        self.assertTrue(clear_response.json()["cleared_history"])
+
+        owner_chats = owner_client.get("/chats")
+        self.assertEqual(owner_chats.status_code, 200, owner_chats.text)
+        owner_group = next(
+            chat for chat in owner_chats.json() if chat["id"] == group["id"]
+        )
+        self.assertIsNone(owner_group["last_message_id"])
+        self.assertEqual(owner_group["unread_count"], 0)
+
+        owner_messages = owner_client.get(f"/chats/{group['id']}/messages")
+        self.assertEqual(owner_messages.status_code, 200, owner_messages.text)
+        self.assertEqual(owner_messages.json(), [])
+
+        member_messages = member_client.get(f"/chats/{group['id']}/messages")
+        self.assertEqual(member_messages.status_code, 200, member_messages.text)
+        self.assertEqual(
+            [message["content"] for message in member_messages.json()],
+            ["group history"],
+        )
+
     def test_read_marker_must_belong_to_chat(self):
         owner_client, _owner = self.signup("owner")
         _member_client, member = self.signup("member")

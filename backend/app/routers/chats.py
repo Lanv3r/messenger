@@ -189,6 +189,7 @@ def get_chats(
             or (
                 chat.type == "group"
                 and current_participant.cleared_at is not None
+                and member_count < 2
             )
         ):
             continue
@@ -454,6 +455,13 @@ async def delete_chat(
     if chat is None:
         raise HTTPException(status_code=404, detail="Chat not found")
 
+    participant_ids = session.exec(
+        select(col(ChatParticipant.user_id)).where(
+            col(ChatParticipant.chat_id) == chat_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).all()
+    is_group_history_clear = chat.type == "group" and len(participant_ids) >= 2
     deleted_at = datetime.now(timezone.utc)
     delete_messages_for_everyone = (
         chat.type == "self" or payload.delete_messages_for_everyone
@@ -479,18 +487,13 @@ async def delete_chat(
             )
 
     participant.cleared_at = deleted_at
-    participant.is_pinned = False
-    participant.pinned_order = None
+    if not is_group_history_clear:
+        participant.is_pinned = False
+        participant.pinned_order = None
     session.add(participant)
     session.commit()
 
     if deleted_message_ids:
-        participant_ids = session.exec(
-            select(col(ChatParticipant.user_id)).where(
-                col(ChatParticipant.chat_id) == chat_id,
-                col(ChatParticipant.left_at).is_(None),
-            )
-        ).all()
         deletion_event = {
             "chat_id": chat_id,
             "message_ids": deleted_message_ids,
@@ -505,7 +508,7 @@ async def delete_chat(
                 room=f"user:{participant_id}",
             )
 
-    return {"ok": True}
+    return {"ok": True, "cleared_history": is_group_history_clear}
 
 
 @router.post("/chats/{chat_id}/read")
