@@ -436,7 +436,12 @@ export function MessageList({
     <ul
       id="messages"
       ref={messagesRef}
-      className="subtle-scrollbar"
+      className={[
+        "subtle-scrollbar",
+        messages.length === 0 && !isLoading ? "empty" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
       onWheel={preventBoundaryOverscroll}
       onScroll={(event) => {
         keepSubtleScrollbarVisible(event);
