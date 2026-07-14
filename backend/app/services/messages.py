@@ -1,4 +1,7 @@
+from datetime import datetime
+
 from app.models import (
+    ChatParticipant,
     Message,
     MessagePublic,
     MessageReplyPreview,
@@ -6,6 +9,8 @@ from app.models import (
     User,
 )
 from fastapi import HTTPException
+from sqlalchemy import and_
+from sqlalchemy.sql.elements import ColumnElement
 from sqlmodel import Session, col, exists, select
 
 DELETED_MESSAGE_PREVIEW_CONTENT = "message deleted"
@@ -18,6 +23,24 @@ FILE_MESSAGE_PREVIEW_LABELS = {
     "image": "Photo",
     "video": "Video",
 }
+
+
+def message_is_visible_to_user(
+    user_id: int,
+    cleared_at: datetime | None = None,
+) -> ColumnElement[bool]:
+    conditions: list[ColumnElement[bool]] = [
+        ~exists().where(
+            col(MessageUserState.message_id) == col(Message.id),
+            col(MessageUserState.user_id) == user_id,
+            col(MessageUserState.deleted_at).is_not(None),
+        )
+    ]
+
+    if cleared_at is not None:
+        conditions.append(col(Message.created_at) > cleared_at)
+
+    return and_(*conditions)
 
 
 def get_uploaded_file_message_type_and_permission(content_type: str) -> tuple[str, str]:
@@ -121,8 +144,26 @@ def build_message_reply_preview(
         if viewer_id is not None
         else None
     )
+    viewer_participant = (
+        session.exec(
+            select(ChatParticipant).where(
+                col(ChatParticipant.chat_id) == message.chat_id,
+                col(ChatParticipant.user_id) == viewer_id,
+                col(ChatParticipant.left_at).is_(None),
+            )
+        ).first()
+        if viewer_id is not None
+        else None
+    )
     if reply_target.deleted_at is not None or (
         message_user_state is not None and message_user_state.deleted_at is not None
+    ) or (
+        viewer_participant is not None
+        and viewer_participant.cleared_at is not None
+        and (
+            reply_target.created_at is None
+            or reply_target.created_at <= viewer_participant.cleared_at
+        )
     ):
         return MessageReplyPreview(
             id=reply_target.id,
@@ -154,16 +195,22 @@ def get_reply_target(
     if reply_to_message_id is None:
         return None
 
+    participant = session.exec(
+        select(ChatParticipant).where(
+            col(ChatParticipant.chat_id) == chat_id,
+            col(ChatParticipant.user_id) == user_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).first()
+    if participant is None:
+        raise HTTPException(status_code=403, detail="Not a participant")
+
     reply_target = session.exec(
         select(Message).where(
             col(Message.id) == reply_to_message_id,
             col(Message.chat_id) == chat_id,
             col(Message.deleted_at).is_(None),
-            ~exists().where(
-                col(MessageUserState.message_id) == col(Message.id),
-                col(MessageUserState.user_id) == user_id,
-                col(MessageUserState.deleted_at).is_not(None),
-            ),
+            message_is_visible_to_user(user_id, participant.cleared_at),
         )
     ).first()
 

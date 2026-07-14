@@ -212,6 +212,11 @@ export type MessageDeletedEvent = {
   chat_id: number;
 };
 
+export type ChatMessagesDeletedEvent = {
+  chat_id: number;
+  message_ids: number[];
+};
+
 export type MessageDeliveryStatus = {
   kind: "sending" | "sent" | "read" | "failed";
   label: string;

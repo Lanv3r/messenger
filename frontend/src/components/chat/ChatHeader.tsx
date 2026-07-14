@@ -1,4 +1,4 @@
-import { EllipsisVertical, Search, UserRound } from "lucide-react";
+import { EllipsisVertical, Search, Trash2, UserRound } from "lucide-react";
 import { useEffect, useState } from "react";
 
 type ChatHeaderProps = {
@@ -8,10 +8,12 @@ type ChatHeaderProps = {
   clickable: boolean;
   searchEnabled: boolean;
   searchActive: boolean;
+  showChatMenu: boolean;
   showContactMenu: boolean;
   onClick: () => void;
   onSearchClick: () => void;
   onViewProfile: () => void;
+  onDeleteChat: () => void;
 };
 
 export function ChatHeader({
@@ -21,13 +23,15 @@ export function ChatHeader({
   clickable,
   searchEnabled,
   searchActive,
+  showChatMenu,
   showContactMenu,
   onClick,
   onSearchClick,
   onViewProfile,
+  onDeleteChat,
 }: ChatHeaderProps) {
   const [contactMenuOpen, setContactMenuOpen] = useState(false);
-  const visibleContactMenu = showContactMenu && contactMenuOpen;
+  const visibleContactMenu = showChatMenu && contactMenuOpen;
 
   useEffect(() => {
     if (!visibleContactMenu) {
@@ -51,7 +55,7 @@ export function ChatHeader({
     <header
       className={[
         "chat-window-header",
-        showContactMenu ? "has-contact-menu" : "",
+        showChatMenu ? "has-contact-menu" : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -91,15 +95,15 @@ export function ChatHeader({
         >
           <Search size={18} aria-hidden="true" />
         </button>
-        {showContactMenu ? (
+        {showChatMenu ? (
           <div className="chat-header-contact-menu-wrap">
             <button
               type="button"
               className="chat-header-menu-button"
-              aria-label="Contact options"
+              aria-label="Chat options"
               aria-expanded={visibleContactMenu}
               aria-haspopup="menu"
-              title="Contact options"
+              title="Chat options"
               onClick={(event) => {
                 event.stopPropagation();
                 setContactMenuOpen((current) => !current);
@@ -113,16 +117,30 @@ export function ChatHeader({
                 role="menu"
                 onClick={(event) => event.stopPropagation()}
               >
+                {showContactMenu ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onViewProfile();
+                      setContactMenuOpen(false);
+                    }}
+                  >
+                    <UserRound size={16} aria-hidden="true" />
+                    <span>View profile</span>
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   role="menuitem"
+                  className="danger"
                   onClick={() => {
-                    onViewProfile();
+                    onDeleteChat();
                     setContactMenuOpen(false);
                   }}
                 >
-                  <UserRound size={16} aria-hidden="true" />
-                  <span>View profile</span>
+                  <Trash2 size={16} aria-hidden="true" />
+                  <span>Delete chat</span>
                 </button>
               </div>
             ) : null}

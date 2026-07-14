@@ -1,8 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
-import { Pin, X } from "lucide-react";
+import { Pin, Trash2, X } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { formatChatTime } from "@/lib/date-format";
 import { getAssetUrl } from "@/lib/message-helpers";
 import { keepSubtleScrollbarVisible } from "@/lib/scrollbar";
@@ -18,9 +17,10 @@ type ChatSidebarProps = {
   draftRecipient: UserProfile | null;
   onProfileQueryChange: (value: string) => void;
   onClearProfileSearch: () => void;
-  onMessageProfile: (profile: UserProfile) => void;
+  onViewProfile: (profile: UserProfile) => void;
   onJoinChat: (chat: Chat) => void;
   onToggleChatPin: (chat: Chat) => void;
+  onDeleteChat: (chat: Chat) => void;
   onReorderPinnedChats: (chatIds: number[]) => void;
   getChatTitle: (chat: Chat) => string;
   getChatSubtitle: (chat: Chat) => string;
@@ -35,7 +35,7 @@ type ChatMenuState = {
 
 function getChatMenuPosition(clientX: number, clientY: number) {
   const menuWidth = 150;
-  const menuMaxHeight = 60;
+  const menuMaxHeight = 108;
   const viewportPadding = 8;
   const maxX = Math.max(
     viewportPadding,
@@ -136,9 +136,10 @@ export function ChatSidebar({
   draftRecipient,
   onProfileQueryChange,
   onClearProfileSearch,
-  onMessageProfile,
+  onViewProfile,
   onJoinChat,
   onToggleChatPin,
+  onDeleteChat,
   onReorderPinnedChats,
   getChatTitle,
   getChatSubtitle,
@@ -439,7 +440,11 @@ export function ChatSidebar({
             ) : null}
             {profileError ? <p className="profile-error">{profileError}</p> : null}
             {profileResult ? (
-              <article className="profile-card">
+              <button
+                type="button"
+                className="profile-card profile-search-result-card"
+                onClick={() => onViewProfile(profileResult)}
+              >
                 <img
                   src={getAssetUrl(profileResult.avatar_url)}
                   alt=""
@@ -453,14 +458,7 @@ export function ChatSidebar({
                     <p className="profile-bio">{profileResult.bio}</p>
                   ) : null}
                 </div>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={() => onMessageProfile(profileResult)}
-                >
-                  Message
-                </Button>
-              </article>
+              </button>
             ) : null}
           </div>
         </>
@@ -687,6 +685,18 @@ export function ChatSidebar({
               }}
             >
               {chatMenu.chat.is_pinned ? "Unpin" : "Pin"}
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              className="danger"
+              onClick={() => {
+                onDeleteChat(chatMenu.chat);
+                setChatMenu(null);
+              }}
+            >
+              <Trash2 size={15} aria-hidden="true" />
+              Delete chat
             </button>
           </div>
         ) : null}

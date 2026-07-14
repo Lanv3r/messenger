@@ -8,6 +8,7 @@ import {
 } from "@/lib/chat-helpers";
 import type {
   Chat,
+  ChatMessagesDeletedEvent,
   ChatMember,
   ChatMembersUpdatedEvent,
   ChatMessage,
@@ -36,6 +37,7 @@ type UseChatSocketEventsOptions = {
   applyLocalReadState: (chat: Chat) => Chat;
   applyMessageUpdate: (message: ChatMessage) => void;
   removeMessageLocally: (messageId: number, chatId: number) => void;
+  removeMessagesLocally: (messageIds: number[], chatId: number) => void;
   refreshChats: () => void;
   emitTypingStoppedBeforeDisconnect: (socket: Socket) => void;
   clearUserActivity: (
@@ -70,6 +72,7 @@ export function useChatSocketEvents({
   applyLocalReadState,
   applyMessageUpdate,
   removeMessageLocally,
+  removeMessagesLocally,
   refreshChats,
   emitTypingStoppedBeforeDisconnect,
   clearUserActivity,
@@ -213,6 +216,11 @@ export function useChatSocketEvents({
     void refreshChats();
   }
 
+  function onChatMessagesDeleted(data: ChatMessagesDeletedEvent) {
+    removeMessagesLocally(data.message_ids, data.chat_id);
+    void refreshChats();
+  }
+
   function onChatRead(data: ChatReadEvent) {
     if (data.user_id === userId) {
       return;
@@ -255,6 +263,7 @@ export function useChatSocketEvents({
     onMessagePinUpdated,
     onMessageUpdated,
     onMessageDeleted,
+    onChatMessagesDeleted,
     onChatRead,
     onDirectMessageAccessUpdated,
     onTyping: handleTypingActivity,

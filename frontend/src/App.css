@@ -216,6 +216,17 @@ html[data-theme="dark"] {
   background: var(--accent-soft);
 }
 
+.chat-header-contact-menu button.danger,
+.chat-context-menu button.danger {
+  color: #b42318;
+}
+
+.chat-header-contact-menu button.danger:hover:not(:disabled),
+.chat-context-menu button.danger:hover:not(:disabled) {
+  color: #fff7f0;
+  background: #b42318;
+}
+
 .chat-header-contact-menu button:disabled {
   cursor: wait;
   opacity: 0.6;
@@ -1700,7 +1711,9 @@ html[data-theme="dark"] {
 }
 
 .chat-context-menu button {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   width: 100%;
   padding: 8px 10px;
   border: 0;
@@ -1825,12 +1838,27 @@ html[data-theme="dark"] {
 }
 
 .profile-search-results .profile-card {
-  grid-template-columns: 42px minmax(0, 1fr) auto;
+  grid-template-columns: 42px minmax(0, 1fr);
   align-items: start;
   gap: 10px;
   width: 100%;
   padding: 10px;
   box-sizing: border-box;
+}
+
+.profile-search-result-card {
+  border: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition:
+    background 160ms ease,
+    transform 160ms ease;
+}
+
+.profile-search-result-card:hover {
+  transform: none;
+  background: var(--accent-soft);
 }
 
 .profile-search-results .profile-card > div {
@@ -2278,15 +2306,6 @@ html[data-theme="dark"] {
   align-self: center;
   border-radius: 50%;
   object-fit: cover;
-}
-
-.profile-search-results .profile-card button {
-  min-height: 30px;
-  align-self: start;
-  margin-top: 4px;
-  padding: 0 10px;
-  font-size: 12px;
-  white-space: nowrap;
 }
 
 .group-panel {
@@ -4277,6 +4296,17 @@ html[data-theme="dark"] .chat-header-contact-menu {
 
 html[data-theme="dark"] .chat-header-contact-menu button {
   color: #f7efe7;
+}
+
+html[data-theme="dark"] .chat-header-contact-menu button.danger,
+html[data-theme="dark"] .chat-context-menu button.danger {
+  color: #ff9d84;
+}
+
+html[data-theme="dark"] .chat-header-contact-menu button.danger:hover:not(:disabled),
+html[data-theme="dark"] .chat-context-menu button.danger:hover:not(:disabled) {
+  color: #fff7f0;
+  background: rgba(180, 35, 24, 0.72);
 }
 
 html[data-theme="dark"] .pinned-messages-bar {

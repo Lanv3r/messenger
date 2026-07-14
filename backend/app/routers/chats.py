@@ -7,6 +7,7 @@ from app.dependencies import get_current_user
 from app.models import (
     AddGroupMembers,
     Chat,
+    ChatDeleteRequest,
     ChatListItem,
     ChatMemberPermissions,
     ChatMemberPublic,
@@ -35,24 +36,14 @@ from app.services.chats import (
     require_active_participant,
     require_chat_permission,
 )
-from app.services.messages import get_message_preview_text
+from app.services.messages import get_message_preview_text, message_is_visible_to_user
 from app.services.uploads import save_avatar_upload
 from app.socket import sio
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy import func
-from sqlalchemy.sql.elements import ColumnElement
-from sqlmodel import Session, col, exists, select
+from sqlalchemy import func, update
+from sqlmodel import Session, col, select
 
 router = APIRouter(tags=["chats"])
-
-
-def message_is_visible_to_user(user_id: int) -> ColumnElement[bool]:
-    return ~exists().where(
-        col(MessageUserState.message_id) == col(Message.id),
-        col(MessageUserState.user_id) == user_id,
-        col(MessageUserState.deleted_at).is_not(None),
-    )
-
 
 def to_chat_member_public(
     participant: ChatParticipant,
@@ -185,12 +176,21 @@ def get_chats(
             .where(
                 col(Message.chat_id) == chat.id,
                 col(Message.deleted_at).is_(None),
-                message_is_visible_to_user(current_user_id),
+                message_is_visible_to_user(
+                    current_user_id,
+                    current_participant.cleared_at,
+                ),
             )
             .order_by(col(Message.created_at).desc())
         ).first()
 
-        if last_message is None and chat.type not in {"self", "group"}:
+        if last_message is None and (
+            chat.type == "direct"
+            or (
+                chat.type == "group"
+                and current_participant.cleared_at is not None
+            )
+        ):
             continue
 
         last_read_message_id = (
@@ -203,7 +203,10 @@ def get_chats(
             col(Message.chat_id) == chat.id,
             col(Message.sender_id) != current_user_id,
             col(Message.deleted_at).is_(None),
-            message_is_visible_to_user(current_user_id),
+            message_is_visible_to_user(
+                current_user_id,
+                current_participant.cleared_at,
+            ),
         )
 
         if last_read_message_id is not None:
@@ -292,7 +295,10 @@ def get_direct_chat_by_user(
             .where(
                 col(Message.chat_id) == chat.id,
                 col(Message.deleted_at).is_(None),
-                message_is_visible_to_user(current_user_id),
+                message_is_visible_to_user(
+                    current_user_id,
+                    current_participant.cleared_at,
+                ),
             )
             .order_by(col(Message.created_at).desc())
         ).first()
@@ -367,7 +373,10 @@ def get_direct_chat_by_user(
         .where(
             col(Message.chat_id) == chat.id,
             col(Message.deleted_at).is_(None),
-            message_is_visible_to_user(current_user_id),
+            message_is_visible_to_user(
+                current_user_id,
+                current_participant.cleared_at,
+            ),
         )
         .order_by(col(Message.created_at).desc())
     ).first()
@@ -377,7 +386,10 @@ def get_direct_chat_by_user(
         col(Message.chat_id) == chat.id,
         col(Message.sender_id) != current_user_id,
         col(Message.deleted_at).is_(None),
-        message_is_visible_to_user(current_user_id),
+        message_is_visible_to_user(
+            current_user_id,
+            current_participant.cleared_at,
+        ),
     )
 
     if last_read_message_id is not None:
@@ -426,6 +438,76 @@ def get_direct_chat_by_user(
     )
 
 
+@router.delete("/chats/{chat_id}")
+async def delete_chat(
+    chat_id: int,
+    payload: ChatDeleteRequest,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    participant = require_active_participant(session, chat_id, user_id)
+    chat = session.get(Chat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    deleted_at = datetime.now(timezone.utc)
+    delete_messages_for_everyone = (
+        chat.type == "self" or payload.delete_messages_for_everyone
+    )
+    deleted_message_ids: list[int] = []
+
+    if delete_messages_for_everyone:
+        message_ids = session.exec(
+            select(col(Message.id)).where(
+                col(Message.chat_id) == chat_id,
+                col(Message.sender_id) == user_id,
+                col(Message.deleted_at).is_(None),
+            )
+        ).all()
+        deleted_message_ids = [
+            message_id for message_id in message_ids if message_id is not None
+        ]
+        if deleted_message_ids:
+            session.exec(
+                update(Message)
+                .where(col(Message.id).in_(deleted_message_ids))
+                .values(deleted_at=deleted_at, deleted_by=user_id)
+            )
+
+    participant.cleared_at = deleted_at
+    participant.is_pinned = False
+    participant.pinned_order = None
+    session.add(participant)
+    session.commit()
+
+    if deleted_message_ids:
+        participant_ids = session.exec(
+            select(col(ChatParticipant.user_id)).where(
+                col(ChatParticipant.chat_id) == chat_id,
+                col(ChatParticipant.left_at).is_(None),
+            )
+        ).all()
+        deletion_event = {
+            "chat_id": chat_id,
+            "message_ids": deleted_message_ids,
+        }
+
+        for participant_id in participant_ids:
+            if participant_id == user_id:
+                continue
+            await sio.emit(
+                "chat_messages_deleted",
+                deletion_event,
+                room=f"user:{participant_id}",
+            )
+
+    return {"ok": True}
+
+
 @router.post("/chats/{chat_id}/read")
 async def chat_read(
     chat_id: int,
@@ -442,6 +524,13 @@ async def chat_read(
         read_message is None
         or read_message.chat_id != chat_id
         or read_message.deleted_at is not None
+        or (
+            participant.cleared_at is not None
+            and (
+                read_message.created_at is None
+                or read_message.created_at <= participant.cleared_at
+            )
+        )
     ):
         raise HTTPException(
             status_code=400,

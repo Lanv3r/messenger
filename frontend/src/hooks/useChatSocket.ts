@@ -4,6 +4,7 @@ import { io, type Socket } from "socket.io-client";
 import { API_URL } from "@/lib/api";
 import type {
   Chat,
+  ChatMessagesDeletedEvent,
   ChatMembersUpdatedEvent,
   ChatMessage,
   ChatReadEvent,
@@ -30,6 +31,7 @@ type UseChatSocketOptions = {
   onMessagePinUpdated: (data: MessagePinUpdatedEvent) => void;
   onMessageUpdated: (data: ChatMessage) => void;
   onMessageDeleted: (data: MessageDeletedEvent) => void;
+  onChatMessagesDeleted: (data: ChatMessagesDeletedEvent) => void;
   onChatRead: (data: ChatReadEvent) => void;
   onDirectMessageAccessUpdated: (
     data: DirectMessageAccessUpdatedEvent,
@@ -53,6 +55,7 @@ export function useChatSocket({
   onMessagePinUpdated,
   onMessageUpdated,
   onMessageDeleted,
+  onChatMessagesDeleted,
   onChatRead,
   onDirectMessageAccessUpdated,
   onTyping,
@@ -72,6 +75,7 @@ export function useChatSocket({
   const handleMessagePinUpdated = useEffectEvent(onMessagePinUpdated);
   const handleMessageUpdated = useEffectEvent(onMessageUpdated);
   const handleMessageDeleted = useEffectEvent(onMessageDeleted);
+  const handleChatMessagesDeleted = useEffectEvent(onChatMessagesDeleted);
   const handleChatRead = useEffectEvent(onChatRead);
   const handleDirectMessageAccessUpdated = useEffectEvent(
     onDirectMessageAccessUpdated,
@@ -104,6 +108,7 @@ export function useChatSocket({
     socket.on("message_pin_updated", handleMessagePinUpdated);
     socket.on("message_updated", handleMessageUpdated);
     socket.on("message_deleted", handleMessageDeleted);
+    socket.on("chat_messages_deleted", handleChatMessagesDeleted);
     socket.on("chat_read", handleChatRead);
     socket.on(
       "direct_message_access_updated",

@@ -364,6 +364,10 @@ class ChatSettingsUpdate(SQLModel):
     muted_until: datetime | None = None
 
 
+class ChatDeleteRequest(SQLModel):
+    delete_messages_for_everyone: bool = False
+
+
 class PinnedChatOrderUpdate(SQLModel):
     chat_ids: list[int]
 

@@ -15,6 +15,7 @@ import { ChatHeader } from "@/components/chat/ChatHeader";
 import { ChatSidebar } from "@/components/chat/ChatSidebar";
 import { ContactsSidebar } from "@/components/chat/ContactsSidebar";
 import { CreateGroupPanel } from "@/components/chat/CreateGroupPanel";
+import { DeleteChatDialog } from "@/components/chat/DeleteChatDialog";
 import { GroupInfoPanel } from "@/components/chat/GroupInfoPanel";
 import { ImageViewerDialog } from "@/components/chat/ImageViewerDialog";
 import { MemberProfileDialog } from "@/components/chat/MemberProfileDialog";
@@ -129,6 +130,10 @@ export function ChatScreen({
   const [editingAttachmentMessage, setEditingAttachmentMessage] =
     useState<ChatMessage | null>(null);
   const [attachmentEditSaving, setAttachmentEditSaving] = useState(false);
+  const [chatDeleteTarget, setChatDeleteTarget] = useState<Chat | null>(null);
+  const [deleteChatMessagesForEveryone, setDeleteChatMessagesForEveryone] =
+    useState(false);
+  const [chatDeleting, setChatDeleting] = useState(false);
   const searchHighlightTimeoutRef = useRef<number | null>(null);
   const {
     drafts: attachmentDrafts,
@@ -508,6 +513,7 @@ export function ChatScreen({
   const {
     applyMessageUpdate,
     removeMessageLocally,
+    removeMessagesLocally,
     startEditingMessage,
     saveMessageEdit,
     pinMessage,
@@ -590,6 +596,7 @@ export function ChatScreen({
     applyLocalReadState,
     applyMessageUpdate,
     removeMessageLocally,
+    removeMessagesLocally,
     refreshChats,
     emitTypingStoppedBeforeDisconnect,
     clearUserActivity,
@@ -756,6 +763,7 @@ export function ChatScreen({
       selectedChatMember ||
       memberRemovalCandidate ||
       messageActionDialog ||
+      chatDeleteTarget ||
       imageViewer ||
       attachmentDrafts.length > 0 ||
       editingAttachmentMessage ||
@@ -779,6 +787,7 @@ export function ChatScreen({
     imageViewer,
     memberRemovalCandidate,
     messageActionDialog,
+    chatDeleteTarget,
     selectedChatMember,
     voiceRecorder,
     isMessagingBlocked,
@@ -1269,6 +1278,84 @@ export function ChatScreen({
     void deleteMessage(entry, scope);
   };
 
+  const openChatDeleteDialog = (chat: Chat) => {
+    setChatDeleteTarget(chat);
+    setDeleteChatMessagesForEveryone(false);
+    setChatError(null);
+  };
+
+  const closeChatDeleteDialog = () => {
+    if (chatDeleting) {
+      return;
+    }
+
+    setChatDeleteTarget(null);
+    setDeleteChatMessagesForEveryone(false);
+  };
+
+  const confirmChatDelete = async () => {
+    const chat = chatDeleteTarget;
+    if (!chat) {
+      return;
+    }
+
+    setChatDeleting(true);
+
+    try {
+      await apiFetch<{ ok: boolean }>(`/chats/${chat.id}`, {
+        method: "DELETE",
+        body: JSON.stringify({
+          delete_messages_for_everyone: deleteChatMessagesForEveryone,
+        }),
+      });
+
+      const isActiveChat = activeChatIdRef.current === chat.id;
+      const nextChat = chats.find(
+        (candidate) => candidate.id !== chat.id && candidate.type === "self",
+      ) ?? chats.find((candidate) => candidate.id !== chat.id) ?? null;
+
+      setChats((current) => current.filter((candidate) => candidate.id !== chat.id));
+      clearChatReadState(chat.id);
+      clearComposerDraft(chat.id);
+
+      if (isActiveChat) {
+        if (nextChat) {
+          joinChat(nextChat);
+        } else {
+          socketRef.current?.emit("leave_room", String(chat.id));
+          activeChatIdRef.current = null;
+          clearSavedActiveChat();
+          setActiveChatId(null);
+          setDraftRecipient(null);
+          setMessages([]);
+          setMessagesLoading(false);
+          setMessage("");
+          setReplyToMessage(null);
+          resetMessageSearch();
+          resetEditingState();
+          resetChatInfoPanel();
+          clearMemberRemoval();
+        }
+      }
+
+      setChatDeleteTarget(null);
+      setDeleteChatMessagesForEveryone(false);
+      setChatError(null);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Unable to delete chat.";
+
+      if (message === "Could not validate credentials") {
+        onSessionExpired();
+        return;
+      }
+
+      setChatError(message);
+    } finally {
+      setChatDeleting(false);
+    }
+  };
+
   return (
     <main className="chat-shell">
       <div className="chat-layout">
@@ -1331,13 +1418,12 @@ export function ChatScreen({
             draftRecipient={draftRecipient}
             onProfileQueryChange={setProfileQuery}
             onClearProfileSearch={clearProfileSearch}
-            onMessageProfile={(profile) => {
-              void openDraftChat(profile);
-            }}
+            onViewProfile={setSelectedContactProfile}
             onJoinChat={joinChat}
             onToggleChatPin={(chat) => {
               void toggleChatPin(chat);
             }}
+            onDeleteChat={openChatDeleteDialog}
             onReorderPinnedChats={(chatIds) => {
               void reorderPinnedChats(chatIds);
             }}
@@ -1357,6 +1443,7 @@ export function ChatScreen({
               onClick={handleChatHeaderClick}
               searchEnabled={activeChatId !== null && draftRecipient === null}
               searchActive={messageSearchOpen}
+              showChatMenu={activeChatId !== null && draftRecipient === null}
               showContactMenu={directContactUserId !== null}
               onSearchClick={() => {
                 if (activeChatId === null || draftRecipient !== null) {
@@ -1373,6 +1460,11 @@ export function ChatScreen({
                 });
               }}
               onViewProfile={handleChatHeaderClick}
+              onDeleteChat={() => {
+                if (activeChat) {
+                  openChatDeleteDialog(activeChat);
+                }
+              }}
             />
             {!creatingGroup ? (
               <PinnedMessagesBar
@@ -1640,6 +1732,21 @@ export function ChatScreen({
             onClose={closeMessageActionDialog}
             onConfirmPin={confirmPinAction}
             onConfirmDelete={confirmDeleteAction}
+          />
+        ) : null}
+
+        {chatDeleteTarget ? (
+          <DeleteChatDialog
+            chat={chatDeleteTarget}
+            deleting={chatDeleting}
+            deleteMessagesForEveryone={deleteChatMessagesForEveryone}
+            onDeleteMessagesForEveryoneChange={
+              setDeleteChatMessagesForEveryone
+            }
+            onClose={closeChatDeleteDialog}
+            onConfirm={() => {
+              void confirmChatDelete();
+            }}
           />
         ) : null}
 

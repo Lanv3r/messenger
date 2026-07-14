@@ -30,6 +30,7 @@ from app.services.messages import (
     build_message_reply_preview,
     get_reply_target,
     get_uploaded_file_message_type_and_permission,
+    message_is_visible_to_user,
     to_message_public,
 )
 from app.services.users import assert_direct_message_allowed
@@ -56,7 +57,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from sqlalchemy import func
-from sqlmodel import col, exists, select
+from sqlmodel import col, select
 
 router = APIRouter(tags=["messages"])
 
@@ -80,7 +81,12 @@ def require_visible_message(
     if message is None or message.deleted_at is not None:
         raise HTTPException(status_code=404, detail="Message not found")
 
-    require_active_participant(session, message.chat_id, user_id)
+    participant = require_active_participant(session, message.chat_id, user_id)
+
+    if participant.cleared_at is not None and (
+        message.created_at is None or message.created_at <= participant.cleared_at
+    ):
+        raise HTTPException(status_code=404, detail="Message not found")
 
     message_user_state = session.get(MessageUserState, (message_id, user_id))
     if message_user_state is not None and message_user_state.deleted_at is not None:
@@ -182,17 +188,16 @@ def get_chat_messages(
     current_user_id = current_user.id
     if current_user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
-    require_active_participant(session, chat_id, current_user_id)
+    participant = require_active_participant(session, chat_id, current_user_id)
 
     messages = session.exec(
         select(Message)
         .where(
             col(Message.chat_id) == chat_id,
             col(Message.deleted_at).is_(None),
-            ~exists().where(
-                col(MessageUserState.message_id) == col(Message.id),
-                col(MessageUserState.user_id) == current_user_id,
-                col(MessageUserState.deleted_at).is_not(None),
+            message_is_visible_to_user(
+                current_user_id,
+                participant.cleared_at,
             ),
         )
         .order_by(col(Message.created_at))
@@ -654,7 +659,7 @@ async def create_file_message(
     chat = session.get(Chat, chat_id)
     if chat is None:
         raise HTTPException(status_code=404, detail="Chat not found")
-    require_active_participant(session, chat_id, user_id)
+    participant = require_active_participant(session, chat_id, user_id)
     assert_direct_chat_message_allowed(session, chat, user_id)
 
     prepared_attachments = [
@@ -757,16 +762,11 @@ async def apply_file_message_edit(
     existing_file_urls: list[str] | None = None,
     files: list[UploadFile] | None = None,
 ):
-    message = session.get(Message, message_id)
-
-    if message is None or message.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Message not found")
-
     user_id = current_user.id
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
 
-    require_active_participant(session, message.chat_id, user_id)
+    message = require_visible_message(session, message_id, user_id)
     chat = session.get(Chat, message.chat_id)
     if chat is None:
         raise HTTPException(status_code=404, detail="Chat not found")
@@ -885,7 +885,7 @@ def search_chat_messages(
     user_id = current_user.id
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
-    require_active_participant(session, chat_id, user_id)
+    participant = require_active_participant(session, chat_id, user_id)
 
     normalized_query = query.strip()
     if not normalized_query:
@@ -897,10 +897,9 @@ def search_chat_messages(
             col(Message.chat_id) == chat_id,
             col(Message.deleted_at).is_(None),
             col(Message.content).ilike(f"%{normalized_query}%"),
-            ~exists().where(
-                col(MessageUserState.message_id) == col(Message.id),
-                col(MessageUserState.user_id) == user_id,
-                col(MessageUserState.deleted_at).is_not(None),
+            message_is_visible_to_user(
+                user_id,
+                participant.cleared_at,
             ),
         )
         .order_by(col(Message.created_at).desc())
@@ -928,18 +927,12 @@ async def pin_message(
     if user.id is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    message = session.get(Message, message_id)
+    message = require_visible_message(session, message_id, user.id)
     message_user_state = session.get(MessageUserState, (message_id, user.id))
-    if message is None or message.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Message not found")
-    if message_user_state is not None and message_user_state.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Message not found")
 
     chat = session.get(Chat, message.chat_id)
     if chat is None or chat.id is None:
         raise HTTPException(status_code=404, detail="Chat not found")
-
-    require_active_participant(session, chat.id, user.id)
 
     if payload.scope == "me":
         if chat.type == "group":
@@ -1000,18 +993,12 @@ async def unpin_message(
     if user.id is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    message = session.get(Message, message_id)
+    message = require_visible_message(session, message_id, user.id)
     message_user_state = session.get(MessageUserState, (message_id, user.id))
-    if message is None or message.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Message not found")
-    if message_user_state is not None and message_user_state.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Message not found")
 
     chat = session.get(Chat, message.chat_id)
     if chat is None or chat.id is None:
         raise HTTPException(status_code=404, detail="Chat not found")
-
-    require_active_participant(session, chat.id, user.id)
 
     if chat.type == "group":
         require_chat_permission(session, chat.id, user.id, "pin_messages")
@@ -1081,18 +1068,12 @@ async def delete_message(
     if user.id is None:
         raise HTTPException(status_code=404, detail="User not found")
 
-    message = session.get(Message, message_id)
+    message = require_visible_message(session, message_id, user.id)
     message_user_state = session.get(MessageUserState, (message_id, user.id))
-    if message is None or message.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Message not found")
-    if message_user_state is not None and message_user_state.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Message not found")
 
     chat = session.get(Chat, message.chat_id)
     if chat is None or chat.id is None:
         raise HTTPException(status_code=404, detail="Chat not found")
-
-    require_active_participant(session, chat.id, user.id)
 
     if chat.type == "direct":
         if payload.scope == "me":
@@ -1205,16 +1186,11 @@ async def edit_message(
 
     data = await request.json()
     payload = MessageEditRequest.model_validate(data)
-    message = session.get(Message, message_id)
-
-    if message is None or message.deleted_at is not None:
-        raise HTTPException(status_code=404, detail="Message not found")
-
     user_id = current_user.id
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
 
-    require_active_participant(session, message.chat_id, user_id)
+    message = require_visible_message(session, message_id, user_id)
     chat = session.get(Chat, message.chat_id)
     if chat is None:
         raise HTTPException(status_code=404, detail="Chat not found")

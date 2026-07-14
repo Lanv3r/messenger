@@ -195,29 +195,49 @@ export function useMessageMutations({
     }
   }
 
-  function removeMessageLocally(messageId: number, chatId: number) {
+  function removeMessagesLocally(messageIds: number[], chatId: number) {
+    const messageIdSet = new Set(messageIds);
+
     setMessages((current) =>
       current
         .filter(
-          (entry) => entry.id !== messageId || entry.chat_id !== chatId,
+          (entry) => entry.chat_id !== chatId || !messageIdSet.has(entry.id),
         )
-        .map((entry) => markReplyPreviewDeleted(entry, messageId)),
+        .map((entry) =>
+          messageIds.reduce(
+            (updatedEntry, messageId) =>
+              markReplyPreviewDeleted(updatedEntry, messageId),
+            entry,
+          ),
+        ),
     );
     setMessageSearchResults((current) =>
       current
         .filter(
-          (entry) => entry.id !== messageId || entry.chat_id !== chatId,
+          (entry) => entry.chat_id !== chatId || !messageIdSet.has(entry.id),
         )
-        .map((entry) => markReplyPreviewDeleted(entry, messageId)),
+        .map((entry) =>
+          messageIds.reduce(
+            (updatedEntry, messageId) =>
+              markReplyPreviewDeleted(updatedEntry, messageId),
+            entry,
+          ),
+        ),
     );
     setActiveSearchResultId((current) =>
-      current === messageId ? null : current,
+      current !== null && messageIdSet.has(current) ? null : current,
     );
     setReplyToMessage((current) =>
-      current?.id === messageId ? null : current,
+      current !== null && messageIdSet.has(current.id) ? null : current,
     );
-    closeMessageStateForMessage(messageId);
-    clearEditStateForMessage(chatId, messageId);
+    for (const messageId of messageIds) {
+      closeMessageStateForMessage(messageId);
+      clearEditStateForMessage(chatId, messageId);
+    }
+  }
+
+  function removeMessageLocally(messageId: number, chatId: number) {
+    removeMessagesLocally([messageId], chatId);
   }
 
   function startEditingMessage(entry: ChatMessage) {
@@ -325,6 +345,7 @@ export function useMessageMutations({
   return {
     applyMessageUpdate,
     removeMessageLocally,
+    removeMessagesLocally,
     startEditingMessage,
     saveMessageEdit,
     pinMessage,

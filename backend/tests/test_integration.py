@@ -290,10 +290,80 @@ class MessengerIntegrationTest(unittest.TestCase):
                 "DELETE",
                 f"/chats/{group['id']}/members/{member['id']}",
             ),
+            outsider_client.request(
+                "DELETE",
+                f"/chats/{group['id']}",
+                json={"delete_messages_for_everyone": False},
+            ),
         ]
 
         for response in checks:
             self.assertEqual(response.status_code, 403, response.text)
+
+    def test_delete_chat_clears_history_and_can_delete_own_messages_globally(self):
+        sender_client, sender = self.signup("sender")
+        recipient_client, recipient = self.signup("recipient")
+
+        first_response = sender_client.post(
+            "/messages/direct",
+            json={"recipient_id": recipient["id"], "content": "first"},
+        )
+        self.assertEqual(first_response.status_code, 200, first_response.text)
+        chat_id = first_response.json()["chat"]["id"]
+        first_message_id = first_response.json()["message"]["id"]
+
+        reply_response = recipient_client.post(
+            f"/chats/{chat_id}/messages",
+            json={"content": "reply"},
+        )
+        self.assertEqual(reply_response.status_code, 200, reply_response.text)
+
+        clear_response = sender_client.request(
+            "DELETE",
+            f"/chats/{chat_id}",
+            json={"delete_messages_for_everyone": False},
+        )
+        self.assertEqual(clear_response.status_code, 200, clear_response.text)
+
+        cleared_messages = sender_client.get(f"/chats/{chat_id}/messages")
+        self.assertEqual(cleared_messages.status_code, 200, cleared_messages.text)
+        self.assertEqual(cleared_messages.json(), [])
+
+        hidden_chat_ids = {
+            chat["id"] for chat in sender_client.get("/chats").json()
+        }
+        self.assertNotIn(chat_id, hidden_chat_ids)
+
+        hidden_message_action = sender_client.patch(
+            f"/messages/{first_message_id}",
+            json={"content": "must stay hidden"},
+        )
+        self.assertEqual(hidden_message_action.status_code, 404)
+
+        visible_to_recipient = recipient_client.get(f"/chats/{chat_id}/messages")
+        self.assertEqual(visible_to_recipient.status_code, 200, visible_to_recipient.text)
+        self.assertEqual(
+            {message["content"] for message in visible_to_recipient.json()},
+            {"first", "reply"},
+        )
+
+        global_delete = sender_client.request(
+            "DELETE",
+            f"/chats/{chat_id}",
+            json={"delete_messages_for_everyone": True},
+        )
+        self.assertEqual(global_delete.status_code, 200, global_delete.text)
+
+        after_global_delete = recipient_client.get(f"/chats/{chat_id}/messages")
+        self.assertEqual(
+            after_global_delete.status_code,
+            200,
+            after_global_delete.text,
+        )
+        self.assertEqual(
+            [message["content"] for message in after_global_delete.json()],
+            ["reply"],
+        )
 
     def test_read_marker_must_belong_to_chat(self):
         owner_client, _owner = self.signup("owner")
