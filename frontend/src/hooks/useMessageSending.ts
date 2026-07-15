@@ -50,7 +50,6 @@ type UseMessageSendingOptions = {
   ) => void;
   closeMessageMenu: () => void;
   closeMessageActionDialog: () => void;
-  saveActiveChatId: (chatId: number) => void;
   stopTypingActivity: (chatId?: number | null) => void;
   onSessionExpired: () => void;
   onError: (message: string) => void;
@@ -80,7 +79,6 @@ export function useMessageSending({
   markChatReadThrough,
   closeMessageMenu,
   closeMessageActionDialog,
-  saveActiveChatId,
   stopTypingActivity,
   onSessionExpired,
   onError,
@@ -357,7 +355,6 @@ export function useMessageSending({
           upsertChatPreview(current, result.chat, result.message),
         );
         activeChatIdRef.current = result.chat.id;
-        saveActiveChatId(result.chat.id);
         setActiveChatId(result.chat.id);
         setDraftRecipient(null);
         setMessages([

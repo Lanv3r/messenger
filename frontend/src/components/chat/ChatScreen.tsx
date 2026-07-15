@@ -344,11 +344,7 @@ export function ChatScreen({
   }, [activeChat, activeChatId]);
 
   const {
-    saveActiveChatId,
-    getSavedActiveChatId,
-    clearSavedActiveChat,
     saveChatScrollPosition,
-    getSavedChatScrollPosition,
     readComposerDraft,
     saveComposerDraft,
     clearComposerDraft: clearStoredComposerDraft,
@@ -505,16 +501,11 @@ export function ChatScreen({
     userId: user.userId,
     activeChatId,
     activeChatIdRef,
-    socketRef,
     setChats,
     setMessages,
     setMessagesLoading,
     setActiveChatId,
     applyLocalReadState,
-    prepareMessageScroll,
-    getSavedActiveChatId,
-    getSavedChatScrollPosition,
-    saveActiveChatId,
     restoreComposerDraft,
     restoreEditDraft,
     onSessionExpired,
@@ -587,7 +578,6 @@ export function ChatScreen({
     markChatReadThrough,
     closeMessageMenu,
     closeMessageActionDialog,
-    saveActiveChatId,
     stopTypingActivity,
     onSessionExpired,
     onError: setChatError,
@@ -618,7 +608,6 @@ export function ChatScreen({
     handleMembersRemoved,
     clearRemovedMembers,
     clearChatReadState,
-    clearSavedActiveChat,
     resetChatInfoPanel,
     clearMemberRemoval,
     onIncomingActiveChatMessage: () => {
@@ -713,7 +702,6 @@ export function ChatScreen({
     setChatInfoAddingMember,
     setChatInfoManaging,
     prepareMessageScroll,
-    saveActiveChatId,
     restoreComposerDraft,
     resetEditingState,
     closeMessageMenu,
@@ -1409,7 +1397,6 @@ export function ChatScreen({
         } else {
           socketRef.current?.emit("leave_room", String(chat.id));
           activeChatIdRef.current = null;
-          clearSavedActiveChat();
           setActiveChatId(null);
           setDraftRecipient(null);
           setMessages([]);

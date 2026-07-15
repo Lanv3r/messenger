@@ -22,32 +22,11 @@ export function useChatPersistence(userId: number) {
     return getChatSessionStorageKey(`chat:${chatId}:edit:${messageId}`);
   }
 
-  function saveActiveChatId(chatId: number) {
-    window.sessionStorage.setItem(
-      getChatSessionStorageKey("activeChatId"),
-      String(chatId),
-    );
-  }
-
-  function getSavedActiveChatId() {
-    return readNumberFromSessionStorage(
-      getChatSessionStorageKey("activeChatId"),
-    );
-  }
-
-  function clearSavedActiveChat() {
-    window.sessionStorage.removeItem(getChatSessionStorageKey("activeChatId"));
-  }
-
   function saveChatScrollPosition(chatId: number, scrollTop: number) {
     window.sessionStorage.setItem(
       getChatScrollSessionStorageKey(chatId),
       String(Math.max(0, Math.round(scrollTop))),
     );
-  }
-
-  function getSavedChatScrollPosition(chatId: number) {
-    return readNumberFromSessionStorage(getChatScrollSessionStorageKey(chatId));
   }
 
   function readComposerDraft(chatId: number): ComposerDraft {
@@ -137,11 +116,7 @@ export function useChatPersistence(userId: number) {
   }
 
   return {
-    saveActiveChatId,
-    getSavedActiveChatId,
-    clearSavedActiveChat,
     saveChatScrollPosition,
-    getSavedChatScrollPosition,
     readComposerDraft,
     saveComposerDraft,
     clearComposerDraft,

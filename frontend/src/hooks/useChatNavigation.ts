@@ -42,7 +42,6 @@ type UseChatNavigationOptions = {
   setChatInfoAddingMember: Dispatch<SetStateAction<boolean>>;
   setChatInfoManaging: Dispatch<SetStateAction<boolean>>;
   prepareMessageScroll: (options: PrepareMessageScrollOptions) => void;
-  saveActiveChatId: (chatId: number) => void;
   restoreComposerDraft: (
     chatId: number,
     availableMessages: ChatMessage[],
@@ -88,7 +87,6 @@ export function useChatNavigation({
   setChatInfoAddingMember,
   setChatInfoManaging,
   prepareMessageScroll,
-  saveActiveChatId,
   restoreComposerDraft,
   resetEditingState,
   closeMessageMenu,
@@ -123,7 +121,6 @@ export function useChatNavigation({
       unreadCount: chat.unread_count,
     });
     activeChatIdRef.current = chatId;
-    saveActiveChatId(chatId);
     setActiveChatId(chatId);
     setDraftRecipient(null);
     setMessagesLoading(true);

@@ -53,7 +53,6 @@ type UseChatSocketEventsOptions = {
   handleMembersRemoved: (memberIds: number[]) => void;
   clearRemovedMembers: (memberIds: number[]) => void;
   clearChatReadState: (chatId: number) => void;
-  clearSavedActiveChat: () => void;
   resetChatInfoPanel: () => void;
   clearMemberRemoval: () => void;
   onIncomingActiveChatMessage: (message: ChatMessage) => void;
@@ -85,7 +84,6 @@ export function useChatSocketEvents({
   handleMembersRemoved,
   clearRemovedMembers,
   clearChatReadState,
-  clearSavedActiveChat,
   resetChatInfoPanel,
   clearMemberRemoval,
   onIncomingActiveChatMessage,
@@ -189,7 +187,6 @@ export function useChatSocketEvents({
 
     socket.emit("leave_room", String(data.chat_id));
     activeChatIdRef.current = null;
-    clearSavedActiveChat();
     setActiveChatId(null);
     setDraftRecipient(null);
     setMessages([]);
