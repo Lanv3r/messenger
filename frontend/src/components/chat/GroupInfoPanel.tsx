@@ -73,7 +73,6 @@ type GroupInfoPanelProps = {
   onOpenAddMember: () => void;
   onCloseAddMember: () => void;
   onCloseManage: () => void;
-  onOpenMemberProfile: (member: ChatMember) => void;
   onViewMemberProfile: (member: ChatMember) => void;
   onOpenMemberManagement: (
     member: ChatMember,
@@ -118,7 +117,6 @@ export function GroupInfoPanel({
   onOpenAddMember,
   onCloseAddMember,
   onCloseManage,
-  onOpenMemberProfile,
   onViewMemberProfile,
   onOpenMemberManagement,
   onStartRemoveMember,
@@ -312,7 +310,7 @@ export function GroupInfoPanel({
                   <button
                     type="button"
                     className="chat-member-main"
-                    onClick={() => onOpenMemberProfile(member)}
+                    onClick={() => onViewMemberProfile(member)}
                   >
                     <img
                       src={getAssetUrl(member.avatar_url)}

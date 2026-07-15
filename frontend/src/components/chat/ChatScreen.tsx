@@ -1642,7 +1642,6 @@ export function ChatScreen({
             }}
             onCloseAddMember={() => setChatInfoAddingMember(false)}
             onCloseManage={() => setChatInfoManaging(false)}
-            onOpenMemberProfile={openChatMemberProfile}
             onViewMemberProfile={(member) => {
               setSelectedContactProfile(toUserProfile(member));
             }}
