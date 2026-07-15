@@ -1,14 +1,51 @@
-import type { FormEvent } from "react";
-import { LogOut } from "lucide-react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import {
+  LogOut,
+  Pencil,
+  ShieldPlus,
+  Tag,
+  UserMinus,
+  UserRound,
+} from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { GroupSettingsPanel } from "@/components/chat/GroupSettingsPanel";
+import { sortChatMembers } from "@/lib/chat-helpers";
 import { getAssetUrl } from "@/lib/message-helpers";
-import type { AuthUser, Chat, ChatMember, MemberPermissions } from "@/types";
+import type {
+  Chat,
+  ChatMember,
+  MemberManagementMode,
+  MemberPermissions,
+} from "@/types";
+
+type MemberContextMenu = {
+  member: ChatMember;
+  x: number;
+  y: number;
+};
+
+function getMemberMenuPosition(clientX: number, clientY: number) {
+  const menuWidth = 220;
+  const menuMaxHeight = 244;
+  const viewportPadding = 8;
+  const maxX = Math.max(
+    viewportPadding,
+    window.innerWidth - menuWidth - viewportPadding,
+  );
+  const maxY = Math.max(
+    viewportPadding,
+    window.innerHeight - menuMaxHeight - viewportPadding,
+  );
+
+  return {
+    x: Math.min(Math.max(clientX, viewportPadding), maxX),
+    y: Math.min(Math.max(clientY, viewportPadding), maxY),
+  };
+}
 
 type GroupInfoPanelProps = {
   chat: Chat;
-  user: AuthUser;
   members: ChatMember[];
   loading: boolean;
   error: string | null;
@@ -37,7 +74,13 @@ type GroupInfoPanelProps = {
   onCloseAddMember: () => void;
   onCloseManage: () => void;
   onOpenMemberProfile: (member: ChatMember) => void;
+  onViewMemberProfile: (member: ChatMember) => void;
+  onOpenMemberManagement: (
+    member: ChatMember,
+    mode: MemberManagementMode,
+  ) => void;
   onStartRemoveMember: (member: ChatMember) => void;
+  onAddMemberTag: (member: ChatMember, tag: string) => Promise<ChatMember>;
   onAddMemberQueryChange: (value: string) => void;
   onAddMemberSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onMemberBooleanPermissionChange: (key: string, value: boolean) => void;
@@ -48,7 +91,6 @@ type GroupInfoPanelProps = {
 
 export function GroupInfoPanel({
   chat,
-  user,
   members,
   loading,
   error,
@@ -77,7 +119,10 @@ export function GroupInfoPanel({
   onCloseAddMember,
   onCloseManage,
   onOpenMemberProfile,
+  onViewMemberProfile,
+  onOpenMemberManagement,
   onStartRemoveMember,
+  onAddMemberTag,
   onAddMemberQueryChange,
   onAddMemberSubmit,
   onMemberBooleanPermissionChange,
@@ -85,6 +130,92 @@ export function GroupInfoPanel({
   onSaveMemberDefaultPermissions,
   onLeaveGroup,
 }: GroupInfoPanelProps) {
+  const rankedMembers = sortChatMembers(members);
+  const [memberContextMenu, setMemberContextMenu] =
+    useState<MemberContextMenu | null>(null);
+  const memberContextMenuRef = useRef<HTMLDivElement | null>(null);
+  const [taggingMember, setTaggingMember] = useState<ChatMember | null>(null);
+  const [memberTag, setMemberTag] = useState("");
+  const [memberTagError, setMemberTagError] = useState<string | null>(null);
+  const [memberTagSaving, setMemberTagSaving] = useState(false);
+
+  useEffect(() => {
+    if (!memberContextMenu) {
+      return undefined;
+    }
+
+    const closeMemberContextMenu = () => setMemberContextMenu(null);
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!memberContextMenuRef.current?.contains(event.target as Node)) {
+        closeMemberContextMenu();
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeMemberContextMenu();
+      }
+    };
+
+    // Capture before the panel's click handler stops bubbling events.
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("scroll", closeMemberContextMenu, true);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("scroll", closeMemberContextMenu, true);
+    };
+  }, [memberContextMenu]);
+
+  const closeMemberTagDialog = () => {
+    if (memberTagSaving) {
+      return;
+    }
+
+    setTaggingMember(null);
+    setMemberTag("");
+    setMemberTagError(null);
+  };
+
+  const openMemberTagDialog = (member: ChatMember) => {
+    setMemberContextMenu(null);
+    setTaggingMember(member);
+    setMemberTag("");
+    setMemberTagError(null);
+  };
+
+  const handleMemberTagSubmit = async (
+    event: FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
+
+    if (!taggingMember) {
+      return;
+    }
+
+    const tag = memberTag.trim();
+    if (!tag) {
+      setMemberTagError("Enter a tag.");
+      return;
+    }
+
+    setMemberTagSaving(true);
+    setMemberTagError(null);
+
+    try {
+      await onAddMemberTag(taggingMember, tag);
+      setTaggingMember(null);
+      setMemberTag("");
+    } catch (error) {
+      setMemberTagError(
+        error instanceof Error ? error.message : "Unable to add member tag.",
+      );
+    } finally {
+      setMemberTagSaving(false);
+    }
+  };
+
   return (
     <div
       className="chat-info-backdrop"
@@ -159,19 +290,24 @@ export function GroupInfoPanel({
             </div>
 
             <div className="chat-member-list">
-              {members.map((member) => (
+              {rankedMembers.map((member) => (
                 <div
                   className={[
                     "chat-member-row",
-                    canManageMembers &&
-                    member.user_id !== user.userId &&
-                    member.role !== "owner"
+                    member.can_remove_from_group
                       ? "can-remove"
                       : "",
                   ]
                     .filter(Boolean)
                     .join(" ")}
                   key={member.user_id}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    setMemberContextMenu({
+                      member,
+                      ...getMemberMenuPosition(event.clientX, event.clientY),
+                    });
+                  }}
                 >
                   <button
                     type="button"
@@ -188,15 +324,21 @@ export function GroupInfoPanel({
                     <div>
                       <strong>
                         {getChatMemberDisplayName(member)}
-                        {member.user_id === user.userId ? " (You)" : ""}
                       </strong>
                       <span>@{member.username}</span>
+                      {member.member_tags?.length ? (
+                        <span className="chat-member-tags">
+                          {member.member_tags.map((tag) => (
+                            <span className="chat-member-tag" key={tag}>
+                              {tag}
+                            </span>
+                          ))}
+                        </span>
+                      ) : null}
                     </div>
                   </button>
                   <div className="chat-member-side">
-                    {canManageMembers &&
-                    member.user_id !== user.userId &&
-                    member.role !== "owner" ? (
+                    {member.can_remove_from_group ? (
                       <button
                         type="button"
                         disabled={memberRemovalUserId === member.user_id}
@@ -213,10 +355,146 @@ export function GroupInfoPanel({
               ))}
             </div>
 
+            {memberContextMenu ? (
+              <div
+                ref={memberContextMenuRef}
+                className="chat-member-context-menu"
+                role="menu"
+                style={{
+                  left: memberContextMenu.x,
+                  top: memberContextMenu.y,
+                }}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <button
+                  type="button"
+                  role="menuitem"
+                  onClick={() => {
+                    onViewMemberProfile(memberContextMenu.member);
+                    setMemberContextMenu(null);
+                  }}
+                >
+                  <UserRound size={15} aria-hidden="true" />
+                  View profile
+                </button>
+                {memberContextMenu.member.can_edit_member_tags ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => openMemberTagDialog(memberContextMenu.member)}
+                  >
+                    <Tag size={15} aria-hidden="true" />
+                    Add member tag
+                  </button>
+                ) : null}
+                {memberContextMenu.member.can_promote_to_admin ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onOpenMemberManagement(memberContextMenu.member, "admin");
+                      setMemberContextMenu(null);
+                    }}
+                  >
+                    <ShieldPlus size={15} aria-hidden="true" />
+                    Promote to admin
+                  </button>
+                ) : null}
+                {memberContextMenu.member.can_edit_admin_rights ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onOpenMemberManagement(memberContextMenu.member, "admin");
+                      setMemberContextMenu(null);
+                    }}
+                  >
+                    <ShieldPlus size={15} aria-hidden="true" />
+                    Edit admin rights
+                  </button>
+                ) : null}
+                {memberContextMenu.member.can_edit_member_rights ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onOpenMemberManagement(memberContextMenu.member, "member");
+                      setMemberContextMenu(null);
+                    }}
+                  >
+                    <Pencil size={15} aria-hidden="true" />
+                    Edit member rights
+                  </button>
+                ) : null}
+                {memberContextMenu.member.can_remove_from_group ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="danger"
+                    onClick={() => {
+                      onStartRemoveMember(memberContextMenu.member);
+                      setMemberContextMenu(null);
+                    }}
+                  >
+                    <UserMinus size={15} aria-hidden="true" />
+                    Remove from group
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+
             {memberRemovalError && !selectedChatMember ? (
               <p className="profile-error">{memberRemovalError}</p>
             ) : memberRemovalMessage && !selectedChatMember ? (
               <p className="profile-success">{memberRemovalMessage}</p>
+            ) : null}
+
+            {taggingMember ? (
+              <div
+                className="chat-info-nested-backdrop"
+                role="presentation"
+                onClick={closeMemberTagDialog}
+              >
+                <section
+                  className="chat-info-nested-panel chat-members-panel"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-label="Add member tag"
+                  onClick={(event) => event.stopPropagation()}
+                >
+                  <div className="chat-info-nested-header">
+                    <div>
+                      <strong>Add member tag</strong>
+                      <span>
+                        Add short tag next to {getChatMemberDisplayName(taggingMember)}&apos;s
+                        name.
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      aria-label="Close add member tag"
+                      onClick={closeMemberTagDialog}
+                    >
+                      &times;
+                    </button>
+                  </div>
+                  <form onSubmit={handleMemberTagSubmit}>
+                    <input
+                      value={memberTag}
+                      maxLength={16}
+                      placeholder="e.g. Moderator"
+                      autoFocus
+                      onChange={(event) => setMemberTag(event.target.value)}
+                    />
+                    <Button type="submit" disabled={memberTagSaving}>
+                      {memberTagSaving ? "Adding..." : "Add tag"}
+                    </Button>
+                  </form>
+                  {memberTagError ? (
+                    <p className="profile-error">{memberTagError}</p>
+                  ) : null}
+                </section>
+              </div>
             ) : null}
 
             {isAddingMember ? (

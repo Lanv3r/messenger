@@ -25,12 +25,7 @@ export function MemberRemovalDialog({
         onClick={(event) => event.stopPropagation()}
       >
         <div className="message-action-dialog-copy">
-          <strong>
-            Are you sure you want to remove {getDisplayName(member)}?
-          </strong>
-          <p>
-            They will lose access to this group until someone adds them again.
-          </p>
+          <strong>Remove {getDisplayName(member)} from the group?</strong>
         </div>
 
         <div className="message-action-dialog-actions">

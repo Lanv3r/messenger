@@ -479,6 +479,7 @@ export function ChatScreen({
     updateSelectedMemberBooleanPermission,
     updateSelectedMemberNumericPermission,
     updateAdminPermission,
+    addMemberTag,
     saveMemberDefaultPermissions,
     saveSelectedMemberPermissions,
     promoteSelectedMember,
@@ -1595,7 +1596,6 @@ export function ChatScreen({
         {chatInfoOpen && activeChat && activeChat.type === "group" ? (
           <GroupInfoPanel
             chat={activeChat}
-            user={user}
             members={chatInfoMembers}
             loading={chatInfoLoading}
             error={chatInfoError}
@@ -1643,7 +1643,15 @@ export function ChatScreen({
             onCloseAddMember={() => setChatInfoAddingMember(false)}
             onCloseManage={() => setChatInfoManaging(false)}
             onOpenMemberProfile={openChatMemberProfile}
+            onViewMemberProfile={(member) => {
+              setSelectedContactProfile(toUserProfile(member));
+            }}
+            onOpenMemberManagement={(member, mode) => {
+              openChatMemberProfile(member);
+              setSelectedMemberManagementMode(mode);
+            }}
             onStartRemoveMember={startRemovingMember}
+            onAddMemberTag={addMemberTag}
             onAddMemberQueryChange={updateAddMemberQuery}
             onAddMemberSubmit={handleAddMemberToActiveGroup}
             onMemberBooleanPermissionChange={updateMemberBooleanPermission}
@@ -1753,11 +1761,13 @@ export function ChatScreen({
             onSaveSelectedAdminPermissions={() => {
               void saveSelectedAdminPermissions();
             }}
-            onDismissSelectedAdmin={() => {
-              void dismissSelectedAdmin();
-            }}
+            onDismissSelectedAdmin={dismissSelectedAdmin}
             onStartRemoveMember={() => {
               startRemovingMember(selectedChatMember);
+            }}
+            onViewPromoterProfile={(profile) => {
+              setSelectedChatMember(null);
+              setSelectedContactProfile(profile);
             }}
           />
         ) : null}

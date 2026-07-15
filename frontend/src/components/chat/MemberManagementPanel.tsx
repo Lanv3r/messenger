@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { Button } from "@/components/ui/button";
 import {
   ADMIN_PERMISSION_KEYS,
@@ -10,7 +12,26 @@ import type {
   ChatMember,
   MemberManagementMode,
   MemberPermissions,
+  UserProfile,
 } from "@/types";
+
+function formatPromotionTimestamp(value: string) {
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) {
+    return "an unknown time";
+  }
+
+  const date = new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+  }).format(timestamp);
+  const time = new Intl.DateTimeFormat("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+  }).format(timestamp);
+
+  return `${date} at ${time}`;
+}
 
 type MemberManagementPanelProps = {
   member: ChatMember;
@@ -37,6 +58,7 @@ type MemberManagementPanelProps = {
   memberRemovalMessage: string | null;
   memberPermissionIsLockedByDefault: (key: string) => boolean;
   adminPermissionIsForcedByMemberDefault: (key: string) => boolean;
+  getChatMemberDisplayName: (member: ChatMember) => string;
   onModeChange: (mode: MemberManagementMode) => void;
   onSelectedMemberBooleanPermissionChange: (key: string, value: boolean) => void;
   onSelectedMemberNumericPermissionChange: (key: string, value: number) => void;
@@ -44,8 +66,9 @@ type MemberManagementPanelProps = {
   onSaveSelectedMemberPermissions: () => void;
   onPromoteSelectedMember: () => void;
   onSaveSelectedAdminPermissions: () => void;
-  onDismissSelectedAdmin: () => void;
+  onDismissSelectedAdmin: () => Promise<boolean>;
   onStartRemoveMember: () => void;
+  onViewPromoterProfile: (profile: UserProfile) => void;
 };
 
 export function MemberManagementPanel({
@@ -73,6 +96,7 @@ export function MemberManagementPanel({
   memberRemovalMessage,
   memberPermissionIsLockedByDefault,
   adminPermissionIsForcedByMemberDefault,
+  getChatMemberDisplayName,
   onModeChange,
   onSelectedMemberBooleanPermissionChange,
   onSelectedMemberNumericPermissionChange,
@@ -82,7 +106,292 @@ export function MemberManagementPanel({
   onSaveSelectedAdminPermissions,
   onDismissSelectedAdmin,
   onStartRemoveMember,
+  onViewPromoterProfile,
 }: MemberManagementPanelProps) {
+  const [dismissConfirmationOpen, setDismissConfirmationOpen] =
+    useState(false);
+
+  if (mode === "member") {
+    return (
+      <section className="member-permissions-card member-permissions-editor-card member-rights-editor">
+        <p className="member-permissions-prompt">What can this member do?</p>
+
+        {selectedMemberPermissionsDraft ? (
+          <div className="permission-list compact">
+            {MEMBER_BOOLEAN_PERMISSION_KEYS.map((key) => {
+              const lockedByDefault = memberPermissionIsLockedByDefault(key);
+
+              return (
+                <label className="permission-row" key={key}>
+                  <span>
+                    {PERMISSION_LABELS[key]}
+                    {lockedByDefault ? (
+                      <small className="permission-member-default-note">
+                        Locked by group default
+                      </small>
+                    ) : null}
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={selectedMemberPermissionsDraft[key] === true}
+                    disabled={
+                      lockedByDefault ||
+                      !canEditMemberPermissions ||
+                      selectedMemberPermissionsSaving
+                    }
+                    onChange={(event) =>
+                      onSelectedMemberBooleanPermissionChange(
+                        key,
+                        event.target.checked,
+                      )
+                    }
+                  />
+                </label>
+              );
+            })}
+            {MEMBER_NUMERIC_PERMISSION_KEYS.map((key) => {
+              const defaultValue = Number(
+                (memberPermissionsDraft ?? memberPermissions)?.[key] ?? 0,
+              );
+
+              return (
+                <label className="permission-row" key={key}>
+                  <span>
+                    {PERMISSION_LABELS[key]}
+                    {defaultValue > 0 ? (
+                      <small>Group minimum {defaultValue}s</small>
+                    ) : null}
+                  </span>
+                  <input
+                    type="number"
+                    min={defaultValue}
+                    step="1"
+                    value={Number(
+                      selectedMemberPermissionsDraft[key] ?? defaultValue,
+                    )}
+                    disabled={
+                      !canEditMemberPermissions ||
+                      selectedMemberPermissionsSaving
+                    }
+                    onChange={(event) =>
+                      onSelectedMemberNumericPermissionChange(
+                        key,
+                        Number(event.target.value),
+                      )
+                    }
+                  />
+                </label>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="permissions-note">Member rights are not loaded.</p>
+        )}
+
+        {selectedMemberPermissionsError ? (
+          <p className="profile-error">{selectedMemberPermissionsError}</p>
+        ) : null}
+        {selectedMemberPermissionsMessage ? (
+          <p className="profile-success">{selectedMemberPermissionsMessage}</p>
+        ) : null}
+        <div className="member-permissions-editor-actions">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={selectedMemberPermissionsSaving}
+            onClick={() => onModeChange(null)}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            disabled={
+              selectedMemberPermissionsSaving ||
+              !selectedMemberPermissionsDraft ||
+              !canEditMemberPermissions
+            }
+            onClick={onSaveSelectedMemberPermissions}
+          >
+            {selectedMemberPermissionsSaving ? "Saving..." : "Save"}
+          </Button>
+        </div>
+      </section>
+    );
+  }
+
+  if (
+    mode === "admin" &&
+    (member.role === "admin" || member.role === "member")
+  ) {
+    const canSaveAdminPermissions =
+      member.role === "member" ? canPromoteMember : canEditAdmin;
+    const canDismissAdmin = member.role === "admin" && canEditAdmin;
+    const handleDismissAdmin = async () => {
+      if (await onDismissSelectedAdmin()) {
+        setDismissConfirmationOpen(false);
+        onModeChange(null);
+      }
+    };
+    const closeDismissConfirmation = () => {
+      if (!selectedMemberPermissionIsSaving) {
+        setDismissConfirmationOpen(false);
+      }
+    };
+
+    return (
+      <section className="member-permissions-card member-permissions-editor-card">
+        {member.role === "admin" &&
+        member.promoted_by_user &&
+        member.promoted_at ? (
+          <p className="admin-promotion-info">
+            Promoted by{" "}
+            <button
+              type="button"
+              onClick={() => onViewPromoterProfile(member.promoted_by_user!)}
+            >
+              {member.promoted_by_user.username}
+            </button>{" "}
+            on {formatPromotionTimestamp(member.promoted_at)}.
+          </p>
+        ) : null}
+        <p className="member-permissions-prompt">What can this admin do?</p>
+
+        <div className="permission-list compact">
+          {ADMIN_PERMISSION_KEYS.map((key) => {
+            const forcedByMemberDefault =
+              adminPermissionIsForcedByMemberDefault(key);
+
+            return (
+              <label className="permission-row" key={key}>
+                <span>
+                  {PERMISSION_LABELS[key]}
+                  {forcedByMemberDefault ? (
+                    <small className="permission-member-default-note">
+                      Enabled for all members
+                    </small>
+                  ) : null}
+                </span>
+                <input
+                  type="checkbox"
+                  checked={
+                    forcedByMemberDefault ||
+                    selectedAdminPermissions?.[key] === true
+                  }
+                  disabled={
+                    forcedByMemberDefault ||
+                    !canSaveAdminPermissions ||
+                    selectedMemberPermissionIsSaving
+                  }
+                  onChange={(event) =>
+                    onAdminPermissionChange(
+                      member.user_id,
+                      key,
+                      event.target.checked,
+                    )
+                  }
+                />
+              </label>
+            );
+          })}
+        </div>
+
+        <p className="admin-rights-summary">
+          This admin will {selectedAdminPermissions?.manage_admins === true ? "" : "not "}
+          be able to add new admins.
+        </p>
+
+        {canDismissAdmin ? (
+          <div className="admin-dismiss-action">
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              className="admin-dismiss-button"
+              disabled={selectedMemberPermissionIsSaving}
+              onClick={() => setDismissConfirmationOpen(true)}
+            >
+              Dismiss Admin
+            </Button>
+          </div>
+        ) : null}
+
+        {dismissConfirmationOpen ? (
+          <div
+            className="message-action-backdrop"
+            role="presentation"
+            onClick={closeDismissConfirmation}
+          >
+            <section
+              className="message-action-dialog"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Dismiss admin"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="message-action-dialog-copy">
+                <strong>
+                  Remove {getChatMemberDisplayName(member)} from admins?
+                </strong>
+              </div>
+
+              <div className="message-action-dialog-actions">
+                <button
+                  type="button"
+                  disabled={selectedMemberPermissionIsSaving}
+                  onClick={closeDismissConfirmation}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  className="danger"
+                  disabled={selectedMemberPermissionIsSaving}
+                  onClick={() => void handleDismissAdmin()}
+                >
+                  {selectedMemberPermissionIsSaving ? "Removing..." : "Remove"}
+                </button>
+              </div>
+            </section>
+          </div>
+        ) : null}
+
+        {adminPermissionsError ? (
+          <p className="profile-error">{adminPermissionsError}</p>
+        ) : null}
+        {adminPermissionsMessage ? (
+          <p className="profile-success">{adminPermissionsMessage}</p>
+        ) : null}
+        <div className="member-permissions-editor-actions">
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={selectedMemberPermissionIsSaving}
+            onClick={() => onModeChange(null)}
+          >
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            disabled={
+              selectedMemberPermissionIsSaving || !canSaveAdminPermissions
+            }
+            onClick={
+              member.role === "member"
+                ? onPromoteSelectedMember
+                : onSaveSelectedAdminPermissions
+            }
+          >
+            {selectedMemberPermissionIsSaving ? "Saving..." : "Save"}
+          </Button>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="member-permissions-card">
       <div className="member-permissions-header">
@@ -107,9 +416,15 @@ export function MemberManagementPanel({
             </Button>
           ) : null}
           {member.role === "admin" ? (
-            <Button type="button" size="sm" onClick={() => onModeChange("admin")}>
-              {canEditAdmin ? "Edit admin rights" : "View admin rights"}
-            </Button>
+            <>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => onModeChange("admin")}
+              >
+                {canEditAdmin ? "Edit admin rights" : "View admin rights"}
+              </Button>
+            </>
           ) : null}
           {canEditMemberPermissions ? (
             <Button
@@ -120,223 +435,6 @@ export function MemberManagementPanel({
             >
               Restrict member rights
             </Button>
-          ) : null}
-        </div>
-      ) : null}
-
-      {mode === "member" ? (
-        <div className="member-rights-section">
-          <div className="member-editor-header">
-            <div>
-              <strong>Restrict member rights</strong>
-              <span>Default-disabled rights are locked for everyone.</span>
-            </div>
-            <button type="button" onClick={() => onModeChange(null)}>
-              Back
-            </button>
-          </div>
-
-          {selectedMemberPermissionsDraft ? (
-            <div className="permission-list compact">
-              {MEMBER_BOOLEAN_PERMISSION_KEYS.map((key) => {
-                const lockedByDefault = memberPermissionIsLockedByDefault(key);
-
-                return (
-                  <label className="permission-row" key={key}>
-                    <span>
-                      {PERMISSION_LABELS[key]}
-                      {lockedByDefault ? (
-                        <small>Locked by group default</small>
-                      ) : null}
-                    </span>
-                    <input
-                      type="checkbox"
-                      checked={selectedMemberPermissionsDraft[key] === true}
-                      disabled={
-                        lockedByDefault ||
-                        !canEditMemberPermissions ||
-                        selectedMemberPermissionsSaving
-                      }
-                      onChange={(event) =>
-                        onSelectedMemberBooleanPermissionChange(
-                          key,
-                          event.target.checked,
-                        )
-                      }
-                    />
-                  </label>
-                );
-              })}
-              {MEMBER_NUMERIC_PERMISSION_KEYS.map((key) => {
-                const defaultValue = Number(
-                  (memberPermissionsDraft ?? memberPermissions)?.[key] ?? 0,
-                );
-
-                return (
-                  <label className="permission-row" key={key}>
-                    <span>
-                      {PERMISSION_LABELS[key]}
-                      {defaultValue > 0 ? (
-                        <small>Group minimum {defaultValue}s</small>
-                      ) : null}
-                    </span>
-                    <input
-                      type="number"
-                      min={defaultValue}
-                      step="1"
-                      value={Number(
-                        selectedMemberPermissionsDraft[key] ?? defaultValue,
-                      )}
-                      disabled={
-                        !canEditMemberPermissions ||
-                        selectedMemberPermissionsSaving
-                      }
-                      onChange={(event) =>
-                        onSelectedMemberNumericPermissionChange(
-                          key,
-                          Number(event.target.value),
-                        )
-                      }
-                    />
-                  </label>
-                );
-              })}
-            </div>
-          ) : (
-            <p className="permissions-note">Member rights are not loaded.</p>
-          )}
-
-          {member.role === "admin" && canEditMemberPermissions ? (
-            <p className="permissions-note">
-              Reducing an admin&apos;s member rights demotes them to member.
-            </p>
-          ) : null}
-          {selectedMemberPermissionsError ? (
-            <p className="profile-error">{selectedMemberPermissionsError}</p>
-          ) : null}
-          {selectedMemberPermissionsMessage ? (
-            <p className="profile-success">{selectedMemberPermissionsMessage}</p>
-          ) : null}
-          {canEditMemberPermissions ? (
-            <Button
-              type="button"
-              size="sm"
-              disabled={
-                selectedMemberPermissionsSaving ||
-                !selectedMemberPermissionsDraft
-              }
-              onClick={onSaveSelectedMemberPermissions}
-            >
-              {selectedMemberPermissionsSaving ? "Saving..." : "Save member rights"}
-            </Button>
-          ) : null}
-        </div>
-      ) : null}
-
-      {mode === "admin" &&
-      (member.role === "admin" || member.role === "member") ? (
-        <div className="member-rights-section">
-          <div className="member-editor-header">
-            <div>
-              <strong>
-                {member.role === "member" ? "Promote to admin" : "Admin rights"}
-              </strong>
-              <span>Select the admin rights this user should have.</span>
-            </div>
-            <button type="button" onClick={() => onModeChange(null)}>
-              Back
-            </button>
-          </div>
-
-          <div className="permission-list compact">
-            {ADMIN_PERMISSION_KEYS.map((key) => {
-              const forcedByMemberDefault =
-                adminPermissionIsForcedByMemberDefault(key);
-              const canChangePermission =
-                member.role === "member" ? canPromoteMember : canEditAdmin;
-
-              return (
-                <label className="permission-row" key={key}>
-                  <span>
-                    {PERMISSION_LABELS[key]}
-                    {forcedByMemberDefault ? (
-                      <small>Enabled for all members</small>
-                    ) : null}
-                  </span>
-                  <input
-                    type="checkbox"
-                    checked={
-                      forcedByMemberDefault ||
-                      selectedAdminPermissions?.[key] === true
-                    }
-                    disabled={
-                      forcedByMemberDefault ||
-                      !canChangePermission ||
-                      selectedMemberPermissionIsSaving
-                    }
-                    onChange={(event) =>
-                      onAdminPermissionChange(
-                        member.user_id,
-                        key,
-                        event.target.checked,
-                      )
-                    }
-                  />
-                </label>
-              );
-            })}
-          </div>
-
-          {adminPermissionsError ? (
-            <p className="profile-error">{adminPermissionsError}</p>
-          ) : null}
-          {adminPermissionsMessage ? (
-            <p className="profile-success">{adminPermissionsMessage}</p>
-          ) : null}
-
-          {member.role === "member" && canPromoteMember ? (
-            <Button
-              type="button"
-              size="sm"
-              disabled={selectedMemberPermissionIsSaving}
-              onClick={onPromoteSelectedMember}
-            >
-              {selectedMemberPermissionIsSaving ? "Promoting..." : "Promote to admin"}
-            </Button>
-          ) : null}
-
-          {member.role === "admin" ? (
-            <div className="member-permissions-actions">
-              {canEditAdmin ? (
-                <>
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={selectedMemberPermissionIsSaving}
-                    onClick={onSaveSelectedAdminPermissions}
-                  >
-                    {selectedMemberPermissionIsSaving ? "Saving..." : "Save admin rights"}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={selectedMemberPermissionIsSaving}
-                    onClick={onDismissSelectedAdmin}
-                  >
-                    Dismiss admin
-                  </Button>
-                </>
-              ) : member.user_id === currentUserId ? (
-                <p className="permissions-note">
-                  You can view your admin rights, but not edit them.
-                </p>
-              ) : (
-                <p className="permissions-note">
-                  Backend permission checks decide whether you can manage this admin.
-                </p>
-              )}
-            </div>
           ) : null}
         </div>
       ) : null}

@@ -1,5 +1,35 @@
-import type { Chat, ChatActivityState, ChatActivityUser, ChatMessage } from "@/types";
+import type {
+  Chat,
+  ChatActivityState,
+  ChatActivityUser,
+  ChatMember,
+  ChatMessage,
+} from "@/types";
 import { getMessageAttachments } from "@/lib/message-helpers";
+
+const chatMemberRoleRanks: Record<string, number> = {
+  owner: 0,
+  admin: 1,
+  member: 2,
+};
+
+export function sortChatMembers(members: ChatMember[]) {
+  return [...members].sort((first, second) => {
+    const rankDifference =
+      (chatMemberRoleRanks[first.role] ?? Number.MAX_SAFE_INTEGER) -
+      (chatMemberRoleRanks[second.role] ?? Number.MAX_SAFE_INTEGER);
+
+    if (rankDifference !== 0) {
+      return rankDifference;
+    }
+
+    return (
+      first.username.localeCompare(second.username, undefined, {
+        sensitivity: "base",
+      }) || first.user_id - second.user_id
+    );
+  });
+}
 
 export function getChatSortTime(chat: Chat) {
   const value = chat.last_message_created_at ?? chat.created_at;

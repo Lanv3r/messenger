@@ -107,7 +107,16 @@ export type ChatMember = {
   role: string;
   joined_at: string | null;
   added_by: number | null;
+  promoted_by: number | null;
+  promoted_at: string | null;
+  promoted_by_user: UserProfile | null;
   member_permissions: Record<string, MemberPermissionValue>;
+  member_tags: string[];
+  can_edit_member_tags: boolean;
+  can_promote_to_admin: boolean;
+  can_edit_admin_rights: boolean;
+  can_edit_member_rights: boolean;
+  can_remove_from_group: boolean;
 };
 
 export type Chat = {

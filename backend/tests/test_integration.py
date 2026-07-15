@@ -546,7 +546,7 @@ class MessengerIntegrationTest(unittest.TestCase):
         self.assertIn(candidate["id"], owner_add.json()["member_ids"])
 
     def test_admin_cannot_grant_permissions_they_do_not_have(self):
-        owner_client, _owner = self.signup("owner")
+        owner_client, owner = self.signup("owner")
         admin_client, admin = self.signup("admin")
         _candidate_client, candidate = self.signup("candidate")
         group = self.create_group(owner_client, [admin["id"], candidate["id"]])
@@ -558,6 +558,17 @@ class MessengerIntegrationTest(unittest.TestCase):
             json=admin_permissions,
         )
         self.assertEqual(promote_response.status_code, 200, promote_response.text)
+        promoted_member = promote_response.json()
+        self.assertEqual(promoted_member["role"], "admin")
+        self.assertEqual(promoted_member["promoted_by"], owner["id"])
+        self.assertIsNotNone(promoted_member["promoted_at"])
+        self.assertEqual(
+            promoted_member["promoted_by_user"]["username"],
+            owner["username"],
+        )
+        self.assertTrue(promoted_member["can_edit_admin_rights"])
+        self.assertTrue(promoted_member["can_edit_member_rights"])
+        self.assertTrue(promoted_member["can_remove_from_group"])
 
         candidate_permissions = {
             permission: True for permission in ADMIN_PERMISSIONS
@@ -567,6 +578,63 @@ class MessengerIntegrationTest(unittest.TestCase):
             json=candidate_permissions,
         )
         self.assertEqual(blocked_response.status_code, 403)
+
+        dismiss_response = owner_client.post(
+            f"/chats/{group['id']}/admins/{admin['id']}/dismiss",
+        )
+        self.assertEqual(dismiss_response.status_code, 200, dismiss_response.text)
+        dismissed_member = dismiss_response.json()
+        self.assertEqual(dismissed_member["role"], "member")
+        self.assertTrue(dismissed_member["can_promote_to_admin"])
+        self.assertTrue(dismissed_member["can_edit_member_rights"])
+        self.assertTrue(dismissed_member["can_remove_from_group"])
+
+    def test_member_tags_require_permission_and_are_returned(self):
+        owner_client, _owner = self.signup("owner")
+        member_client, member = self.signup("member")
+        group = self.create_group(owner_client, [member["id"]])
+
+        blocked = member_client.post(
+            f"/chats/{group['id']}/members/{member['id']}/tags",
+            json={"tag": "Helper"},
+        )
+        self.assertEqual(blocked.status_code, 403, blocked.text)
+
+        too_long = owner_client.post(
+            f"/chats/{group['id']}/members/{member['id']}/tags",
+            json={"tag": "a" * 17},
+        )
+        self.assertEqual(too_long.status_code, 422, too_long.text)
+
+        member_list = member_client.get(f"/chats/{group['id']}/members")
+        self.assertEqual(member_list.status_code, 200, member_list.text)
+        current_member = next(
+            entry
+            for entry in member_list.json()
+            if entry["user_id"] == member["id"]
+        )
+        self.assertFalse(current_member["can_edit_member_tags"])
+        self.assertFalse(current_member["can_promote_to_admin"])
+        self.assertFalse(current_member["can_edit_member_rights"])
+        self.assertFalse(current_member["can_remove_from_group"])
+
+        added = owner_client.post(
+            f"/chats/{group['id']}/members/{member['id']}/tags",
+            json={"tag": "Helper"},
+        )
+        self.assertEqual(added.status_code, 200, added.text)
+        self.assertEqual(added.json()["member_tags"], ["Helper"])
+        self.assertTrue(added.json()["can_edit_member_tags"])
+        self.assertTrue(added.json()["can_promote_to_admin"])
+        self.assertTrue(added.json()["can_edit_member_rights"])
+        self.assertTrue(added.json()["can_remove_from_group"])
+
+        members = owner_client.get(f"/chats/{group['id']}/members")
+        self.assertEqual(members.status_code, 200, members.text)
+        tagged_member = next(
+            entry for entry in members.json() if entry["user_id"] == member["id"]
+        )
+        self.assertEqual(tagged_member["member_tags"], ["Helper"])
 
     def test_admin_with_manage_admins_cannot_grant_rights_they_do_not_have(self):
         owner_client, _owner = self.signup("owner")

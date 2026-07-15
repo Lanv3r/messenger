@@ -217,6 +217,10 @@ class ChatParticipant(ChatParticipantBase, table=True):
         default_factory=dict,
         sa_column=Column(JSONB, server_default=text("'{}'::jsonb"), nullable=False),
     )
+    member_tags: list[str] = Field(
+        default_factory=list,
+        sa_column=Column(JSONB, server_default=text("'[]'::jsonb"), nullable=False),
+    )
     promoted_by: int | None = Field(
         default=None,
         foreign_key="users.id",
@@ -381,6 +385,10 @@ class AddGroupMembers(SQLModel):
     member_ids: list[int]
 
 
+class MemberTagCreate(SQLModel):
+    tag: str = Field(min_length=1, max_length=16)
+
+
 class ChatMemberPublic(SQLModel):
     user_id: int
     username: str
@@ -392,7 +400,16 @@ class ChatMemberPublic(SQLModel):
     role: str
     joined_at: datetime | None = None
     added_by: int | None = None
+    promoted_by: int | None = None
+    promoted_at: datetime | None = None
+    promoted_by_user: UserPublic | None = None
     member_permissions: dict = Field(default_factory=dict)
+    member_tags: list[str] = Field(default_factory=list)
+    can_edit_member_tags: bool = False
+    can_promote_to_admin: bool = False
+    can_edit_admin_rights: bool = False
+    can_edit_member_rights: bool = False
+    can_remove_from_group: bool = False
 
 
 class ChatMemberPermissions(SQLModel, table=True):

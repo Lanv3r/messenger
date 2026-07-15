@@ -98,10 +98,14 @@ export function useGroupMemberManagement({
     (activeChat.current_user_role === "owner" ||
       currentUserAdminPermissions?.pin_messages === true ||
       memberPermissions?.pin_messages === true);
-  const canAttemptManageGroup =
+  const currentUserCanManageAdmins =
     activeChat?.type === "group" &&
     (activeChat.current_user_role === "owner" ||
-      activeChat.current_user_role === "admin");
+      currentUserAdminPermissions?.manage_admins === true);
+  const currentUserCanEditMemberTags =
+    activeChat?.type === "group" &&
+    (activeChat.current_user_role === "owner" ||
+      currentUserAdminPermissions?.edit_member_tags === true);
   const currentUserCanRemoveGroupMembers =
     activeChat?.type === "group" &&
     (activeChat.current_user_role === "owner" ||
@@ -114,23 +118,13 @@ export function useGroupMemberManagement({
         : null))
     : null;
   const canEditSelectedAdmin =
-    canAttemptManageGroup &&
-    selectedChatMember?.role === "admin" &&
-    selectedChatMember.user_id !== currentUserId;
+    selectedChatMember?.can_edit_admin_rights === true;
   const canPromoteSelectedMember =
-    canAttemptManageGroup &&
-    selectedChatMember?.role === "member" &&
-    selectedChatMember.user_id !== currentUserId;
+    selectedChatMember?.can_promote_to_admin === true;
   const canRemoveSelectedMember =
-    currentUserCanRemoveGroupMembers &&
-    selectedChatMember !== null &&
-    selectedChatMember.user_id !== currentUserId &&
-    selectedChatMember.role !== "owner";
+    selectedChatMember?.can_remove_from_group === true;
   const canEditSelectedMemberPermissions =
-    currentUserCanRemoveGroupMembers &&
-    selectedChatMember !== null &&
-    selectedChatMember.user_id !== currentUserId &&
-    selectedChatMember.role !== "owner";
+    selectedChatMember?.can_edit_member_rights === true;
   const canOpenSelectedAdminManagement =
     selectedChatMember?.role === "admin"
       ? canEditSelectedAdmin || selectedChatMember.user_id === currentUserId
@@ -387,6 +381,56 @@ export function useGroupMemberManagement({
     setAdminPermissionsError(null);
   };
 
+  const updateManagedMember = (updatedMember: ChatMember) => {
+    setChatInfoMembers((current) =>
+      current.map((member) =>
+        member.user_id === updatedMember.user_id ? updatedMember : member,
+      ),
+    );
+    setSelectedChatMember((current) =>
+      current && current.user_id === updatedMember.user_id
+        ? updatedMember
+        : current,
+    );
+  };
+
+  const addMemberTag = async (member: ChatMember, tag: string) => {
+    if (!activeChat || activeChat.type !== "group") {
+      throw new Error("Member tags are only available in group chats.");
+    }
+
+    try {
+      const updatedMember = await apiFetch<ChatMember>(
+        `/chats/${activeChat.id}/members/${member.user_id}/tags`,
+        {
+          method: "POST",
+          body: JSON.stringify({ tag }),
+        },
+      );
+
+      setChatInfoMembers((current) =>
+        current.map((entry) =>
+          entry.user_id === updatedMember.user_id
+            ? { ...entry, ...updatedMember }
+            : entry,
+        ),
+      );
+      setSelectedChatMember((current) =>
+        current && current.user_id === updatedMember.user_id
+          ? { ...current, ...updatedMember }
+          : current,
+      );
+
+      return updatedMember;
+    } catch (error) {
+      if (error instanceof Error && error.message === "Could not validate credentials") {
+        onSessionExpired();
+      }
+
+      throw error;
+    }
+  };
+
   const saveMemberDefaultPermissions = async () => {
     if (!activeChat || activeChat.type !== "group" || !memberPermissionsDraft) {
       return;
@@ -521,7 +565,7 @@ export function useGroupMemberManagement({
     setAdminPermissionsMessage(null);
 
     try {
-      await apiFetch<{ ok: boolean }>(
+      const updatedMember = await apiFetch<ChatMember>(
         `/chats/${activeChat.id}/admins/${selectedChatMember.user_id}/promote`,
         {
           method: "POST",
@@ -537,18 +581,7 @@ export function useGroupMemberManagement({
         ...current,
         [selectedChatMember.user_id]: permissions,
       }));
-      setChatInfoMembers((current) =>
-        current.map((member) =>
-          member.user_id === selectedChatMember.user_id
-            ? { ...member, role: "admin", member_permissions: {} }
-            : member,
-        ),
-      );
-      setSelectedChatMember((current) =>
-        current && current.user_id === selectedChatMember.user_id
-          ? { ...current, role: "admin", member_permissions: {} }
-          : current,
-      );
+      updateManagedMember(updatedMember);
       setSelectedMemberPermissionsDraft(
         buildEffectiveMemberPermissions(
           memberPermissionsDraft ?? memberPermissions,
@@ -602,7 +635,7 @@ export function useGroupMemberManagement({
     setAdminPermissionsMessage(null);
 
     try {
-      await apiFetch<null>(
+      const updatedMember = await apiFetch<ChatMember>(
         `/chats/${activeChat.id}/admins/${selectedChatMember.user_id}/permissions`,
         {
           method: "PATCH",
@@ -613,6 +646,7 @@ export function useGroupMemberManagement({
         ...current,
         [selectedChatMember.user_id]: permissions,
       }));
+      updateManagedMember(updatedMember);
       setAdminPermissionsMessage("Admin permissions updated.");
     } catch (error) {
       const message =
@@ -631,14 +665,14 @@ export function useGroupMemberManagement({
     }
   };
 
-  const dismissSelectedAdmin = async () => {
+  const dismissSelectedAdmin = async (): Promise<boolean> => {
     if (
       !activeChat ||
       activeChat.type !== "group" ||
       !selectedChatMember ||
       selectedChatMember.role !== "admin"
     ) {
-      return;
+      return false;
     }
 
     setAdminPermissionsSavingUserId(selectedChatMember.user_id);
@@ -646,7 +680,7 @@ export function useGroupMemberManagement({
     setAdminPermissionsMessage(null);
 
     try {
-      await apiFetch<{ ok: boolean }>(
+      const updatedMember = await apiFetch<ChatMember>(
         `/chats/${activeChat.id}/admins/${selectedChatMember.user_id}/dismiss`,
         {
           method: "POST",
@@ -662,18 +696,7 @@ export function useGroupMemberManagement({
         delete next[selectedChatMember.user_id];
         return next;
       });
-      setChatInfoMembers((current) =>
-        current.map((member) =>
-          member.user_id === selectedChatMember.user_id
-            ? { ...member, role: "member" }
-            : member,
-        ),
-      );
-      setSelectedChatMember((current) =>
-        current && current.user_id === selectedChatMember.user_id
-          ? { ...current, role: "member" }
-          : current,
-      );
+      updateManagedMember(updatedMember);
       setAdminPermissionsMessage("Admin dismissed.");
     } catch (error) {
       const message =
@@ -681,13 +704,16 @@ export function useGroupMemberManagement({
 
       if (message === "Could not validate credentials") {
         onSessionExpired();
-        return;
+        return false;
       }
 
       setAdminPermissionsError(message);
+      return false;
     } finally {
       setAdminPermissionsSavingUserId(null);
     }
+
+    return true;
   };
 
   const startRemovingMember = (member: ChatMember) => {
@@ -810,6 +836,8 @@ export function useGroupMemberManagement({
     memberRemovalCandidate,
     currentUserCanDeleteGroupMessages,
     currentUserCanPinGroupMessages,
+    currentUserCanManageAdmins,
+    currentUserCanEditMemberTags,
     currentUserCanRemoveGroupMembers,
     selectedAdminPermissions,
     canEditSelectedAdmin,
@@ -832,6 +860,7 @@ export function useGroupMemberManagement({
     updateSelectedMemberBooleanPermission,
     updateSelectedMemberNumericPermission,
     updateAdminPermission,
+    addMemberTag,
     saveMemberDefaultPermissions,
     saveSelectedMemberPermissions,
     promoteSelectedMember,

@@ -229,12 +229,14 @@ html[data-theme="dark"] {
 }
 
 .chat-header-contact-menu button.danger,
-.chat-context-menu button.danger {
+.chat-context-menu button.danger,
+.chat-member-context-menu button.danger {
   color: #b42318;
 }
 
 .chat-header-contact-menu button.danger:hover:not(:disabled),
-.chat-context-menu button.danger:hover:not(:disabled) {
+.chat-context-menu button.danger:hover:not(:disabled),
+.chat-member-context-menu button.danger:hover:not(:disabled) {
   color: #fff7f0;
   background: #b42318;
 }
@@ -1202,6 +1204,28 @@ html[data-theme="dark"] {
   color: #8b5e34;
 }
 
+.chat-member-main .chat-member-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  overflow: visible;
+  white-space: normal;
+}
+
+.chat-member-tag {
+  max-width: 100%;
+  padding: 2px 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: #7f3f2b;
+  background: var(--accent-soft);
+}
+
 .chat-member-side small {
   font-weight: 800;
   transform: translateY(0);
@@ -1721,7 +1745,8 @@ html[data-theme="dark"] {
   background: var(--accent-on-fill);
 }
 
-.chat-context-menu {
+.chat-context-menu,
+.chat-member-context-menu {
   position: fixed;
   z-index: 120;
   display: grid;
@@ -1734,7 +1759,13 @@ html[data-theme="dark"] {
   backdrop-filter: blur(12px);
 }
 
-.chat-context-menu button {
+.chat-member-context-menu {
+  z-index: 130;
+  min-width: 220px;
+}
+
+.chat-context-menu button,
+.chat-member-context-menu button {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1751,7 +1782,8 @@ html[data-theme="dark"] {
   cursor: pointer;
 }
 
-.chat-context-menu button:hover {
+.chat-context-menu button:hover,
+.chat-member-context-menu button:hover {
   color: var(--accent-text);
   background: var(--accent-soft);
 }
@@ -2585,6 +2617,264 @@ html[data-theme="dark"] {
 .member-permissions-card {
   width: min(100%, 300px);
   margin-top: 10px;
+}
+
+.profile-popup-card.member-permissions-editor {
+  width: min(100%, 440px);
+  max-height: min(92svh, 640px);
+  display: block;
+  padding: 0;
+  text-align: left;
+  overflow: hidden;
+}
+
+.member-permissions-editor-scroll {
+  position: relative;
+  width: 100%;
+  max-height: min(92svh, 640px);
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 58px 20px 18px;
+  border-radius: inherit;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(139, 94, 52, 0.2) transparent;
+}
+
+.member-permissions-editor-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.member-permissions-editor-scroll::-webkit-scrollbar-track {
+  margin-block: 18px;
+  background: transparent;
+}
+
+.member-permissions-editor-scroll::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-color: rgba(139, 94, 52, 0.2);
+  background-clip: content-box;
+}
+
+.member-permissions-editor-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(139, 94, 52, 0.32);
+}
+
+.member-permissions-window-title {
+  position: absolute;
+  top: 20px;
+  left: 22px;
+  font-size: 17px;
+  font-weight: 850;
+  line-height: 1.2;
+  color: #1f2937;
+}
+
+.member-permissions-editor-scroll > .member-permissions-profile {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  align-items: center;
+  justify-items: stretch;
+  gap: 11px;
+  text-align: left;
+}
+
+.member-permissions-profile > img {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(133, 144, 167, 0.14);
+}
+
+.member-permissions-profile > div {
+  min-width: 0;
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+}
+
+.member-permissions-profile h2 {
+  width: 100%;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 17px;
+  line-height: 1.2;
+}
+
+.member-permissions-profile .profile-username {
+  width: 100%;
+  margin: 0;
+  text-align: left;
+}
+
+.member-permissions-editor-card {
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.member-permissions-editor-card .permission-list.compact {
+  gap: 0;
+  max-height: none;
+  overflow: visible;
+  padding-right: 0;
+}
+
+.member-permissions-editor-card .permission-row {
+  padding: 10px 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.member-permissions-editor-card .permission-row > span {
+  gap: 0;
+}
+
+.member-rights-editor {
+  margin-top: 10px;
+}
+
+.member-permissions-editor-card .member-permissions-prompt {
+  font-size: 15px;
+}
+
+.member-permissions-editor-card .permission-list {
+  margin-top: -8px;
+}
+
+.member-permissions-editor-card .permission-list .permission-row:first-child {
+  padding-top: 3px;
+}
+
+.member-permissions-editor-card .permission-member-default-note {
+  margin-top: -1px;
+  line-height: 1.2;
+  color: #6b7280;
+  font-weight: 650;
+}
+
+.member-permissions-prompt {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 850;
+  line-height: 1.35;
+  color: var(--accent-text);
+}
+
+.admin-promotion-info,
+.admin-rights-summary {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.4;
+  color: #8b5e34;
+}
+
+.admin-promotion-info {
+  width: calc(100% + 40px);
+  margin-inline: -20px;
+  padding: 8px 20px;
+  border-top: 1px solid rgba(163, 88, 66, 0.16);
+  border-bottom: 1px solid rgba(163, 88, 66, 0.16);
+  box-sizing: border-box;
+  background: transparent;
+}
+
+.admin-rights-summary {
+  width: calc(100% + 40px);
+  margin-inline: -20px;
+  padding: 9px 20px;
+  box-sizing: border-box;
+  background: rgba(244, 111, 84, 0.08);
+}
+
+.admin-promotion-info button {
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-weight: 850;
+  color: var(--accent-text);
+  background: transparent;
+  cursor: pointer;
+}
+
+.admin-promotion-info button:hover {
+  color: var(--accent-fill-hover);
+  text-decoration: underline;
+}
+
+.admin-dismiss-action {
+  display: flex;
+  justify-content: flex-start;
+  padding-top: 2px;
+}
+
+.admin-dismiss-button {
+  min-width: 0;
+  height: auto;
+  margin: 0;
+  border: 0;
+  padding: 0;
+  color: #b42318;
+  background: transparent;
+  box-shadow: none;
+}
+
+.admin-dismiss-button:hover:not(:disabled) {
+  border: 0;
+  color: #d43d31;
+  background: transparent;
+}
+
+.member-permissions-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
+.member-permissions-editor-actions button {
+  min-width: 74px;
+  border-color: rgba(163, 88, 66, 0.24);
+  color: #6f3a2b;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 6px 16px rgba(106, 58, 45, 0.1);
+}
+
+.member-permissions-editor-actions button:hover:not(:disabled) {
+  border-color: var(--accent-focus);
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+
+.member-permissions-editor-actions button:last-child {
+  border-color: var(--accent-fill);
+  color: var(--accent-on-fill);
+  background: var(--accent-fill);
+  box-shadow: 0 10px 22px var(--accent-shadow);
+}
+
+.member-permissions-editor-actions button:last-child:hover:not(:disabled) {
+  border-color: var(--accent-fill-hover);
+  color: var(--accent-on-fill);
+  background: var(--accent-fill-hover);
 }
 
 .permissions-panel-header,
@@ -4342,12 +4632,14 @@ html[data-theme="dark"] .chat-header-contact-menu button {
 }
 
 html[data-theme="dark"] .chat-header-contact-menu button.danger,
-html[data-theme="dark"] .chat-context-menu button.danger {
+html[data-theme="dark"] .chat-context-menu button.danger,
+html[data-theme="dark"] .chat-member-context-menu button.danger {
   color: #ff9d84;
 }
 
 html[data-theme="dark"] .chat-header-contact-menu button.danger:hover:not(:disabled),
-html[data-theme="dark"] .chat-context-menu button.danger:hover:not(:disabled) {
+html[data-theme="dark"] .chat-context-menu button.danger:hover:not(:disabled),
+html[data-theme="dark"] .chat-member-context-menu button.danger:hover:not(:disabled) {
   color: #fff7f0;
   background: rgba(180, 35, 24, 0.72);
 }
@@ -4666,18 +4958,21 @@ html[data-theme="dark"] .sidebar-add-chat-button:hover {
   background: var(--accent-soft);
 }
 
-html[data-theme="dark"] .chat-context-menu {
+html[data-theme="dark"] .chat-context-menu,
+html[data-theme="dark"] .chat-member-context-menu {
   border-color: rgba(255, 255, 255, 0.12);
   background: rgba(15, 20, 30, 0.94);
   box-shadow: 0 18px 48px rgba(0, 0, 0, 0.36);
 }
 
-html[data-theme="dark"] .chat-context-menu button {
+html[data-theme="dark"] .chat-context-menu button,
+html[data-theme="dark"] .chat-member-context-menu button {
   color: #f7efe7;
   background: transparent;
 }
 
-html[data-theme="dark"] .chat-context-menu button:hover {
+html[data-theme="dark"] .chat-context-menu button:hover,
+html[data-theme="dark"] .chat-member-context-menu button:hover {
   color: var(--accent-text);
   background: var(--accent-soft);
 }
@@ -4793,6 +5088,7 @@ html[data-theme="dark"] .chat-member-main img {
 }
 
 html[data-theme="dark"] .profile-popup-card h2,
+html[data-theme="dark"] .member-permissions-window-title,
 html[data-theme="dark"] .chat-info-header strong,
 html[data-theme="dark"] .chat-info-hero strong,
 html[data-theme="dark"] .chat-members-heading strong,
@@ -4822,6 +5118,11 @@ html[data-theme="dark"] .permissions-note {
 html[data-theme="dark"] .profile-popup-card .profile-status {
   color: #72e0ad;
   background: rgba(114, 224, 173, 0.12);
+}
+
+html[data-theme="dark"] .chat-member-tag {
+  color: var(--accent-text);
+  background: var(--accent-soft);
 }
 
 html[data-theme="dark"] .chat-info-header button,
@@ -4879,6 +5180,89 @@ html[data-theme="dark"] .member-permissions-card,
 html[data-theme="dark"] .permission-row {
   border-color: rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.055);
+}
+
+html[data-theme="dark"] .member-permissions-editor-card {
+  border-color: transparent;
+  background: transparent;
+}
+
+html[data-theme="dark"] .member-permissions-editor-scroll {
+  scrollbar-color: rgba(231, 207, 184, 0.2) transparent;
+}
+
+html[data-theme="dark"]
+  .member-permissions-editor-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(231, 207, 184, 0.2);
+}
+
+html[data-theme="dark"]
+  .member-permissions-editor-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(231, 207, 184, 0.32);
+}
+
+html[data-theme="dark"] .member-permissions-editor-card .permission-row {
+  border-color: transparent;
+  background: transparent;
+}
+
+html[data-theme="dark"]
+  .member-permissions-editor-card
+  .permission-member-default-note {
+  color: #aeb6c3;
+}
+
+html[data-theme="dark"] .admin-promotion-info,
+html[data-theme="dark"] .admin-rights-summary {
+  color: #c8b6a7;
+}
+
+html[data-theme="dark"] .admin-promotion-info {
+  border-color: rgba(255, 157, 132, 0.2);
+  background: transparent;
+}
+
+html[data-theme="dark"] .admin-rights-summary {
+  background: rgba(255, 255, 255, 0.07);
+}
+
+html[data-theme="dark"] .admin-dismiss-button {
+  border: 0;
+  color: #ff9f92;
+  background: transparent;
+  box-shadow: none;
+}
+
+html[data-theme="dark"] .admin-dismiss-button:hover:not(:disabled) {
+  border: 0;
+  color: #ffb0a8;
+  background: transparent;
+}
+
+html[data-theme="dark"] .member-permissions-editor-actions button {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #f7efe7;
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+}
+
+html[data-theme="dark"] .member-permissions-editor-actions button:hover:not(:disabled) {
+  border-color: var(--accent-focus);
+  color: var(--accent-text);
+  background: var(--accent-soft);
+}
+
+html[data-theme="dark"] .member-permissions-editor-actions button:last-child {
+  border-color: var(--accent-fill);
+  color: var(--accent-on-fill);
+  background: var(--accent-fill);
+  box-shadow: 0 10px 22px var(--accent-shadow);
+}
+
+html[data-theme="dark"] .member-permissions-editor-actions button:last-child:hover:not(:disabled) {
+  border-color: var(--accent-fill-hover);
+  color: var(--accent-on-fill);
+  background: var(--accent-fill-hover);
 }
 
 html[data-theme="dark"] .chat-member-row:hover {

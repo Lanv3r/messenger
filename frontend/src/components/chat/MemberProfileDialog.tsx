@@ -5,6 +5,7 @@ import type {
   ChatMember,
   MemberManagementMode,
   MemberPermissions,
+  UserProfile,
 } from "@/types";
 
 type MemberProfileDialogProps = {
@@ -49,8 +50,9 @@ type MemberProfileDialogProps = {
   onSaveSelectedMemberPermissions: () => void;
   onPromoteSelectedMember: () => void;
   onSaveSelectedAdminPermissions: () => void;
-  onDismissSelectedAdmin: () => void;
+  onDismissSelectedAdmin: () => Promise<boolean>;
   onStartRemoveMember: () => void;
+  onViewPromoterProfile: (profile: UserProfile) => void;
 };
 
 export function MemberProfileDialog({
@@ -90,80 +92,125 @@ export function MemberProfileDialog({
   onSaveSelectedAdminPermissions,
   onDismissSelectedAdmin,
   onStartRemoveMember,
+  onViewPromoterProfile,
 }: MemberProfileDialogProps) {
+  const isPermissionsEditor = showManagement && mode !== null;
+  const permissionsTitle =
+    mode === "admin" ? "Admin rights" : "User permissions";
+  const memberAvatar = (
+    <img
+      src={getAssetUrl(member.avatar_url)}
+      alt=""
+      onError={(event) => {
+        event.currentTarget.src = "/favicon.svg";
+      }}
+    />
+  );
+  const memberIdentity = (
+    <>
+      <h2>{getChatMemberDisplayName(member)}</h2>
+      <p className="profile-username">@{member.username}</p>
+    </>
+  );
+  const memberManagementPanel = showManagement ? (
+    <MemberManagementPanel
+      member={member}
+      currentUserId={currentUserId}
+      mode={mode}
+      adminPermissionsLoading={adminPermissionsLoading}
+      hasActions={hasActions}
+      canPromoteMember={canPromoteMember}
+      canEditAdmin={canEditAdmin}
+      canEditMemberPermissions={canEditMemberPermissions}
+      canRemoveMember={canRemoveMember}
+      memberPermissions={memberPermissions}
+      memberPermissionsDraft={memberPermissionsDraft}
+      selectedMemberPermissionsDraft={selectedMemberPermissionsDraft}
+      selectedMemberPermissionsSaving={selectedMemberPermissionsSaving}
+      selectedMemberPermissionsError={selectedMemberPermissionsError}
+      selectedMemberPermissionsMessage={selectedMemberPermissionsMessage}
+      selectedAdminPermissions={selectedAdminPermissions}
+      selectedMemberPermissionIsSaving={selectedMemberPermissionIsSaving}
+      selectedMemberRemovalIsSaving={selectedMemberRemovalIsSaving}
+      adminPermissionsError={adminPermissionsError}
+      adminPermissionsMessage={adminPermissionsMessage}
+      memberRemovalError={memberRemovalError}
+      memberRemovalMessage={memberRemovalMessage}
+      memberPermissionIsLockedByDefault={memberPermissionIsLockedByDefault}
+      adminPermissionIsForcedByMemberDefault={
+        adminPermissionIsForcedByMemberDefault
+      }
+      getChatMemberDisplayName={getChatMemberDisplayName}
+      onModeChange={onModeChange}
+      onSelectedMemberBooleanPermissionChange={
+        onSelectedMemberBooleanPermissionChange
+      }
+      onSelectedMemberNumericPermissionChange={
+        onSelectedMemberNumericPermissionChange
+      }
+      onAdminPermissionChange={onAdminPermissionChange}
+      onSaveSelectedMemberPermissions={onSaveSelectedMemberPermissions}
+      onPromoteSelectedMember={onPromoteSelectedMember}
+      onSaveSelectedAdminPermissions={onSaveSelectedAdminPermissions}
+      onDismissSelectedAdmin={onDismissSelectedAdmin}
+      onStartRemoveMember={onStartRemoveMember}
+      onViewPromoterProfile={onViewPromoterProfile}
+    />
+  ) : null;
+
   return (
     <div className="profile-card-backdrop" role="presentation" onClick={onClose}>
       <article
-        className="profile-popup-card"
+        className={`profile-popup-card${
+          isPermissionsEditor ? " member-permissions-editor" : ""
+        }`}
         role="dialog"
         aria-modal="true"
-        aria-label={`${getChatMemberDisplayName(member)} profile`}
+        aria-label={
+          isPermissionsEditor
+            ? permissionsTitle
+            : `${getChatMemberDisplayName(member)} profile`
+        }
         onClick={(event) => event.stopPropagation()}
       >
-        <button
-          type="button"
-          className="profile-popup-close"
-          aria-label="Close profile"
-          onClick={onClose}
-        >
-          &times;
-        </button>
-        <img
-          src={getAssetUrl(member.avatar_url)}
-          alt=""
-          onError={(event) => {
-            event.currentTarget.src = "/favicon.svg";
-          }}
-        />
-        <div>
-          <h2>{getChatMemberDisplayName(member)}</h2>
-          <p className="profile-username">@{member.username}</p>
-          {member.bio ? <p className="profile-bio">{member.bio}</p> : null}
-          <span className="profile-status">{member.status}</span>
-          {showManagement ? (
-            <MemberManagementPanel
-              member={member}
-              currentUserId={currentUserId}
-              mode={mode}
-              adminPermissionsLoading={adminPermissionsLoading}
-              hasActions={hasActions}
-              canPromoteMember={canPromoteMember}
-              canEditAdmin={canEditAdmin}
-              canEditMemberPermissions={canEditMemberPermissions}
-              canRemoveMember={canRemoveMember}
-              memberPermissions={memberPermissions}
-              memberPermissionsDraft={memberPermissionsDraft}
-              selectedMemberPermissionsDraft={selectedMemberPermissionsDraft}
-              selectedMemberPermissionsSaving={selectedMemberPermissionsSaving}
-              selectedMemberPermissionsError={selectedMemberPermissionsError}
-              selectedMemberPermissionsMessage={selectedMemberPermissionsMessage}
-              selectedAdminPermissions={selectedAdminPermissions}
-              selectedMemberPermissionIsSaving={selectedMemberPermissionIsSaving}
-              selectedMemberRemovalIsSaving={selectedMemberRemovalIsSaving}
-              adminPermissionsError={adminPermissionsError}
-              adminPermissionsMessage={adminPermissionsMessage}
-              memberRemovalError={memberRemovalError}
-              memberRemovalMessage={memberRemovalMessage}
-              memberPermissionIsLockedByDefault={memberPermissionIsLockedByDefault}
-              adminPermissionIsForcedByMemberDefault={
-                adminPermissionIsForcedByMemberDefault
-              }
-              onModeChange={onModeChange}
-              onSelectedMemberBooleanPermissionChange={
-                onSelectedMemberBooleanPermissionChange
-              }
-              onSelectedMemberNumericPermissionChange={
-                onSelectedMemberNumericPermissionChange
-              }
-              onAdminPermissionChange={onAdminPermissionChange}
-              onSaveSelectedMemberPermissions={onSaveSelectedMemberPermissions}
-              onPromoteSelectedMember={onPromoteSelectedMember}
-              onSaveSelectedAdminPermissions={onSaveSelectedAdminPermissions}
-              onDismissSelectedAdmin={onDismissSelectedAdmin}
-              onStartRemoveMember={onStartRemoveMember}
-            />
-          ) : null}
-        </div>
+        {isPermissionsEditor ? (
+          <div className="member-permissions-editor-scroll">
+            <strong className="member-permissions-window-title">
+              {permissionsTitle}
+            </strong>
+            <button
+              type="button"
+              className="profile-popup-close"
+              aria-label="Close profile"
+              onClick={onClose}
+            >
+              &times;
+            </button>
+            <div className="member-permissions-profile">
+              {memberAvatar}
+              <div>{memberIdentity}</div>
+            </div>
+            {memberManagementPanel}
+          </div>
+        ) : (
+          <>
+            <button
+              type="button"
+              className="profile-popup-close"
+              aria-label="Close profile"
+              onClick={onClose}
+            >
+              &times;
+            </button>
+            {memberAvatar}
+            <div>
+              {memberIdentity}
+              {member.bio ? <p className="profile-bio">{member.bio}</p> : null}
+              <span className="profile-status">{member.status}</span>
+              {memberManagementPanel}
+            </div>
+          </>
+        )}
       </article>
     </div>
   );

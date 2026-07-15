@@ -15,12 +15,14 @@ from app.models import (
     ChatReadRequest,
     ChatSettingsUpdate,
     GroupCreate,
+    MemberTagCreate,
     Message,
     MessageUserState,
     PinnedChatOrderResponse,
     PinnedChatOrderUpdate,
     User,
     UserBlock,
+    UserPublic,
 )
 from app.permissions import SYSTEM_ROLE_DEFAULTS
 from app.services.chats import (
@@ -48,7 +50,28 @@ router = APIRouter(tags=["chats"])
 def to_chat_member_public(
     participant: ChatParticipant,
     user: User,
+    session: Session,
+    action_permissions: dict[str, bool] | None = None,
 ) -> ChatMemberPublic:
+    promoter = (
+        session.get(User, participant.promoted_by)
+        if participant.promoted_by is not None
+        else None
+    )
+    promoted_by_user = (
+        UserPublic(
+            id=promoter.id,
+            username=promoter.username,
+            first_name=promoter.first_name,
+            last_name=promoter.last_name,
+            bio=promoter.bio,
+            avatar_url=promoter.avatar_url,
+            status=promoter.status,
+        )
+        if promoter is not None and promoter.id is not None
+        else None
+    )
+
     return ChatMemberPublic(
         user_id=participant.user_id,
         username=user.username,
@@ -60,8 +83,71 @@ def to_chat_member_public(
         role=participant.role,
         joined_at=participant.joined_at,
         added_by=participant.added_by,
+        promoted_by=participant.promoted_by,
+        promoted_at=participant.promoted_at,
+        promoted_by_user=promoted_by_user,
         member_permissions=participant.member_permissions,
+        member_tags=participant.member_tags,
+        **(action_permissions or {}),
     )
+
+
+def get_member_action_permissions(
+    actor_participant: ChatParticipant,
+    target_participant: ChatParticipant,
+    session: Session,
+) -> dict[str, bool]:
+    no_actions = {
+        "can_edit_member_tags": False,
+        "can_promote_to_admin": False,
+        "can_edit_admin_rights": False,
+        "can_edit_member_rights": False,
+        "can_remove_from_group": False,
+    }
+    chat = session.get(Chat, target_participant.chat_id)
+    if chat is None or chat.type != "group":
+        return no_actions
+
+    actor_permissions = get_effective_permissions(actor_participant, session)
+    can_edit_member_tags = actor_permissions.get("edit_member_tags") is True
+    can_manage_admins = actor_permissions.get("manage_admins") is True
+    can_remove_members = actor_permissions.get("ban_users") is True
+    target_is_manageable = (
+        actor_participant.user_id != target_participant.user_id
+        and target_participant.role != "owner"
+    )
+    can_manage_admin_target = False
+
+    if (
+        target_is_manageable
+        and target_participant.role == "admin"
+        and (can_manage_admins or can_remove_members)
+    ):
+        try:
+            assert_actor_strictly_outranks_target(
+                actor_participant,
+                target_participant,
+                actor_permissions,
+                get_effective_permissions(target_participant, session),
+            )
+            can_manage_admin_target = True
+        except HTTPException:
+            pass
+
+    target_is_member = target_participant.role == "member"
+    can_edit_member_rights = can_remove_members and target_is_manageable and (
+        target_is_member or can_manage_admin_target
+    )
+
+    return {
+        "can_edit_member_tags": can_edit_member_tags,
+        "can_promote_to_admin": (
+            can_manage_admins and target_is_manageable and target_is_member
+        ),
+        "can_edit_admin_rights": can_manage_admins and can_manage_admin_target,
+        "can_edit_member_rights": can_edit_member_rights,
+        "can_remove_from_group": can_edit_member_rights,
+    }
 
 
 def group_create_from_form(
@@ -603,7 +689,7 @@ def get_chat_members(
     user_id = current_user.id
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
-    require_active_participant(session, chat_id, user_id)
+    actor_participant = require_active_participant(session, chat_id, user_id)
 
     participants = session.exec(
         select(ChatParticipant).where(
@@ -619,7 +705,14 @@ def get_chat_members(
         if member_user is None:
             raise HTTPException(status_code=404, detail="User not found")
 
-        members.append(to_chat_member_public(member, member_user))
+        members.append(
+            to_chat_member_public(
+                member,
+                member_user,
+                session,
+                get_member_action_permissions(actor_participant, member, session),
+            )
+        )
 
     return members
 
@@ -644,6 +737,65 @@ def get_current_user_chat_permissions(
         return {"send_messages": True}
 
     return get_effective_permissions(participant, session)
+
+
+@router.post(
+    "/chats/{chat_id}/members/{user_id}/tags",
+    response_model=ChatMemberPublic,
+)
+async def add_member_tag(
+    chat_id: int,
+    user_id: int,
+    payload: MemberTagCreate,
+    session: SessionDep,
+    actor_user: Annotated[User, Depends(get_current_user)],
+):
+    if actor_user.id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    actor_participant = require_chat_permission(
+        session,
+        chat_id,
+        actor_user.id,
+        "edit_member_tags",
+    )
+    target_participant = require_active_participant(session, chat_id, user_id)
+    chat = session.get(Chat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if chat.type != "group":
+        raise HTTPException(
+            status_code=403,
+            detail="Member tags only apply to group chats",
+        )
+
+    tag = payload.tag.strip()
+    if not tag:
+        raise HTTPException(status_code=400, detail="Tag cannot be empty")
+    if len(tag) > 16:
+        raise HTTPException(status_code=400, detail="Tag is too long")
+
+    member_tags = list(target_participant.member_tags or [])
+    if any(existing_tag.casefold() == tag.casefold() for existing_tag in member_tags):
+        raise HTTPException(status_code=400, detail="Tag is already assigned")
+    if len(member_tags) >= 20:
+        raise HTTPException(status_code=400, detail="Member tag limit reached")
+
+    target_participant.member_tags = [*member_tags, tag]
+    session.add(target_participant)
+    session.commit()
+    session.refresh(target_participant)
+
+    target_user = session.get(User, target_participant.user_id)
+    if target_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return to_chat_member_public(
+        target_participant,
+        target_user,
+        session,
+        get_member_action_permissions(actor_participant, target_participant, session),
+    )
 
 
 @router.patch("/chats/pinned-order", response_model=PinnedChatOrderResponse)
@@ -1090,7 +1242,12 @@ async def patch_member_permissions(
         raise HTTPException(status_code=404, detail="User not found")
 
     await emit_chat_permissions_updated(chat_id, [target_participant.user_id])
-    return to_chat_member_public(target_participant, target_user)
+    return to_chat_member_public(
+        target_participant,
+        target_user,
+        session,
+        get_member_action_permissions(actor_participant, target_participant, session),
+    )
 
 
 @router.get("/chats/{chat_id}/admins/{user_id}/permissions")
@@ -1123,7 +1280,10 @@ def get_admin_permissions(
     return get_effective_permissions(target_participant, session)
 
 
-@router.patch("/chats/{chat_id}/admins/{user_id}/permissions")
+@router.patch(
+    "/chats/{chat_id}/admins/{user_id}/permissions",
+    response_model=ChatMemberPublic,
+)
 async def patch_admin_permissions(
     chat_id: int,
     user_id: int,
@@ -1159,10 +1319,25 @@ async def patch_admin_permissions(
     target_participant.admin_permissions = new_permissions
     session.add(target_participant)
     session.commit()
+    session.refresh(target_participant)
     await emit_chat_permissions_updated(chat_id, [target_participant.user_id])
 
+    target_user = session.get(User, target_participant.user_id)
+    if target_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
 
-@router.post("/chats/{chat_id}/admins/{user_id}/promote")
+    return to_chat_member_public(
+        target_participant,
+        target_user,
+        session,
+        get_member_action_permissions(actor_participant, target_participant, session),
+    )
+
+
+@router.post(
+    "/chats/{chat_id}/admins/{user_id}/promote",
+    response_model=ChatMemberPublic,
+)
 async def promote_admin(
     chat_id: int,
     user_id: int,
@@ -1199,11 +1374,25 @@ async def promote_admin(
 
     session.add(target_participant)
     session.commit()
+    session.refresh(target_participant)
     await emit_chat_permissions_updated(chat_id, [target_participant.user_id])
-    return {"ok": True}
+
+    target_user = session.get(User, target_participant.user_id)
+    if target_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return to_chat_member_public(
+        target_participant,
+        target_user,
+        session,
+        get_member_action_permissions(actor_participant, target_participant, session),
+    )
 
 
-@router.post("/chats/{chat_id}/admins/{user_id}/dismiss")
+@router.post(
+    "/chats/{chat_id}/admins/{user_id}/dismiss",
+    response_model=ChatMemberPublic,
+)
 async def dismiss_admin(
     chat_id: int,
     user_id: int,
@@ -1233,8 +1422,19 @@ async def dismiss_admin(
 
     session.add(target_participant)
     session.commit()
+    session.refresh(target_participant)
     await emit_chat_permissions_updated(chat_id, [target_participant.user_id])
-    return {"ok": True}
+
+    target_user = session.get(User, target_participant.user_id)
+    if target_user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return to_chat_member_public(
+        target_participant,
+        target_user,
+        session,
+        get_member_action_permissions(actor_participant, target_participant, session),
+    )
 
 
 @router.post("/chats/{chat_id}/leave")
