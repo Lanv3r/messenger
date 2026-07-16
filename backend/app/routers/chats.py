@@ -222,6 +222,7 @@ def get_chats(
         display_title = chat.title
         display_avatar_url = chat.avatar_url or "/favicon.svg"
         other_user_id = None
+        other_user_status = None
         other_last_read_at = None
         other_last_read_message_id = None
         is_blocked_by_other = False
@@ -260,6 +261,7 @@ def get_chats(
                         else other_user.first_name
                     )
                     display_avatar_url = other_user.avatar_url
+                    other_user_status = other_user.status
                     other_last_read_message_id = other_participant.last_read_message_id
                     other_last_read_at = other_participant.last_read_at
                     is_blocked_by_other = (
@@ -334,6 +336,7 @@ def get_chats(
                 display_title=display_title or "Chat",
                 display_avatar_url=display_avatar_url,
                 other_user_id=other_user_id,
+                other_user_status=other_user_status,
                 is_blocked_by_other=is_blocked_by_other,
                 member_ids=member_ids,
                 member_count=member_count,
@@ -520,6 +523,7 @@ def get_direct_chat_by_user(
         ),
         display_avatar_url=other_user.avatar_url,
         other_user_id=other_user.id,
+        other_user_status=other_user.status,
         is_blocked_by_other=session.get(
             UserBlock,
             (other_user.id, current_user_id),

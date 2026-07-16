@@ -11,7 +11,6 @@ import { useEffect, useState } from "react";
 type ChatHeaderProps = {
   title: string;
   subtitle: string;
-  avatarUrl: string;
   clickable: boolean;
   searchEnabled: boolean;
   searchActive: boolean;
@@ -29,7 +28,6 @@ type ChatHeaderProps = {
 export function ChatHeader({
   title,
   subtitle,
-  avatarUrl,
   clickable,
   searchEnabled,
   searchActive,
@@ -79,13 +77,6 @@ export function ChatHeader({
         disabled={!clickable}
         onClick={onClick}
       >
-        <img
-          src={avatarUrl}
-          alt=""
-          onError={(event) => {
-            event.currentTarget.src = "/favicon.svg";
-          }}
-        />
         <span>
           <strong>{title}</strong>
           <small>{subtitle}</small>

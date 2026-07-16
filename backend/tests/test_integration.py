@@ -1105,12 +1105,27 @@ class MessengerIntegrationTest(unittest.TestCase):
         )
         self.assertEqual(direct.status_code, 200, direct.text)
         direct_chat_id = direct.json()["chat"]["id"]
+        self.assertEqual(
+            direct.json()["chat"]["other_user_status"],
+            recipient["status"],
+        )
+
+        chats = sender_client.get("/chats")
+        self.assertEqual(chats.status_code, 200, chats.text)
+        listed_direct = next(
+            entry for entry in chats.json() if entry["id"] == direct_chat_id
+        )
+        self.assertEqual(listed_direct["other_user_status"], recipient["status"])
 
         existing_direct = sender_client.get(
             f"/chats/direct/by-user/{recipient['id']}",
         )
         self.assertEqual(existing_direct.status_code, 200, existing_direct.text)
         self.assertEqual(existing_direct.json()["id"], direct_chat_id)
+        self.assertEqual(
+            existing_direct.json()["other_user_status"],
+            recipient["status"],
+        )
 
         self_chat = sender_client.get(f"/chats/direct/by-user/{sender['id']}")
         self.assertEqual(self_chat.status_code, 200, self_chat.text)

@@ -414,6 +414,7 @@ async def create_direct_message(
             ),
             display_avatar_url=recipient.avatar_url,
             other_user_id=recipient.id,
+            other_user_status=recipient.status,
             last_message_id=message.id,
             last_message_text=message.content,
             last_message_sender_id=message.sender_id,

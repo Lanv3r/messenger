@@ -333,6 +333,7 @@ class ChatListItem(SQLModel):
 
     # Direct-chat-only
     other_user_id: int | None = None
+    other_user_status: str | None = None
     is_blocked_by_other: bool = False
     # Group-chat-only
     member_ids: list[int] = Field(default_factory=list)

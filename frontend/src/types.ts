@@ -128,6 +128,7 @@ export type Chat = {
   display_title: string;
   display_avatar_url: string;
   other_user_id: number | null;
+  other_user_status?: string | null;
   is_blocked_by_other: boolean;
   member_ids: number[];
   member_count: number;

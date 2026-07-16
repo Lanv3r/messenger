@@ -1,4 +1,3 @@
-import { getAssetUrl } from "@/lib/message-helpers";
 import type {
   AuthUser,
   Chat,
@@ -60,24 +59,19 @@ export function useChatPresentation({
     : activeChat
       ? getChatTitle(activeChat)
       : "Chat";
-  const chatHeaderAvatar = draftRecipient
-    ? getAssetUrl(draftRecipient.avatar_url)
-    : activeChat
-      ? getAssetUrl(activeChat.display_avatar_url || activeChat.avatar_url)
-      : "/favicon.svg";
   const chatActivitySubtitle = getChatActivitySubtitle(activeChat);
   const chatHeaderSubtitle =
     chatActivitySubtitle ??
     (draftRecipient
-      ? `@${draftRecipient.username}`
+      ? draftRecipient.status
       : activeChat?.type === "group"
         ? `${activeChat.member_count} ${
             activeChat.member_count === 1 ? "member" : "members"
           }`
         : activeChat?.type === "direct"
-          ? ""
+          ? activeChat.other_user_status ?? ""
           : activeChat?.type === "self"
-            ? "Private notes"
+            ? ""
             : "Select a chat");
   const chatHeaderClickable =
     Boolean(activeChat) &&
@@ -99,7 +93,6 @@ export function useChatPresentation({
     getChatTitle,
     getChatSubtitle,
     chatHeaderTitle,
-    chatHeaderAvatar,
     chatHeaderSubtitle,
     chatHeaderClickable,
     actionDialogEntry,

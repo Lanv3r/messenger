@@ -981,7 +981,6 @@ export function ChatScreen({
     getChatTitle,
     getChatSubtitle,
     chatHeaderTitle,
-    chatHeaderAvatar,
     chatHeaderSubtitle,
     chatHeaderClickable,
     actionDialogEntry,
@@ -1632,7 +1631,6 @@ export function ChatScreen({
                 key={activeChatId ?? "draft"}
                 title={chatHeaderTitle}
                 subtitle={chatHeaderSubtitle}
-                avatarUrl={chatHeaderAvatar}
                 clickable={chatHeaderClickable}
                 onClick={handleChatHeaderClick}
                 searchEnabled={activeChatId !== null && draftRecipient === null}
