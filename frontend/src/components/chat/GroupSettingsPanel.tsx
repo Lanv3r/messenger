@@ -545,7 +545,7 @@ export function GroupSettingsPanel({
               value={description}
               maxLength={255}
               rows={1}
-              placeholder="Add a group bio"
+              placeholder="Add a group bio(optional)"
               disabled={!canEditGroupInfo || profileSaving}
               onChange={(event) => {
                 setDescription(event.target.value);
@@ -640,7 +640,11 @@ export function GroupSettingsPanel({
   }
 
   return (
-    <div className="chat-info-nested-backdrop" role="presentation" onClick={onClose}>
+    <div
+      className="chat-info-nested-backdrop group-settings-backdrop"
+      role="presentation"
+      onClick={onClose}
+    >
       <section
         className={`chat-info-nested-panel permissions-panel group-settings-panel group-settings-panel-${view}`}
         role="dialog"
