@@ -136,7 +136,6 @@ export function AvatarUploadField({
             title={label}
             onClick={openFilePicker}
           >
-            <ImagePlus size={14} aria-hidden="true" />
             Change
           </button>
         </span>

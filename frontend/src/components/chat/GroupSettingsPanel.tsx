@@ -11,7 +11,6 @@ import {
   ChevronLeft,
   ChevronRight,
   History,
-  ImagePlus,
   Pencil,
   ShieldCheck,
   ShieldPlus,
@@ -525,7 +524,6 @@ export function GroupSettingsPanel({
                 disabled={profileSaving}
                 onClick={() => fileInputRef.current?.click()}
               >
-                <ImagePlus size={14} aria-hidden="true" />
                 Change
               </button>
             ) : null}
