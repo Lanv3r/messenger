@@ -1,10 +1,19 @@
 import {
   useEffect,
+  useRef,
+  useState,
   type ChangeEvent,
   type ClipboardEvent,
   type RefObject,
 } from "react";
-import { ClockArrowUp, Mic, Paperclip, Pencil, SendHorizontal } from "lucide-react";
+import {
+  ClockArrowUp,
+  Mic,
+  Paperclip,
+  Pencil,
+  SendHorizontal,
+  Smile,
+} from "lucide-react";
 
 import { VoiceRecorderControls } from "@/components/chat/VoiceRecorderControls";
 import { getMessagePreviewText } from "@/lib/message-helpers";
@@ -13,6 +22,74 @@ import type { ChatMessage } from "@/types";
 const FILE_MESSAGE_ACCEPT =
   "image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/mp4,audio/ogg,audio/wav,audio/webm,application/pdf,text/plain,text/csv,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const MAX_COMPOSER_VISIBLE_LINES = 13;
+const EMOJI_GROUPS = [
+  {
+    label: "Smileys",
+    emojis: [
+      "😀",
+      "😃",
+      "😄",
+      "😁",
+      "😆",
+      "🥹",
+      "😂",
+      "🙂",
+      "🙃",
+      "😉",
+      "😊",
+      "😍",
+      "🤩",
+      "😘",
+      "😎",
+      "🤔",
+      "😢",
+      "😭",
+      "😡",
+      "🤯",
+      "😴",
+    ],
+  },
+  {
+    label: "Gestures",
+    emojis: ["👍", "👎", "👋", "👏", "🙌", "🤝", "🙏", "💪", "🫶", "👀"],
+  },
+  {
+    label: "Hearts",
+    emojis: [
+      "❤️",
+      "🧡",
+      "💛",
+      "💚",
+      "💙",
+      "💜",
+      "🖤",
+      "🤍",
+      "💔",
+      "❤️‍🔥",
+      "💯",
+      "✨",
+      "🔥",
+    ],
+  },
+  {
+    label: "More",
+    emojis: [
+      "🎉",
+      "🎈",
+      "🎁",
+      "🌟",
+      "✅",
+      "❗",
+      "❓",
+      "🚀",
+      "💡",
+      "🎵",
+      "☕",
+      "🍕",
+      "🌸",
+    ],
+  },
+];
 
 type ChatComposerProps = {
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -70,6 +147,8 @@ export function ChatComposer({
   getSenderName,
 }: ChatComposerProps) {
   const isEditing = editingMessage !== null;
+  const [emojiPickerOpen, setEmojiPickerOpen] = useState(false);
+  const emojiPickerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     const textarea = messageInputRef.current;
@@ -99,6 +178,32 @@ export function ChatComposer({
       textarea.scrollHeight > maxHeight ? "auto" : "hidden";
   }, [message, messageInputRef]);
 
+  useEffect(() => {
+    if (!emojiPickerOpen) {
+      return undefined;
+    }
+
+    const closeEmojiPicker = () => setEmojiPickerOpen(false);
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!emojiPickerRef.current?.contains(event.target as Node)) {
+        closeEmojiPicker();
+      }
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        closeEmojiPicker();
+      }
+    };
+
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [emojiPickerOpen]);
+
   const insertNewlineAtCursor = (textarea: HTMLTextAreaElement) => {
     const selectionStart = textarea.selectionStart;
     const selectionEnd = textarea.selectionEnd;
@@ -108,6 +213,22 @@ export function ChatComposer({
     onMessageChange(nextMessage);
     window.requestAnimationFrame(() => {
       textarea.setSelectionRange(nextCursorPosition, nextCursorPosition);
+    });
+  };
+
+  const insertEmojiAtCursor = (emoji: string) => {
+    const textarea = messageInputRef.current;
+    const selectionStart = textarea?.selectionStart ?? message.length;
+    const selectionEnd = textarea?.selectionEnd ?? message.length;
+    const nextMessage = `${message.slice(0, selectionStart)}${emoji}${message.slice(selectionEnd)}`;
+    const nextCursorPosition = selectionStart + emoji.length;
+
+    onMessageChange(nextMessage);
+    setEmojiPickerOpen(false);
+
+    window.requestAnimationFrame(() => {
+      textarea?.focus();
+      textarea?.setSelectionRange(nextCursorPosition, nextCursorPosition);
     });
   };
 
@@ -180,6 +301,28 @@ export function ChatComposer({
         />
       ) : (
         <>
+          <button
+            type="button"
+            className="attachment-button"
+            aria-label={fileSending ? "Uploading file" : "Attach file"}
+            title={fileSending ? "Uploading file" : "Attach file"}
+            disabled={
+              activeChatId === null ||
+              hasDraftRecipient ||
+              fileSending ||
+              editingMessageSaving ||
+              isMessagingBlocked
+            }
+            onClick={() => {
+              fileInputRef.current?.click();
+            }}
+          >
+            {fileSending ? (
+              <ClockArrowUp aria-hidden="true" size={18} />
+            ) : (
+              <Paperclip aria-hidden="true" size={18} />
+            )}
+          </button>
           <textarea
             ref={messageInputRef}
             id="message"
@@ -209,32 +352,56 @@ export function ChatComposer({
               }
 
               if (event.key === "Escape" && isEditing) {
+                if (emojiPickerOpen) {
+                  event.preventDefault();
+                  setEmojiPickerOpen(false);
+                  return;
+                }
+
                 onCancelEdit();
               }
             }}
           />
-          <button
-            type="button"
-            className="attachment-button"
-            aria-label={fileSending ? "Uploading file" : "Attach file"}
-            title={fileSending ? "Uploading file" : "Attach file"}
-            disabled={
-              activeChatId === null ||
-              hasDraftRecipient ||
-              fileSending ||
-              editingMessageSaving ||
-              isMessagingBlocked
-            }
-            onClick={() => {
-              fileInputRef.current?.click();
-            }}
-          >
-            {fileSending ? (
-              <ClockArrowUp aria-hidden="true" size={18} />
-            ) : (
-              <Paperclip aria-hidden="true" size={18} />
-            )}
-          </button>
+          <div className="emoji-picker-wrap" ref={emojiPickerRef}>
+            <button
+              type="button"
+              className="emoji-picker-button"
+              aria-label="Choose an emoji"
+              aria-expanded={emojiPickerOpen}
+              aria-haspopup="dialog"
+              title="Choose an emoji"
+              disabled={!canSendTextMessages}
+              onClick={() => setEmojiPickerOpen((current) => !current)}
+            >
+              <Smile aria-hidden="true" size={18} />
+            </button>
+            {emojiPickerOpen ? (
+              <div
+                className="emoji-picker"
+                role="dialog"
+                aria-label="Emoji picker"
+              >
+                {EMOJI_GROUPS.map((group) => (
+                  <section className="emoji-picker-group" key={group.label}>
+                    <strong>{group.label}</strong>
+                    <div className="emoji-picker-grid">
+                      {group.emojis.map((emoji) => (
+                        <button
+                          type="button"
+                          key={emoji}
+                          aria-label={`Insert ${emoji}`}
+                          title={emoji}
+                          onClick={() => insertEmojiAtCursor(emoji)}
+                        >
+                          {emoji}
+                        </button>
+                      ))}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <button
             type="button"
             className="voice-record-button"
