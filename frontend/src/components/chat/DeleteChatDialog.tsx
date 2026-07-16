@@ -2,6 +2,7 @@ import type { Chat } from "@/types";
 
 type DeleteChatDialogProps = {
   chat: Chat;
+  clearHistory: boolean;
   deleting: boolean;
   deleteMessagesForEveryone: boolean;
   onDeleteMessagesForEveryoneChange: (value: boolean) => void;
@@ -21,12 +22,9 @@ function getDeleteMessagesPrompt(chat: Chat) {
   return null;
 }
 
-function clearsGroupHistory(chat: Chat) {
-  return chat.type === "group" && chat.member_count >= 2;
-}
-
 export function DeleteChatDialog({
   chat,
+  clearHistory,
   deleting,
   deleteMessagesForEveryone,
   onDeleteMessagesForEveryoneChange,
@@ -34,7 +32,6 @@ export function DeleteChatDialog({
   onConfirm,
 }: DeleteChatDialogProps) {
   const deleteMessagesPrompt = getDeleteMessagesPrompt(chat);
-  const clearHistory = clearsGroupHistory(chat);
 
   return (
     <div
@@ -55,7 +52,7 @@ export function DeleteChatDialog({
           </strong>
           <p>
             {clearHistory
-              ? "This removes the previous messages from your view. The group stays in your chat list."
+              ? "This removes the previous messages from your view. The chat stays in your chat list."
               : "This removes the chat and its previous history from your chat list."}
           </p>
         </div>

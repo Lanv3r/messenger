@@ -43,15 +43,7 @@ export function useChatPresentation({
       return `${prefix}${chat.last_message_text}`;
     }
 
-    if (chat.type === "self") {
-      return "Private notes";
-    }
-
-    if (chat.type === "direct") {
-      return "Direct message";
-    }
-
-    return chat.type;
+    return "";
   }
 
   const chatHeaderTitle = draftRecipient

@@ -21,6 +21,7 @@ type ChatSidebarProps = {
   onJoinChat: (chat: Chat) => void;
   onToggleChatPin: (chat: Chat) => void;
   onDeleteChat: (chat: Chat) => void;
+  onClearHistory: (chat: Chat) => void;
   onLeaveGroup: (chat: Chat) => void;
   onReorderPinnedChats: (chatIds: number[]) => void;
   getChatTitle: (chat: Chat) => string;
@@ -63,6 +64,12 @@ function getPinnedChatIds(chats: Chat[]) {
 
 function clearsGroupHistory(chat: Chat) {
   return chat.type === "group" && chat.member_count >= 2;
+}
+
+function canClearHistory(chat: Chat) {
+  return (
+    chat.type === "self" || chat.type === "direct" || clearsGroupHistory(chat)
+  );
 }
 
 function areChatIdListsEqual(first: number[], second: number[]) {
@@ -145,6 +152,7 @@ export function ChatSidebar({
   onJoinChat,
   onToggleChatPin,
   onDeleteChat,
+  onClearHistory,
   onLeaveGroup,
   onReorderPinnedChats,
   getChatTitle,
@@ -692,24 +700,33 @@ export function ChatSidebar({
             >
               {chatMenu.chat.is_pinned ? "Unpin" : "Pin"}
             </button>
-            <button
-              type="button"
-              role="menuitem"
-              className={
-                clearsGroupHistory(chatMenu.chat) ? undefined : "danger"
-              }
-              onClick={() => {
-                onDeleteChat(chatMenu.chat);
-                setChatMenu(null);
-              }}
-            >
-              {clearsGroupHistory(chatMenu.chat) ? (
+            {canClearHistory(chatMenu.chat) ? (
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  onClearHistory(chatMenu.chat);
+                  setChatMenu(null);
+                }}
+              >
                 <Eraser size={15} aria-hidden="true" />
-              ) : (
+                Clear history
+              </button>
+            ) : null}
+            {!clearsGroupHistory(chatMenu.chat) ? (
+              <button
+                type="button"
+                role="menuitem"
+                className="danger"
+                onClick={() => {
+                  onDeleteChat(chatMenu.chat);
+                  setChatMenu(null);
+                }}
+              >
                 <Trash2 size={15} aria-hidden="true" />
-              )}
-              {clearsGroupHistory(chatMenu.chat) ? "Clear history" : "Delete chat"}
-            </button>
+                Delete chat
+              </button>
+            ) : null}
             {chatMenu.chat.type === "group" ? (
               <button
                 type="button"

@@ -425,6 +425,36 @@ class MessengerIntegrationTest(unittest.TestCase):
             ["reply"],
         )
 
+    def test_clear_history_keeps_direct_chat_visible(self):
+        sender_client, _sender = self.signup("clear-sender")
+        recipient_client, recipient = self.signup("clear-recipient")
+
+        message_response = sender_client.post(
+            "/messages/direct",
+            json={"recipient_id": recipient["id"], "content": "clear me"},
+        )
+        self.assertEqual(message_response.status_code, 200, message_response.text)
+        chat_id = message_response.json()["chat"]["id"]
+
+        clear_response = sender_client.request(
+            "DELETE",
+            f"/chats/{chat_id}",
+            json={"clear_history": True},
+        )
+        self.assertEqual(clear_response.status_code, 200, clear_response.text)
+        self.assertTrue(clear_response.json()["cleared_history"])
+
+        chats_response = sender_client.get("/chats")
+        self.assertEqual(chats_response.status_code, 200, chats_response.text)
+        cleared_chat = next(
+            chat for chat in chats_response.json() if chat["id"] == chat_id
+        )
+        self.assertIsNone(cleared_chat["last_message_id"])
+
+        messages_response = sender_client.get(f"/chats/{chat_id}/messages")
+        self.assertEqual(messages_response.status_code, 200, messages_response.text)
+        self.assertEqual(messages_response.json(), [])
+
     def test_clearing_populated_group_history_keeps_group_in_chat_list(self):
         owner_client, _owner = self.signup("owner")
         member_client, member = self.signup("member")

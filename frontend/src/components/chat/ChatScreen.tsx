@@ -88,6 +88,11 @@ function toUserProfile(member: ChatMember): UserProfile {
   };
 }
 
+type ChatDeleteTarget = {
+  chat: Chat;
+  action: "clear" | "delete";
+};
+
 export function ChatScreen({
   user,
   themeMode,
@@ -132,7 +137,8 @@ export function ChatScreen({
   const [editingAttachmentMessage, setEditingAttachmentMessage] =
     useState<ChatMessage | null>(null);
   const [attachmentEditSaving, setAttachmentEditSaving] = useState(false);
-  const [chatDeleteTarget, setChatDeleteTarget] = useState<Chat | null>(null);
+  const [chatDeleteTarget, setChatDeleteTarget] =
+    useState<ChatDeleteTarget | null>(null);
   const [deleteChatMessagesForEveryone, setDeleteChatMessagesForEveryone] =
     useState(false);
   const [chatDeleting, setChatDeleting] = useState(false);
@@ -1284,8 +1290,11 @@ export function ChatScreen({
     void deleteMessage(entry, scope);
   };
 
-  const openChatDeleteDialog = (chat: Chat) => {
-    setChatDeleteTarget(chat);
+  const openChatDeleteDialog = (
+    chat: Chat,
+    action: ChatDeleteTarget["action"] = "delete",
+  ) => {
+    setChatDeleteTarget({ chat, action });
     setDeleteChatMessagesForEveryone(false);
     setChatError(null);
   };
@@ -1344,10 +1353,12 @@ export function ChatScreen({
   };
 
   const confirmChatDelete = async () => {
-    const chat = chatDeleteTarget;
-    if (!chat) {
+    const target = chatDeleteTarget;
+    if (!target) {
       return;
     }
+
+    const { chat, action } = target;
 
     setChatDeleting(true);
 
@@ -1356,18 +1367,20 @@ export function ChatScreen({
         method: "DELETE",
         body: JSON.stringify({
           delete_messages_for_everyone: deleteChatMessagesForEveryone,
+          clear_history: action === "clear",
         }),
       });
 
       const isActiveChat = activeChatIdRef.current === chat.id;
-      const clearsGroupHistory =
-        chat.type === "group" && chat.member_count >= 2;
+      const clearsHistory =
+        action === "clear" ||
+        (chat.type === "group" && chat.member_count >= 2);
       const nextChat = chats.find(
         (candidate) => candidate.id !== chat.id && candidate.type === "self",
       ) ?? chats.find((candidate) => candidate.id !== chat.id) ?? null;
 
       setChats((current) =>
-        clearsGroupHistory
+        clearsHistory
           ? current.map((candidate) =>
               candidate.id === chat.id
                 ? {
@@ -1386,7 +1399,7 @@ export function ChatScreen({
       clearComposerDraft(chat.id);
 
       if (isActiveChat) {
-        if (clearsGroupHistory) {
+        if (clearsHistory) {
           setMessages([]);
           setMessagesLoading(false);
           setMessage("");
@@ -1412,7 +1425,7 @@ export function ChatScreen({
         }
       }
 
-      if (clearsGroupHistory) {
+      if (clearsHistory) {
         void refreshChats();
       }
 
@@ -1615,6 +1628,7 @@ export function ChatScreen({
               void toggleChatPin(chat);
             }}
             onDeleteChat={openChatDeleteDialog}
+            onClearHistory={(chat) => openChatDeleteDialog(chat, "clear")}
             onLeaveGroup={openLeaveGroupDialog}
             onReorderPinnedChats={(chatIds) => {
               void reorderPinnedChats(chatIds);
@@ -1638,8 +1652,15 @@ export function ChatScreen({
                 showChatMenu={activeChatId !== null && draftRecipient === null}
                 showContactMenu={directContactUserId !== null}
                 showLeaveGroup={activeChat?.type === "group"}
-                clearHistoryAction={
-                  activeChat?.type === "group" && activeChat.member_count >= 2
+                showClearHistory={
+                  activeChat?.type === "self" ||
+                  activeChat?.type === "direct" ||
+                  (activeChat?.type === "group" && activeChat.member_count >= 2)
+                }
+                showDeleteChat={
+                  !activeChat ||
+                  activeChat.type !== "group" ||
+                  activeChat.member_count < 2
                 }
                 onSearchClick={() => {
                   if (activeChatId === null || draftRecipient !== null) {
@@ -1659,6 +1680,11 @@ export function ChatScreen({
                 onDeleteChat={() => {
                   if (activeChat) {
                     openChatDeleteDialog(activeChat);
+                  }
+                }}
+                onClearHistory={() => {
+                  if (activeChat) {
+                    openChatDeleteDialog(activeChat, "clear");
                   }
                 }}
                 onLeaveGroup={() => {
@@ -1958,7 +1984,12 @@ export function ChatScreen({
 
         {chatDeleteTarget ? (
           <DeleteChatDialog
-            chat={chatDeleteTarget}
+            chat={chatDeleteTarget.chat}
+            clearHistory={
+              chatDeleteTarget.action === "clear" ||
+              (chatDeleteTarget.chat.type === "group" &&
+                chatDeleteTarget.chat.member_count >= 2)
+            }
             deleting={chatDeleting}
             deleteMessagesForEveryone={deleteChatMessagesForEveryone}
             onDeleteMessagesForEveryoneChange={

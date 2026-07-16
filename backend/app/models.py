@@ -208,6 +208,7 @@ class ChatParticipant(ChatParticipantBase, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     cleared_at: datetime | None = None
+    show_when_empty: bool = False
     joined_at: datetime | None = Field(
         default=None,
         sa_type=DateTime,
@@ -376,6 +377,7 @@ class ChatSettingsUpdate(SQLModel):
 
 class ChatDeleteRequest(SQLModel):
     delete_messages_for_everyone: bool = False
+    clear_history: bool = False
 
 
 class PinnedChatOrderUpdate(SQLModel):

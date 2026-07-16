@@ -294,7 +294,10 @@ def get_chats(
         ).first()
 
         if last_message is None and (
-            chat.type == "direct"
+            (
+                chat.type == "direct"
+                and not current_participant.show_when_empty
+            )
             or (
                 chat.type == "group"
                 and current_participant.cleared_at is not None
@@ -695,6 +698,7 @@ async def delete_chat(
         )
     ).all()
     is_group_history_clear = chat.type == "group" and len(participant_ids) >= 2
+    clears_history = is_group_history_clear or payload.clear_history
     deleted_at = datetime.now(timezone.utc)
     delete_messages_for_everyone = (
         chat.type == "self" or payload.delete_messages_for_everyone
@@ -720,7 +724,10 @@ async def delete_chat(
             )
 
     participant.cleared_at = deleted_at
-    if not is_group_history_clear:
+    participant.show_when_empty = (
+        chat.type == "direct" and payload.clear_history
+    )
+    if not clears_history:
         participant.is_pinned = False
         participant.pinned_order = None
     session.add(participant)
@@ -741,7 +748,7 @@ async def delete_chat(
                 room=f"user:{participant_id}",
             )
 
-    return {"ok": True, "cleared_history": is_group_history_clear}
+    return {"ok": True, "cleared_history": clears_history}
 
 
 @router.post("/chats/{chat_id}/read")

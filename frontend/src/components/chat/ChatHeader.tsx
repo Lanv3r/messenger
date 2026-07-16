@@ -16,12 +16,14 @@ type ChatHeaderProps = {
   searchActive: boolean;
   showChatMenu: boolean;
   showContactMenu: boolean;
-  clearHistoryAction: boolean;
+  showClearHistory: boolean;
+  showDeleteChat: boolean;
   showLeaveGroup: boolean;
   onClick: () => void;
   onSearchClick: () => void;
   onViewProfile: () => void;
   onDeleteChat: () => void;
+  onClearHistory: () => void;
   onLeaveGroup: () => void;
 };
 
@@ -33,12 +35,14 @@ export function ChatHeader({
   searchActive,
   showChatMenu,
   showContactMenu,
-  clearHistoryAction,
+  showClearHistory,
+  showDeleteChat,
   showLeaveGroup,
   onClick,
   onSearchClick,
   onViewProfile,
   onDeleteChat,
+  onClearHistory,
   onLeaveGroup,
 }: ChatHeaderProps) {
   const [contactMenuOpen, setContactMenuOpen] = useState(false);
@@ -134,24 +138,33 @@ export function ChatHeader({
                     <span>View profile</span>
                   </button>
                 ) : null}
-                <button
-                  type="button"
-                  role="menuitem"
-                  className={clearHistoryAction ? undefined : "danger"}
-                  onClick={() => {
-                    onDeleteChat();
-                    setContactMenuOpen(false);
-                  }}
-                >
-                  {clearHistoryAction ? (
+                {showClearHistory ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      onClearHistory();
+                      setContactMenuOpen(false);
+                    }}
+                  >
                     <Eraser size={16} aria-hidden="true" />
-                  ) : (
+                    <span>Clear history</span>
+                  </button>
+                ) : null}
+                {showDeleteChat ? (
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="danger"
+                    onClick={() => {
+                      onDeleteChat();
+                      setContactMenuOpen(false);
+                    }}
+                  >
                     <Trash2 size={16} aria-hidden="true" />
-                  )}
-                  <span>
-                    {clearHistoryAction ? "Clear history" : "Delete chat"}
-                  </span>
-                </button>
+                    <span>Delete chat</span>
+                  </button>
+                ) : null}
                 {showLeaveGroup ? (
                   <button
                     type="button"
