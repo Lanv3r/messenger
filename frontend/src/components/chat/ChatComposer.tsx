@@ -22,74 +22,153 @@ import type { ChatMessage } from "@/types";
 const FILE_MESSAGE_ACCEPT =
   "image/png,image/jpeg,image/gif,image/webp,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/mp4,audio/ogg,audio/wav,audio/webm,application/pdf,text/plain,text/csv,application/zip,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const MAX_COMPOSER_VISIBLE_LINES = 13;
-const EMOJI_GROUPS = [
+const CURATED_EMOJI_GROUPS = [
   {
     label: "Smileys",
-    emojis: [
-      "😀",
-      "😃",
-      "😄",
-      "😁",
-      "😆",
-      "🥹",
-      "😂",
-      "🙂",
-      "🙃",
-      "😉",
-      "😊",
-      "😍",
-      "🤩",
-      "😘",
-      "😎",
-      "🤔",
-      "😢",
-      "😭",
-      "😡",
-      "🤯",
-      "😴",
-    ],
+    emojis:
+      "😀 😃 😄 😁 😆 😅 😂 🤣 🥹 🥲 🙂 🙃 😉 😊 😇 🥰 😍 🤩 😘 😋 😎 🤓 🧐 🤔 🫡 🤗 🤭 🫢 🫣 🤫 🤐 🤨 😐 😑 😶 🙄 😏 😣 😥 😮 😯 😲 🥳 🤪 😵 😵‍💫 😴 🤤 😷 🤒 🤕 🤢 🤮 🤧 😈 👿 👻 💀 🤖 💩"
+        .split(" "),
   },
   {
-    label: "Gestures",
-    emojis: ["👍", "👎", "👋", "👏", "🙌", "🤝", "🙏", "💪", "🫶", "👀"],
+    label: "People",
+    emojis:
+      "👍 👎 👏 🙌 🫶 🤝 🙏 💪 👀 👋 🤞 ✌️ 🤟 🤘 👌 🤌 🤙 💅 🫂 🧠 🙋 🙆 🙅 🤷 🙇 🧑‍💻 👩‍💻 👨‍💻 🧑‍🎨 👩‍🎨 👨‍🎨 🧑‍🍳 👩‍🍳 👨‍🍳 🧑‍🚀 👩‍🚀 👨‍🚀"
+        .split(" "),
   },
   {
-    label: "Hearts",
+    label: "Nature",
     emojis: [
-      "❤️",
-      "🧡",
-      "💛",
-      "💚",
-      "💙",
-      "💜",
-      "🖤",
-      "🤍",
-      "💔",
-      "❤️‍🔥",
-      "💯",
-      "✨",
-      "🔥",
-    ],
-  },
-  {
-    label: "More",
-    emojis: [
-      "🎉",
-      "🎈",
-      "🎁",
-      "🌟",
-      "✅",
-      "❗",
-      "❓",
-      "🚀",
-      "💡",
-      "🎵",
-      "☕",
-      "🍕",
+      "🐶",
+      "🐱",
+      "🐭",
+      "🐹",
+      "🐰",
+      "🦊",
+      "🐻",
+      "🐼",
+      "🐨",
+      "🐯",
+      "🦁",
+      "🐮",
+      "🐷",
+      "🐸",
+      "🐵",
+      "🐔",
+      "🐧",
+      "🐦",
+      "🦋",
+      "🐝",
+      "🐙",
+      "🐬",
       "🌸",
+      "🌹",
+      "🌻",
+      "🌲",
+      "🍀",
+      "🌈",
     ],
+  },
+  {
+    label: "Food",
+    emojis:
+      "🍏 🍎 🍐 🍊 🍋 🍌 🍉 🍇 🍓 🫐 🍈 🍒 🍑 🥭 🍍 🥥 🥝 🍅 🥑 🥦 🥕 🌽 🥨 🧀 🍞 🥐 🥞 🍔 🍟 🍕 🌭 🌮 🌯 🍜 🍣 🍤 🍩 🍪 🎂 🍫 🍿 ☕ 🍵 🥤 🍺 🍷 🥂"
+        .split(" "),
+  },
+  {
+    label: "Travel",
+    emojis:
+      "🚗 🚕 🚌 🚎 🏎️ 🚓 🚑 🚒 🚚 🚜 🏍️ 🚲 🛴 🚆 🚇 ✈️ 🛫 🛬 🚀 🛸 🚁 ⛵ 🚤 🛳️ 🗺️ 🗽 🗼 🏰 🏖️ 🏝️ 🏜️ 🌋 ⛰️ 🏕️ 🏠 🏢 🌃 🌅 🌉"
+        .split(" "),
+  },
+  {
+    label: "Activities",
+    emojis:
+      "⚽ 🏀 🏈 ⚾ 🎾 🏐 🏉 🎱 🏓 🏸 🥊 🥋 🎯 🪀 🪁 🎮 🕹️ 🎲 🧩 ♟️ 🎨 🎭 🎬 🎤 🎧 🎷 🎸 🎹 🥁 🎻 🎪 🎟️ 🎫 🏆 🥇 🥈 🥉 🎉 🎈 🎁"
+        .split(" "),
+  },
+  {
+    label: "Objects",
+    emojis:
+      "⌚ 📱 💻 ⌨️ 🖥️ 🖨️ 🖱️ 💾 💿 📷 📸 📹 🎥 📺 📻 🎙️ ⏰ ⌛ 🔋 🔌 💡 🔦 🕯️ 🧯 🛒 💳 💰 💎 ⚖️ 🔧 🔨 🪛 🔩 ⚙️ 🧰 🧲 🧪 🧬 🔬 🔭 📚 ✏️ 📝 📌 📎 ✂️ 🔒 🔑"
+        .split(" "),
+  },
+  {
+    label: "Symbols",
+    emojis:
+      "❤️ 🧡 💛 💚 💙 💜 🩷 🖤 🩶 🤍 🤎 💔 ❤️‍🔥 ❤️‍🩹 💯 ✨ ⭐ 🌟 💫 🔥 💥 💦 💨 💬 🗨️ 💤 ✅ ☑️ ✔️ ❌ ❗ ❓ ⁉️ ⚠️ 🔞 ♻️ 🔱 🔔 🎵 🎶 ☮️ ✝️ ☪️ ☯️ ♈ ♉ ♊ ♋ ♌ ♍ ♎ ♏ ♐ ♑ ♒ ♓"
+        .split(" "),
+  },
+  {
+    label: "Flags",
+    emojis:
+      "🏳️ 🏴 🏁 🚩 🏳️‍🌈 🏳️‍⚧️ 🇺🇸 🇬🇧 🇨🇦 🇦🇺 🇩🇪 🇫🇷 🇮🇹 🇪🇸 🇵🇹 🇳🇱 🇧🇪 🇨🇭 🇸🇪 🇳🇴 🇩🇰 🇫🇮 🇵🇱 🇺🇦 🇯🇵 🇰🇷 🇨🇳 🇮🇳 🇧🇷 🇲🇽 🇦🇷 🇿🇦 🇹🇷 🇸🇦 🇦🇪"
+        .split(" "),
   },
 ];
+
+const EMOJI_PRESENTATION = /^\p{Emoji_Presentation}$/u;
+const ADDITIONAL_EMOJI_CATEGORIES = [
+  { label: "Activities", ranges: [[0x1f000, 0x1f0ff]] },
+  { label: "Symbols", ranges: [[0x1f100, 0x1f2ff]] },
+  { label: "Nature", ranges: [[0x1f300, 0x1f3ff]] },
+  { label: "Animals", ranges: [[0x1f400, 0x1f4ff]] },
+  { label: "Objects", ranges: [[0x1f500, 0x1f5ff]] },
+  { label: "Smileys", ranges: [[0x1f600, 0x1f64f]] },
+  { label: "Travel", ranges: [[0x1f680, 0x1f6ff]] },
+  { label: "Objects", ranges: [[0x1f700, 0x1f77f]] },
+  { label: "Symbols", ranges: [[0x1f780, 0x1f8ff]] },
+  { label: "People", ranges: [[0x1f900, 0x1f93f]] },
+  { label: "Food", ranges: [[0x1f940, 0x1f97f]] },
+  { label: "Animals", ranges: [[0x1f980, 0x1f9bf]] },
+  { label: "Objects", ranges: [[0x1f9c0, 0x1f9ff]] },
+  { label: "Activities", ranges: [[0x1fa00, 0x1fa6f]] },
+  { label: "Objects", ranges: [[0x1fa70, 0x1faff]] },
+] as const;
+
+function getEmojiGroups() {
+  const includedEmojis = new Set(
+    CURATED_EMOJI_GROUPS.flatMap((group) => group.emojis),
+  );
+  const groups = CURATED_EMOJI_GROUPS.flatMap((group) => [
+    { label: group.label, emojis: [...group.emojis] },
+    ...(group.label === "Nature" ? [{ label: "Animals", emojis: [] }] : []),
+  ]);
+  const groupsByLabel = new Map(groups.map((group) => [group.label, group]));
+
+  for (const category of ADDITIONAL_EMOJI_CATEGORIES) {
+    let group = groupsByLabel.get(category.label);
+
+    if (!group) {
+      group = { label: category.label, emojis: [] };
+      groupsByLabel.set(category.label, group);
+      groups.push(group);
+    }
+
+    for (const [start, end] of category.ranges) {
+      for (let codePoint = start; codePoint <= end; codePoint += 1) {
+        if (
+          (codePoint >= 0x1f1e6 && codePoint <= 0x1f1ff) ||
+          (codePoint >= 0x1f3fb && codePoint <= 0x1f3ff)
+        ) {
+          continue;
+        }
+
+        const emoji = String.fromCodePoint(codePoint);
+
+        if (!EMOJI_PRESENTATION.test(emoji) || includedEmojis.has(emoji)) {
+          continue;
+        }
+
+        includedEmojis.add(emoji);
+        group.emojis.push(emoji);
+      }
+    }
+  }
+
+  return groups;
+}
+
+const EMOJI_GROUPS = getEmojiGroups();
 
 type ChatComposerProps = {
   fileInputRef: RefObject<HTMLInputElement | null>;
