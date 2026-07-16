@@ -134,15 +134,6 @@ function GroupMemberList({
             <div>
               <strong>{getChatMemberDisplayName(member)}</strong>
               <span>@{member.username}</span>
-              {member.member_tags?.length ? (
-                <span className="chat-member-tags">
-                  {member.member_tags.map((tag) => (
-                    <span className="chat-member-tag" key={tag}>
-                      {tag}
-                    </span>
-                  ))}
-                </span>
-              ) : null}
             </div>
           </button>
           <div className="chat-member-side">
@@ -659,7 +650,7 @@ export function GroupSettingsPanel({
         aria-label="Edit group"
         onClick={(event) => event.stopPropagation()}
       >
-        {content}
+        <div className="group-settings-scroll">{content}</div>
       </section>
 
       {memberContextMenu ? (

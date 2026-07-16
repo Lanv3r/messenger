@@ -340,15 +340,6 @@ export function GroupInfoPanel({
                         {getChatMemberDisplayName(member)}
                       </strong>
                       <span>@{member.username}</span>
-                      {member.member_tags?.length ? (
-                        <span className="chat-member-tags">
-                          {member.member_tags.map((tag) => (
-                            <span className="chat-member-tag" key={tag}>
-                              {tag}
-                            </span>
-                          ))}
-                        </span>
-                      ) : null}
                     </div>
                   </button>
                   <div className="chat-member-side">
@@ -363,15 +354,11 @@ export function GroupInfoPanel({
                           : "Remove"}
                       </button>
                     ) : null}
-                    <small
-                      className={
-                        member.role === "owner" || member.role === "admin"
-                          ? `chat-member-role-tag ${member.role}`
-                          : undefined
-                      }
-                    >
-                      {member.role}
-                    </small>
+                    {member.role === "owner" || member.role === "admin" ? (
+                      <small className={`chat-member-role-tag ${member.role}`}>
+                        {member.role}
+                      </small>
+                    ) : null}
                   </div>
                 </div>
               ))}

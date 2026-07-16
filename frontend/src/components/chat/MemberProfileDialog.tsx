@@ -162,7 +162,9 @@ export function MemberProfileDialog({
     <div className="profile-card-backdrop" role="presentation" onClick={onClose}>
       <article
         className={`profile-popup-card${
-          isPermissionsEditor ? " member-permissions-editor" : ""
+          isPermissionsEditor
+            ? " member-permissions-editor"
+            : " user-profile-popup"
         }`}
         role="dialog"
         aria-modal="true"
@@ -202,13 +204,13 @@ export function MemberProfileDialog({
             >
               &times;
             </button>
-            {memberAvatar}
-            <div>
-              {memberIdentity}
-              {member.bio ? <p className="profile-bio">{member.bio}</p> : null}
-              <span className="profile-status">{member.status}</span>
-              {memberManagementPanel}
+            <div className="user-profile-identity">
+              {memberAvatar}
+              <div>{memberIdentity}</div>
             </div>
+            {member.bio ? <p className="profile-bio">{member.bio}</p> : null}
+            <span className="profile-status">{member.status}</span>
+            {memberManagementPanel}
           </>
         )}
       </article>
