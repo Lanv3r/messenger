@@ -196,6 +196,19 @@ export type ChatUpdatedEvent = {
   last_message: ChatMessage;
 };
 
+export type ChatProfileUpdatedEvent = Pick<
+  Chat,
+  | "id"
+  | "type"
+  | "title"
+  | "description"
+  | "avatar_url"
+  | "last_message_id"
+  | "deleted_at"
+  | "created_at"
+  | "updated_at"
+>;
+
 export type ChatMembersUpdatedEvent = {
   chat: Chat;
   added_member_ids: number[];
@@ -212,6 +225,7 @@ export type RemovedFromChatEvent = {
   chat_id: number;
   removed_by: number | null;
   left_by_self?: boolean;
+  group_deleted?: boolean;
 };
 
 export type MessagePinUpdatedEvent = {

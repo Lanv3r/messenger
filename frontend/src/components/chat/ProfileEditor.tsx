@@ -159,7 +159,11 @@ export function ProfileEditor({
         </label>
         {error ? <p className="profile-error">{error}</p> : null}
         {message ? <p className="profile-success">{message}</p> : null}
-        <Button type="submit" className="profile-editor-save" disabled={saving}>
+        <Button
+          type="submit"
+          className="profile-editor-save text-action-button"
+          disabled={saving}
+        >
           {saving ? "Saving..." : "Save"}
         </Button>
       </form>

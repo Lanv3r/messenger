@@ -51,7 +51,10 @@ type GroupInfoPanelProps = {
   error: string | null;
   isAddingMember: boolean;
   isManaging: boolean;
+  canManageGroup: boolean;
+  canEditGroupInfo: boolean;
   canManageMembers: boolean;
+  canDeleteGroup: boolean;
   memberRemovalUserId: number | null;
   memberRemovalError: string | null;
   memberRemovalMessage: string | null;
@@ -73,6 +76,12 @@ type GroupInfoPanelProps = {
   onOpenAddMember: () => void;
   onCloseAddMember: () => void;
   onCloseManage: () => void;
+  onUpdateGroupProfile: (
+    title: string,
+    description: string,
+    avatar: File | null,
+  ) => Promise<void>;
+  onDeleteGroup: () => Promise<void>;
   onViewMemberProfile: (member: ChatMember) => void;
   onOpenMemberManagement: (
     member: ChatMember,
@@ -95,7 +104,10 @@ export function GroupInfoPanel({
   error,
   isAddingMember,
   isManaging,
+  canManageGroup,
+  canEditGroupInfo,
   canManageMembers,
+  canDeleteGroup,
   memberRemovalUserId,
   memberRemovalError,
   memberRemovalMessage,
@@ -117,6 +129,8 @@ export function GroupInfoPanel({
   onOpenAddMember,
   onCloseAddMember,
   onCloseManage,
+  onUpdateGroupProfile,
+  onDeleteGroup,
   onViewMemberProfile,
   onOpenMemberManagement,
   onStartRemoveMember,
@@ -221,7 +235,7 @@ export function GroupInfoPanel({
       onClick={onCloseTopmost}
     >
       <section
-        className="chat-info-panel"
+        className="chat-info-panel group-info-panel"
         role="dialog"
         aria-modal="true"
         aria-label="Group members"
@@ -233,7 +247,7 @@ export function GroupInfoPanel({
           </button>
         </div>
 
-        <div className="chat-info-hero">
+        <div className="chat-info-profile group-info-profile">
           <img
             src={getAssetUrl(chat.display_avatar_url || chat.avatar_url)}
             alt=""
@@ -241,19 +255,21 @@ export function GroupInfoPanel({
               event.currentTarget.src = "/favicon.svg";
             }}
           />
-          <strong>{getChatTitle(chat)}</strong>
-          {chat.description ? <span>{chat.description}</span> : null}
+          <div>
+            <h2>{getChatTitle(chat)}</h2>
+            {chat.description ? <p>{chat.description}</p> : null}
+          </div>
         </div>
 
         <div className="chat-info-actions">
-          {canManageMembers ? (
+          {canManageGroup ? (
             <Button
               type="button"
               size="sm"
               variant="outline"
               onClick={onOpenManage}
             >
-              Manage
+              Edit group
             </Button>
           ) : null}
           <Button
@@ -347,7 +363,15 @@ export function GroupInfoPanel({
                           : "Remove"}
                       </button>
                     ) : null}
-                    <small>{member.role}</small>
+                    <small
+                      className={
+                        member.role === "owner" || member.role === "admin"
+                          ? `chat-member-role-tag ${member.role}`
+                          : undefined
+                      }
+                    >
+                      {member.role}
+                    </small>
                   </div>
                 </div>
               ))}
@@ -545,15 +569,26 @@ export function GroupInfoPanel({
               </div>
             ) : null}
 
-            {isManaging && canManageMembers ? (
+            {isManaging && canManageGroup ? (
               <GroupSettingsPanel
+                chat={chat}
+                members={members}
+                canEditGroupInfo={canEditGroupInfo}
                 canManageMembers={canManageMembers}
+                canDeleteGroup={canDeleteGroup}
                 permissionsDraft={memberPermissionsDraft}
                 loading={memberPermissionsLoading}
                 saving={memberPermissionsSaving}
                 error={memberPermissionsError}
                 message={memberPermissionsMessage}
+                getChatMemberDisplayName={getChatMemberDisplayName}
                 onClose={onCloseManage}
+                onViewMemberProfile={onViewMemberProfile}
+                onOpenMemberManagement={onOpenMemberManagement}
+                onStartRemoveMember={onStartRemoveMember}
+                onAddMemberTag={onAddMemberTag}
+                onUpdateGroupProfile={onUpdateGroupProfile}
+                onDeleteGroup={onDeleteGroup}
                 onBooleanPermissionChange={onMemberBooleanPermissionChange}
                 onNumericPermissionChange={onMemberNumericPermissionChange}
                 onSave={onSaveMemberDefaultPermissions}

@@ -12,9 +12,11 @@ from app.models import (
     ChatMemberPermissions,
     ChatMemberPublic,
     ChatParticipant,
+    ChatPublic,
     ChatReadRequest,
     ChatSettingsUpdate,
     GroupCreate,
+    GroupUpdate,
     MemberTagCreate,
     Message,
     MessageUserState,
@@ -160,6 +162,13 @@ def group_create_from_form(
         description=description,
         member_ids=member_ids or [],
     )
+
+
+def group_update_from_form(
+    title: Annotated[str, Form()],
+    description: Annotated[str | None, Form()] = None,
+) -> GroupUpdate:
+    return GroupUpdate(title=title, description=description)
 
 
 def get_chat_sort_timestamp(chat: ChatListItem) -> float:
@@ -535,6 +544,128 @@ def get_direct_chat_by_user(
         is_pinned=current_participant.is_pinned,
         pinned_order=current_participant.pinned_order,
     )
+
+
+@router.patch("/chats/{chat_id}/group", response_model=ChatPublic)
+async def update_group_chat(
+    chat_id: int,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+    payload: Annotated[GroupUpdate, Depends(group_update_from_form)],
+    avatar: Annotated[UploadFile | None, File()] = None,
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    require_chat_permission(session, chat_id, user_id, "change_group_info")
+    chat = session.get(Chat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if chat.type != "group":
+        raise HTTPException(
+            status_code=403,
+            detail="Only group chats can be updated here",
+        )
+
+    normalized_title = payload.title.strip()
+    normalized_description = payload.description.strip() if payload.description else None
+    if not normalized_title:
+        raise HTTPException(status_code=400, detail="Group name is required")
+    if len(normalized_title) > 128:
+        raise HTTPException(
+            status_code=400,
+            detail="Group name must be at most 128 characters.",
+        )
+    if normalized_description is not None and len(normalized_description) > 255:
+        raise HTTPException(
+            status_code=400,
+            detail="Description must be at most 255 characters.",
+        )
+
+    chat.title = normalized_title
+    chat.description = normalized_description or None
+    if avatar is not None:
+        chat.avatar_url = await save_avatar_upload(avatar)
+    chat.updated_at = datetime.now(timezone.utc)
+    session.add(chat)
+    session.commit()
+    session.refresh(chat)
+
+    if chat.id is None or chat.created_at is None or chat.updated_at is None:
+        raise HTTPException(status_code=500, detail="Chat was not updated correctly")
+
+    profile = ChatPublic(
+        id=chat.id,
+        type=chat.type,
+        title=chat.title,
+        description=chat.description,
+        avatar_url=chat.avatar_url,
+        last_message_id=chat.last_message_id,
+        deleted_at=chat.deleted_at,
+        created_at=chat.created_at,
+        updated_at=chat.updated_at,
+    )
+    member_ids = session.exec(
+        select(col(ChatParticipant.user_id)).where(
+            col(ChatParticipant.chat_id) == chat.id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).all()
+    for member_id in member_ids:
+        await sio.emit(
+            "chat_profile_updated",
+            profile.model_dump(mode="json"),
+            room=f"user:{member_id}",
+        )
+
+    return profile
+
+
+@router.delete("/chats/{chat_id}/group")
+async def delete_group_for_everyone(
+    chat_id: int,
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    user_id = current_user.id
+    if user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    participant = require_active_participant(session, chat_id, user_id)
+    chat = session.get(Chat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if chat.type != "group":
+        raise HTTPException(
+            status_code=403,
+            detail="Only group chats can be deleted here",
+        )
+    if participant.role != "owner":
+        raise HTTPException(status_code=403, detail="Only the group owner can delete it")
+
+    member_ids = session.exec(
+        select(col(ChatParticipant.user_id)).where(
+            col(ChatParticipant.chat_id) == chat_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).all()
+    session.delete(chat)
+    session.commit()
+
+    for member_id in member_ids:
+        await sio.emit(
+            "removed_from_chat",
+            {
+                "chat_id": chat_id,
+                "removed_by": user_id,
+                "left_by_self": member_id == user_id,
+                "group_deleted": True,
+            },
+            room=f"user:{member_id}",
+        )
+
+    return {"ok": True}
 
 
 @router.delete("/chats/{chat_id}")

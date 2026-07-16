@@ -29,7 +29,7 @@ export function MemberRemovalDialog({
         </div>
 
         <div className="message-action-dialog-actions">
-          <button type="button" onClick={onCancel}>
+          <button type="button" className="text-action-button" onClick={onCancel}>
             Cancel
           </button>
           <button

@@ -458,6 +458,8 @@ export function ChatScreen({
     memberRemovalCandidate,
     currentUserCanDeleteGroupMessages,
     currentUserCanPinGroupMessages,
+    currentUserCanManageAdmins,
+    currentUserCanChangeGroupInfo,
     currentUserCanRemoveGroupMembers,
     selectedAdminPermissions,
     canEditSelectedAdmin,
@@ -1433,6 +1435,119 @@ export function ChatScreen({
     }
   };
 
+  const updateActiveGroupProfile = async (
+    title: string,
+    description: string,
+    avatar: File | null,
+  ) => {
+    if (!activeChat || activeChat.type !== "group") {
+      throw new Error("Select a group before updating its profile.");
+    }
+
+    const formData = new FormData();
+    formData.append("title", title);
+    formData.append("description", description);
+    if (avatar) {
+      formData.append("avatar", avatar);
+    }
+
+    try {
+      const updated = await apiFetch<
+        Pick<
+          Chat,
+          | "id"
+          | "type"
+          | "title"
+          | "description"
+          | "avatar_url"
+          | "last_message_id"
+          | "deleted_at"
+          | "created_at"
+          | "updated_at"
+        >
+      >(`/chats/${activeChat.id}/group`, {
+        method: "PATCH",
+        body: formData,
+      });
+
+      setChats((current) =>
+        current.map((chat) =>
+          chat.id === updated.id
+            ? {
+                ...chat,
+                ...updated,
+                display_title: updated.title ?? chat.display_title,
+                display_avatar_url: updated.avatar_url || "/favicon.svg",
+              }
+            : chat,
+        ),
+      );
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "Could not validate credentials"
+      ) {
+        onSessionExpired();
+      }
+
+      throw error;
+    }
+  };
+
+  const deleteActiveGroupForEveryone = async () => {
+    if (!activeChat || activeChat.type !== "group") {
+      throw new Error("Select a group before deleting it.");
+    }
+
+    const chat = activeChat;
+    try {
+      await apiFetch<{ ok: boolean }>(`/chats/${chat.id}/group`, {
+        method: "DELETE",
+      });
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "Could not validate credentials"
+      ) {
+        onSessionExpired();
+      }
+
+      throw error;
+    }
+
+    const isActiveChat = activeChatIdRef.current === chat.id;
+    const nextChat =
+      chats.find(
+        (candidate) => candidate.id !== chat.id && candidate.type === "self",
+      ) ?? chats.find((candidate) => candidate.id !== chat.id) ?? null;
+
+    setChats((current) => current.filter((candidate) => candidate.id !== chat.id));
+    clearChatReadState(chat.id);
+    clearComposerDraft(chat.id);
+    resetChatInfoPanel();
+    clearMemberRemoval();
+
+    if (!isActiveChat) {
+      return;
+    }
+
+    if (nextChat) {
+      joinChat(nextChat);
+      return;
+    }
+
+    socketRef.current?.emit("leave_room", String(chat.id));
+    activeChatIdRef.current = null;
+    setActiveChatId(null);
+    setDraftRecipient(null);
+    setMessages([]);
+    setMessagesLoading(false);
+    setMessage("");
+    setReplyToMessage(null);
+    resetMessageSearch();
+    resetEditingState();
+  };
+
   return (
     <main className="chat-shell">
       <div className="chat-layout">
@@ -1601,7 +1716,14 @@ export function ChatScreen({
             error={chatInfoError}
             isAddingMember={chatInfoAddingMember}
             isManaging={chatInfoManaging}
+            canManageGroup={
+              currentUserCanChangeGroupInfo ||
+              currentUserCanManageAdmins ||
+              currentUserCanRemoveGroupMembers
+            }
+            canEditGroupInfo={currentUserCanChangeGroupInfo}
             canManageMembers={currentUserCanRemoveGroupMembers}
+            canDeleteGroup={activeChat.current_user_role === "owner"}
             memberRemovalUserId={memberRemovalUserId}
             memberRemovalError={memberRemovalError}
             memberRemovalMessage={memberRemovalMessage}
@@ -1636,12 +1758,15 @@ export function ChatScreen({
             onOpenManage={() => {
               setChatInfoManaging(true);
               setChatInfoAddingMember(false);
+              void loadMemberDefaultPermissions(activeChat.id);
             }}
             onOpenAddMember={() => {
               openAddMemberPanel();
             }}
             onCloseAddMember={() => setChatInfoAddingMember(false)}
             onCloseManage={() => setChatInfoManaging(false)}
+            onUpdateGroupProfile={updateActiveGroupProfile}
+            onDeleteGroup={deleteActiveGroupForEveryone}
             onViewMemberProfile={(member) => {
               setSelectedContactProfile(toUserProfile(member));
             }}
@@ -2046,6 +2171,7 @@ export function ChatScreen({
             <div className="message-action-dialog-actions">
               <button
                 type="button"
+                className="text-action-button"
                 disabled={profileSaving}
                 onClick={cancelProfileCloseConfirm}
               >
@@ -2060,6 +2186,7 @@ export function ChatScreen({
               </button>
               <button
                 type="button"
+                className="text-action-button"
                 disabled={profileSaving}
                 onClick={() => {
                   void saveAndCloseProfileEditor();

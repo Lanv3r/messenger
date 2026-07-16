@@ -199,6 +199,7 @@ export function MemberManagementPanel({
             type="button"
             size="sm"
             variant="outline"
+            className="text-action-button"
             disabled={selectedMemberPermissionsSaving}
             onClick={() => onModeChange(null)}
           >
@@ -207,6 +208,7 @@ export function MemberManagementPanel({
           <Button
             type="button"
             size="sm"
+            className="text-action-button"
             disabled={
               selectedMemberPermissionsSaving ||
               !selectedMemberPermissionsDraft ||
@@ -339,6 +341,7 @@ export function MemberManagementPanel({
               <div className="message-action-dialog-actions">
                 <button
                   type="button"
+                  className="text-action-button"
                   disabled={selectedMemberPermissionIsSaving}
                   onClick={closeDismissConfirmation}
                 >
@@ -368,6 +371,7 @@ export function MemberManagementPanel({
             type="button"
             size="sm"
             variant="outline"
+            className="text-action-button"
             disabled={selectedMemberPermissionIsSaving}
             onClick={() => onModeChange(null)}
           >
@@ -376,6 +380,7 @@ export function MemberManagementPanel({
           <Button
             type="button"
             size="sm"
+            className="text-action-button"
             disabled={
               selectedMemberPermissionIsSaving || !canSaveAdminPermissions
             }

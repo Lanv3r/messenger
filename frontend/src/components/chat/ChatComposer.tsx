@@ -261,7 +261,10 @@ export function ChatComposer({
           </button>
           <button
             type="button"
-            className={["send-button", isEditing ? "text" : ""]
+            className={[
+              "send-button",
+              isEditing ? "text text-action-button" : "",
+            ]
               .filter(Boolean)
               .join(" ")}
             aria-label={isEditing ? "Save edited message" : "Send message"}

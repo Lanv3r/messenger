@@ -157,6 +157,11 @@ class GroupCreate(SQLModel):
     member_ids: list[int] = Field(default_factory=list)
 
 
+class GroupUpdate(SQLModel):
+    title: str = Field(max_length=128)
+    description: str | None = Field(default=None, max_length=255)
+
+
 class ChatUpdate(ChatBase):
     type: str | None = None
     title: str | None = None

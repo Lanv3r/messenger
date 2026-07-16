@@ -272,6 +272,10 @@ class MessengerIntegrationTest(unittest.TestCase):
                 json=SYSTEM_ROLE_DEFAULTS["member"],
             ),
             outsider_client.patch(
+                f"/chats/{group['id']}/group",
+                data={"title": "intrusion", "description": ""},
+            ),
+            outsider_client.patch(
                 f"/chats/{group['id']}/members/{member['id']}/permissions",
                 json=SYSTEM_ROLE_DEFAULTS["member"],
             ),
@@ -298,10 +302,63 @@ class MessengerIntegrationTest(unittest.TestCase):
                 f"/chats/{group['id']}",
                 json={"delete_messages_for_everyone": False},
             ),
+            outsider_client.request(
+                "DELETE",
+                f"/chats/{group['id']}/group",
+            ),
         ]
 
         for response in checks:
             self.assertEqual(response.status_code, 403, response.text)
+
+    def test_group_profile_update_and_owner_global_delete(self):
+        owner_client, _owner = self.signup("owner")
+        member_client, member = self.signup("member")
+        group = self.create_group(owner_client, [member["id"]])
+
+        member_update = member_client.patch(
+            f"/chats/{group['id']}/group",
+            data={
+                "title": "Member-edited group",
+                "description": "A shared group bio",
+            },
+        )
+        self.assertEqual(member_update.status_code, 200, member_update.text)
+        self.assertEqual(member_update.json()["title"], "Member-edited group")
+        self.assertEqual(
+            member_update.json()["description"],
+            "A shared group bio",
+        )
+
+        self.patch_member_defaults(
+            owner_client,
+            group["id"],
+            {"change_group_info": False},
+        )
+        denied_update = member_client.patch(
+            f"/chats/{group['id']}/group",
+            data={"title": "Blocked", "description": ""},
+        )
+        self.assertEqual(denied_update.status_code, 403, denied_update.text)
+
+        denied_delete = member_client.request(
+            "DELETE",
+            f"/chats/{group['id']}/group",
+        )
+        self.assertEqual(denied_delete.status_code, 403, denied_delete.text)
+
+        owner_delete = owner_client.request(
+            "DELETE",
+            f"/chats/{group['id']}/group",
+        )
+        self.assertEqual(owner_delete.status_code, 200, owner_delete.text)
+
+        member_chats = member_client.get("/chats")
+        self.assertEqual(member_chats.status_code, 200, member_chats.text)
+        self.assertNotIn(group["id"], [chat["id"] for chat in member_chats.json()])
+
+        deleted_group_members = member_client.get(f"/chats/{group['id']}/members")
+        self.assertIn(deleted_group_members.status_code, {403, 404})
 
     def test_delete_chat_clears_history_and_can_delete_own_messages_globally(self):
         sender_client, sender = self.signup("sender")

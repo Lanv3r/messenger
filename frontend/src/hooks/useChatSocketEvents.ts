@@ -13,6 +13,7 @@ import type {
   ChatMembersUpdatedEvent,
   ChatMessage,
   ChatPermissionsUpdatedEvent,
+  ChatProfileUpdatedEvent,
   ChatReadEvent,
   ChatRecordingVoiceEvent,
   ChatTypingEvent,
@@ -144,6 +145,21 @@ export function useChatSocketEvents({
     void refreshChats();
   }
 
+  function onChatProfileUpdated(data: ChatProfileUpdatedEvent) {
+    setChats((current) =>
+      current.map((chat) =>
+        chat.id === data.id
+          ? {
+              ...chat,
+              ...data,
+              display_title: data.title ?? chat.display_title,
+              display_avatar_url: data.avatar_url || "/favicon.svg",
+            }
+          : chat,
+      ),
+    );
+  }
+
   function onChatCreated(data: Chat) {
     setChats((current) => upsertChat(current, applyLocalReadState(data)));
     void refreshChats();
@@ -196,7 +212,11 @@ export function useChatSocketEvents({
     setSelectedChatMember(null);
     clearMemberRemoval();
     if (!data.left_by_self) {
-      onChatError("You were removed from this group.");
+      onChatError(
+        data.group_deleted
+          ? "This group was deleted."
+          : "You were removed from this group.",
+      );
     }
   }
 
@@ -264,6 +284,7 @@ export function useChatSocketEvents({
     onBeforeDisconnect,
     onMessage,
     onChatUpdated,
+    onChatProfileUpdated,
     onChatCreated,
     onChatMembersUpdated,
     onChatPermissionsUpdated,

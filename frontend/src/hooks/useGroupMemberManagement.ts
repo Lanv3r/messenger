@@ -102,6 +102,11 @@ export function useGroupMemberManagement({
     activeChat?.type === "group" &&
     (activeChat.current_user_role === "owner" ||
       currentUserAdminPermissions?.manage_admins === true);
+  const currentUserCanChangeGroupInfo =
+    activeChat?.type === "group" &&
+    (activeChat.current_user_role === "owner" ||
+      currentUserAdminPermissions?.change_group_info === true ||
+      memberPermissions?.change_group_info === true);
   const currentUserCanEditMemberTags =
     activeChat?.type === "group" &&
     (activeChat.current_user_role === "owner" ||
@@ -837,6 +842,7 @@ export function useGroupMemberManagement({
     currentUserCanDeleteGroupMessages,
     currentUserCanPinGroupMessages,
     currentUserCanManageAdmins,
+    currentUserCanChangeGroupInfo,
     currentUserCanEditMemberTags,
     currentUserCanRemoveGroupMembers,
     selectedAdminPermissions,

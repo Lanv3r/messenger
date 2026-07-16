@@ -135,11 +135,17 @@ export function AttachmentPreviewDialog({
           <button type="button" disabled={sending} onClick={onAddMore}>
             Add more
           </button>
-          <button type="button" disabled={sending} onClick={onCancel}>
+          <button
+            type="button"
+            className="text-action-button"
+            disabled={sending}
+            onClick={onCancel}
+          >
             Cancel
           </button>
           <button
             type="button"
+            className={mode === "edit" ? "text-action-button" : undefined}
             disabled={sending || (mode === "send" && drafts.length === 0)}
             onClick={onSend}
           >

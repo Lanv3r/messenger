@@ -28,7 +28,12 @@ export function LeaveGroupDialog({
           </strong>
         </div>
         <div className="message-action-dialog-actions">
-          <button type="button" disabled={leaving} onClick={onClose}>
+          <button
+            type="button"
+            className="text-action-button"
+            disabled={leaving}
+            onClick={onClose}
+          >
             Cancel
           </button>
           <button

@@ -73,7 +73,12 @@ export function DeleteChatDialog({
           </label>
         ) : null}
         <div className="message-action-dialog-actions">
-          <button type="button" disabled={deleting} onClick={onClose}>
+          <button
+            type="button"
+            className="text-action-button"
+            disabled={deleting}
+            onClick={onClose}
+          >
             Cancel
           </button>
           <button

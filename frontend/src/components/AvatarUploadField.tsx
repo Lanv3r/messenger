@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { ImagePlus, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ImagePreviewDialog } from "@/components/chat/ImagePreviewDialog";
 import { getAssetUrl } from "@/lib/message-helpers";
 
 type AvatarUploadFieldProps = {
@@ -24,6 +25,7 @@ export function AvatarUploadField({
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingPreviewUrl, setPendingPreviewUrl] = useState<string | null>(null);
+  const [viewingAvatar, setViewingAvatar] = useState(false);
 
   const clearNativeInput = () => {
     if (inputRef.current) {
@@ -89,7 +91,12 @@ export function AvatarUploadField({
             <span>{pendingFile.name}</span>
           </div>
           <div className="avatar-upload-dialog-actions">
-            <Button type="button" variant="outline" onClick={closePreview}>
+            <Button
+              type="button"
+              variant="outline"
+              className="text-action-button"
+              onClick={closePreview}
+            >
               Cancel
             </Button>
             <Button type="button" onClick={acceptPreview}>
@@ -101,29 +108,47 @@ export function AvatarUploadField({
     ) : null;
 
   if (variant === "avatar") {
+    const avatarUrl = getAssetUrl(previewUrl);
+
     return (
-      <span className="avatar-upload-avatar-trigger">
-        {input}
-        <button
-          type="button"
-          className="avatar-upload-avatar-button"
-          aria-label={label}
-          title={label}
-          onClick={openFilePicker}
-        >
-          <img
-            src={getAssetUrl(previewUrl)}
-            alt=""
-            onError={(event) => {
-              event.currentTarget.src = "/favicon.svg";
-            }}
-          />
-          <span>
-            <ImagePlus size={20} aria-hidden="true" />
-          </span>
-        </button>
+      <>
+        <span className="avatar-upload-avatar-trigger">
+          {input}
+          <button
+            type="button"
+            className="avatar-upload-avatar-button"
+            aria-label="View avatar"
+            title="View avatar"
+            onClick={() => setViewingAvatar(true)}
+          >
+            <img
+              src={avatarUrl}
+              alt=""
+              onError={(event) => {
+                event.currentTarget.src = "/favicon.svg";
+              }}
+            />
+          </button>
+          <button
+            type="button"
+            className="avatar-upload-avatar-change"
+            aria-label={label}
+            title={label}
+            onClick={openFilePicker}
+          >
+            <ImagePlus size={14} aria-hidden="true" />
+            Change
+          </button>
+        </span>
         {dialog}
-      </span>
+        {viewingAvatar ? (
+          <ImagePreviewDialog
+            src={avatarUrl}
+            alt="Profile avatar"
+            onClose={() => setViewingAvatar(false)}
+          />
+        ) : null}
+      </>
     );
   }
 

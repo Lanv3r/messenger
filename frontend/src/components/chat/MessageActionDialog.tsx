@@ -96,7 +96,7 @@ export function MessageActionDialog({
         </div>
 
         <div className="message-action-dialog-actions">
-          <button type="button" onClick={onClose}>
+          <button type="button" className="text-action-button" onClick={onClose}>
             Cancel
           </button>
 
