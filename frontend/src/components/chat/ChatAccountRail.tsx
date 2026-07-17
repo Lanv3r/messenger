@@ -1,4 +1,12 @@
-import { ContactRound, LogOut, MessagesSquare, Moon, Sun } from "lucide-react";
+import {
+  Bell,
+  BellOff,
+  ContactRound,
+  LogOut,
+  MessagesSquare,
+  Moon,
+  Sun,
+} from "lucide-react";
 
 import type { AuthUser, ThemeMode } from "@/types";
 
@@ -7,9 +15,12 @@ type ChatAccountRailProps = {
   themeMode: ThemeMode;
   chatsActive: boolean;
   contactsOpen: boolean;
+  notificationsPermission: NotificationPermission | "unsupported";
+  notificationsEnabled: boolean;
   onToggleProfileEditor: () => void;
   onOpenChats: () => void;
   onToggleContacts: () => void;
+  onToggleNotifications: () => void;
   onSignOut: () => void;
   onToggleTheme: () => void;
 };
@@ -19,9 +30,12 @@ export function ChatAccountRail({
   themeMode,
   chatsActive,
   contactsOpen,
+  notificationsPermission,
+  notificationsEnabled,
   onToggleProfileEditor,
   onOpenChats,
   onToggleContacts,
+  onToggleNotifications,
   onSignOut,
   onToggleTheme,
 }: ChatAccountRailProps) {
@@ -76,6 +90,41 @@ export function ChatAccountRail({
       </button>
 
       <div className="account-rail-bottom-actions">
+        {notificationsPermission !== "unsupported" ? (
+          <button
+            type="button"
+            className={[
+              "account-rail-button",
+              notificationsEnabled ? "active" : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            aria-label={
+              notificationsPermission === "denied"
+                ? "Browser notifications are blocked"
+                : notificationsEnabled
+                  ? "Disable browser notifications"
+                  : "Enable browser notifications"
+            }
+            aria-pressed={notificationsEnabled}
+            title={
+              notificationsPermission === "denied"
+                ? "Browser notifications are blocked"
+                : notificationsEnabled
+                  ? "Disable notifications"
+                  : "Enable notifications"
+            }
+            disabled={notificationsPermission === "denied"}
+            onClick={onToggleNotifications}
+          >
+            {notificationsEnabled ? (
+              <Bell size={18} aria-hidden="true" />
+            ) : (
+              <BellOff size={18} aria-hidden="true" />
+            )}
+          </button>
+        ) : null}
+
         <button
           type="button"
           className="account-rail-button"

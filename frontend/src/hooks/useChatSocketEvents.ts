@@ -56,6 +56,7 @@ type UseChatSocketEventsOptions = {
   clearChatReadState: (chatId: number) => void;
   resetChatInfoPanel: () => void;
   clearMemberRemoval: () => void;
+  onIncomingMessage: (message: ChatMessage) => void;
   onIncomingActiveChatMessage: (message: ChatMessage) => void;
   onChatError: (message: string) => void;
 };
@@ -87,6 +88,7 @@ export function useChatSocketEvents({
   clearChatReadState,
   resetChatInfoPanel,
   clearMemberRemoval,
+  onIncomingMessage,
   onIncomingActiveChatMessage,
   onChatError,
 }: UseChatSocketEventsOptions) {
@@ -95,6 +97,10 @@ export function useChatSocketEvents({
   }
 
   function onMessage(data: ChatMessage) {
+    if (data.sender_id !== userId) {
+      onIncomingMessage(data);
+    }
+
     if (data.chat_id === activeChatIdRef.current && data.sender_id !== userId) {
       onIncomingActiveChatMessage(data);
     }
@@ -114,6 +120,10 @@ export function useChatSocketEvents({
   }
 
   function onChatUpdated(data: ChatUpdatedEvent) {
+    if (data.last_message.sender_id !== userId) {
+      onIncomingMessage(data.last_message);
+    }
+
     setChats((current) =>
       updateChatPreviewWithUnread(current, data.last_message, userId),
     );

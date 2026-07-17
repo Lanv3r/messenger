@@ -62,6 +62,7 @@ import { useMessageDisplay } from "@/hooks/useMessageDisplay";
 import { useChatPresentation } from "@/hooks/useChatPresentation";
 import { useChatSocketEvents } from "@/hooks/useChatSocketEvents";
 import { useChatData } from "@/hooks/useChatData";
+import { useBrowserNotifications } from "@/hooks/useBrowserNotifications";
 import { useBlocks } from "@/hooks/useBlocks";
 import { useContacts } from "@/hooks/useContacts";
 import { useChatPermissions } from "@/hooks/useChatPermissions";
@@ -314,6 +315,16 @@ export function ChatScreen({
   const activeChat = chats.find(
     (chat) => chat.id === activeChatId,
   );
+  const {
+    permission: notificationsPermission,
+    isEnabled: notificationsEnabled,
+    requestNotifications,
+    notifyIncomingMessage,
+  } = useBrowserNotifications({
+    userId: user.userId,
+    chats,
+    activeChatIdRef,
+  });
   const isMessagingBlocked =
     activeChat?.type === "direct" && activeChat.is_blocked_by_other === true;
   const {
@@ -619,6 +630,7 @@ export function ChatScreen({
     clearChatReadState,
     resetChatInfoPanel,
     clearMemberRemoval,
+    onIncomingMessage: notifyIncomingMessage,
     onIncomingActiveChatMessage: () => {
       unreadSeparatorInitialLastMessageIdRef.current = null;
       setUnreadSeparatorLastReadMessageId(null);
@@ -1568,6 +1580,8 @@ export function ChatScreen({
           themeMode={themeMode}
           chatsActive={!contactsOpen && !messageSearchOpen}
           contactsOpen={contactsOpen}
+          notificationsPermission={notificationsPermission}
+          notificationsEnabled={notificationsEnabled}
           onToggleProfileEditor={openProfileEditor}
           onOpenChats={() => {
             setContactsOpen(false);
@@ -1580,6 +1594,9 @@ export function ChatScreen({
               void refreshContacts();
             }
             setContactsOpen(!contactsOpen);
+          }}
+          onToggleNotifications={() => {
+            void requestNotifications();
           }}
           onSignOut={onSignOut}
           onToggleTheme={onToggleTheme}
