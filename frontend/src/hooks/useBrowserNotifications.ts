@@ -299,7 +299,6 @@ export function useBrowserNotifications({
       body,
       icon,
       tag: `messenger-chat-${message.chat_id}`,
-      renotify: true,
     });
     playNotificationTone();
 

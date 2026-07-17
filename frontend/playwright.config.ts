@@ -2,6 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 const PORT = Number(process.env.E2E_PORT ?? 5173);
 const BASE_URL = process.env.E2E_BASE_URL ?? `http://localhost:${PORT}`;
+const reuseExistingServer = process.env.E2E_REUSE_EXISTING_SERVER === "true";
 
 export default defineConfig({
   testDir: "./tests",
@@ -22,7 +23,7 @@ export default defineConfig({
   webServer: {
     command: `npm run dev -- --host localhost --port ${PORT}`,
     url: BASE_URL,
-    reuseExistingServer: !process.env.CI,
+    reuseExistingServer,
     timeout: 30_000,
   },
 });

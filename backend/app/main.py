@@ -23,6 +23,12 @@ fastapi_app.include_router(chats.router)
 fastapi_app.include_router(messages.router)
 fastapi_app.include_router(users.router)
 
+
+@fastapi_app.get("/health", include_in_schema=False)
+def health_check():
+    return {"ok": True}
+
+
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 fastapi_app.mount("/uploads", StaticFiles(directory=UPLOADS_DIR), name="uploads")
 

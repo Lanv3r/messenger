@@ -74,9 +74,20 @@ def login(payload: LoginRequest, response: Response, session: SessionDep):
 async def signup(
     response: Response,
     session: SessionDep,
-    payload: Annotated[UserCreate, Form()],
+    username: Annotated[str, Form()],
+    password: Annotated[str, Form()],
+    first_name: Annotated[str, Form()],
+    last_name: Annotated[str | None, Form()] = None,
+    bio: Annotated[str | None, Form()] = None,
     avatar: Annotated[UploadFile | None, File()] = None,
 ):
+    payload = UserCreate(
+        username=username,
+        password=password,
+        first_name=first_name,
+        last_name=last_name,
+        bio=bio,
+    )
     normalized_username = payload.username.strip().lower()
     normalized_first_name = payload.first_name.strip()
     normalized_last_name = payload.last_name.strip() if payload.last_name else None

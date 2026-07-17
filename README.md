@@ -80,6 +80,20 @@ Realtime:
 - The socket connection uses the same auth cookie as HTTP requests.
 - Clients join chat rooms and receive message, chat, read receipt, pin/delete/edit, typing, recording, and member update events.
 
+## Testing
+
+Integration and smoke tests use the isolated PostgreSQL service in `compose.test.yaml`; they do not require a manually configured `TEST_DATABASE_URL`.
+
+Prerequisites: Docker Compose, a backend virtual environment, and `npm ci` in `frontend`. Smoke tests also require the Playwright Chromium browser (`npx playwright install chromium`).
+
+```bash
+make test-integration
+make test-smoke
+make test
+```
+
+The smoke runner migrates the isolated database, starts the backend on `localhost:8001` and Vite on `localhost:5174`, waits for `/health`, and then runs Playwright. Set `SMOKE_BACKEND_PORT` or `SMOKE_FRONTEND_PORT` to use other free ports. GitHub Actions runs the integration and smoke jobs on every pull request and push to `main`.
+
 ## Notes
 
 - Alembic migrations are the source of truth for database schema changes after models are updated.

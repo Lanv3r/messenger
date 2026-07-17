@@ -42,16 +42,19 @@ class MessengerIntegrationTest(unittest.TestCase):
     def setUpClass(cls):
         test_database_url = os.getenv("TEST_DATABASE_URL")
         if not test_database_url:
-            raise unittest.SkipTest("TEST_DATABASE_URL is not set")
+            raise RuntimeError(
+                "TEST_DATABASE_URL is required. Run `make test-integration` "
+                "to start the isolated test database."
+            )
 
         engine = create_engine(test_database_url, echo=False)
         try:
             with engine.connect():
                 pass
         except OperationalError as error:
-            raise unittest.SkipTest(
-                "TEST_DATABASE_URL is not reachable. Create the test database "
-                "first, then rerun the tests."
+            raise RuntimeError(
+                "TEST_DATABASE_URL is not reachable. Run `make test-integration` "
+                "to start the isolated test database."
             ) from error
         finally:
             engine.dispose()
@@ -60,7 +63,7 @@ class MessengerIntegrationTest(unittest.TestCase):
         reset_all_rate_limiters()
         test_database_url = os.getenv("TEST_DATABASE_URL")
         if test_database_url is None:
-            raise unittest.SkipTest("TEST_DATABASE_URL is not set")
+            raise RuntimeError("TEST_DATABASE_URL is required for integration tests.")
         self.test_database_url = test_database_url
 
         self.schema = f"test_{uuid4().hex}"
@@ -102,7 +105,7 @@ class MessengerIntegrationTest(unittest.TestCase):
 
     def signup(self, username_prefix: str):
         client = self.client()
-        username = f"{username_prefix}_{uuid4().hex[:8]}".lower()
+        username = f"{username_prefix.replace('-', '_')}_{uuid4().hex[:8]}".lower()
         response = client.post(
             "/signup",
             data={
@@ -157,6 +160,12 @@ class MessengerIntegrationTest(unittest.TestCase):
                 permissions[permission] = True
         permissions.update(updates)
         return permissions
+
+    def test_health_check(self):
+        response = self.client().get("/health")
+
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json(), {"ok": True})
 
     def test_auth_signup_login_and_protected_chats(self):
         signup_client, user = self.signup("auth")

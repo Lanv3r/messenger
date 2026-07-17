@@ -39,9 +39,12 @@ test("login, chat list, send message, and create group", async ({
   await page.getByRole("button", { name: "Login" }).click();
 
   const chatsPanel = page.getByLabel("Chats");
-  await expect(
-    chatsPanel.getByRole("button", { name: "Saved Messages Private notes" }),
-  ).toBeVisible();
+  const savedMessagesButton = chatsPanel.getByRole("button", {
+    name: "Saved Messages",
+    exact: true,
+  });
+  await expect(savedMessagesButton).toBeVisible();
+  await savedMessagesButton.click();
   const messageList = page.locator("#messages");
 
   const selfMessage = `self smoke ${suffix}`;
@@ -54,13 +57,14 @@ test("login, chat list, send message, and create group", async ({
   await page.getByLabel("Add members").fill(member.username);
   await page.getByRole("button", { name: "Add" }).click();
   await expect(page.getByText(`@${member.username}`)).toBeVisible();
-  await page.getByRole("button", { name: "Create group" }).click();
+  await page.getByRole("button", { name: "Create group", exact: true }).click();
 
-  await expect(
-    chatsPanel.getByRole("button", {
-      name: `Smoke group ${suffix} group`,
-    }),
-  ).toBeVisible();
+  const groupChatButton = chatsPanel.getByRole("button", {
+    name: `Smoke group ${suffix}`,
+    exact: true,
+  });
+  await expect(groupChatButton).toBeVisible();
+  await groupChatButton.click();
 
   const groupMessage = `group smoke ${suffix}`;
   await page.locator("#message").fill(groupMessage);
