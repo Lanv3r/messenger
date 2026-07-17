@@ -67,10 +67,11 @@ if ! command -v npm >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -x "${PYTHON_BIN}" ]]; then
+if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
   echo "Python executable not found: ${PYTHON_BIN}" >&2
   exit 1
 fi
+PYTHON_BIN="$(command -v "${PYTHON_BIN}")"
 
 if port_is_in_use "${SMOKE_BACKEND_PORT}"; then
   echo "A process is already listening on port ${SMOKE_BACKEND_PORT}. Stop it or set SMOKE_BACKEND_PORT." >&2

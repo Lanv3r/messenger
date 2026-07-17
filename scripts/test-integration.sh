@@ -22,10 +22,11 @@ if ! docker info >/dev/null 2>&1; then
   exit 1
 fi
 
-if [[ ! -x "${PYTHON_BIN}" ]]; then
+if ! command -v "${PYTHON_BIN}" >/dev/null 2>&1; then
   echo "Python executable not found: ${PYTHON_BIN}" >&2
   exit 1
 fi
+PYTHON_BIN="$(command -v "${PYTHON_BIN}")"
 
 docker compose -f "${ROOT_DIR}/compose.test.yaml" up -d --wait postgres-test
 
