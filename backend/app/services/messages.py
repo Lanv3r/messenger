@@ -112,6 +112,7 @@ def to_message_public(
         deleted_at=message.deleted_at,
         pinned_at=message.pinned_at,
         pinned_by=message.pinned_by,
+        read_by_anyone=message.read_by_anyone,
         is_pinned_for_me=message_user_state is not None
         and message_user_state.pinned_at is not None,
         reply_to=reply_to,

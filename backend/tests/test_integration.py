@@ -513,6 +513,40 @@ class MessengerIntegrationTest(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400, response.text)
 
+    def test_group_message_read_indicator_marks_any_reader(self):
+        owner_client, _owner = self.signup("owner")
+        member_client, member = self.signup("member")
+        group = self.create_group(owner_client, [member["id"]])
+
+        message_response = owner_client.post(
+            f"/chats/{group['id']}/messages",
+            json={"content": "read receipt"},
+        )
+        self.assertEqual(message_response.status_code, 200, message_response.text)
+        message_id = message_response.json()["id"]
+
+        owner_read_response = owner_client.post(
+            f"/chats/{group['id']}/read",
+            json={"last_read_message_id": message_id},
+        )
+        self.assertEqual(owner_read_response.status_code, 200, owner_read_response.text)
+        owner_message = self.get_message(
+            owner_client.get(f"/chats/{group['id']}/messages"),
+            message_id,
+        )
+        self.assertFalse(owner_message["read_by_anyone"])
+
+        member_read_response = member_client.post(
+            f"/chats/{group['id']}/read",
+            json={"last_read_message_id": message_id},
+        )
+        self.assertEqual(member_read_response.status_code, 200, member_read_response.text)
+        owner_message = self.get_message(
+            owner_client.get(f"/chats/{group['id']}/messages"),
+            message_id,
+        )
+        self.assertTrue(owner_message["read_by_anyone"])
+
     def test_message_permission_blocks_group_sending(self):
         owner_client, _owner = self.signup("owner")
         member_client, member = self.signup("member")

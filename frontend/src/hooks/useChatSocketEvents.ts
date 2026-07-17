@@ -263,6 +263,16 @@ export function useChatSocketEvents({
       return;
     }
 
+    const markOwnMessagesRead = (entry: ChatMessage) =>
+      entry.chat_id === data.chat_id &&
+      entry.sender_id === userId &&
+      entry.id <= data.last_read_message_id
+        ? { ...entry, read_by_anyone: true }
+        : entry;
+
+    setMessages((current) => current.map(markOwnMessagesRead));
+    setMessageSearchResults((current) => current.map(markOwnMessagesRead));
+
     setChats((current) =>
       current.map((chat) =>
         chat.id === data.chat_id

@@ -23,6 +23,7 @@ export type ChatMessage = {
   deleted_at: string | null;
   pinned_at: string | null;
   pinned_by: number | null;
+  read_by_anyone: boolean;
   is_pinned_for_me: boolean;
   metadata?: Record<string, unknown>;
   isOwn?: boolean;

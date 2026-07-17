@@ -109,6 +109,7 @@ export function useMessageSending({
       deleted_at: null,
       pinned_at: null,
       pinned_by: null,
+      read_by_anyone: false,
       is_pinned_for_me: false,
       metadata: {
         audio_url: objectUrl,
@@ -223,6 +224,7 @@ export function useMessageSending({
       deleted_at: null,
       pinned_at: null,
       pinned_by: null,
+      read_by_anyone: false,
       is_pinned_for_me: false,
       metadata: hasMultipleAttachments ? { attachments } : attachments[0],
       isOwn: true,
@@ -324,6 +326,7 @@ export function useMessageSending({
       deleted_at: null,
       pinned_at: null,
       pinned_by: null,
+      read_by_anyone: false,
       is_pinned_for_me: false,
       metadata: {},
       isOwn: true,

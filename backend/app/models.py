@@ -283,6 +283,7 @@ class MessageBase(SQLModel):
             nullable=False,
         ),
     )
+    read_by_anyone: bool = False
 
 
 class Message(MessageBase, table=True):

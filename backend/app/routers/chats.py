@@ -762,6 +762,9 @@ async def chat_read(
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
     participant = require_active_participant(session, chat_id, user_id)
+    chat = session.get(Chat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
     read_message = session.get(Message, payload.last_read_message_id)
     if (
         read_message is None
@@ -793,6 +796,17 @@ async def chat_read(
     participant.last_read_at = datetime.now(timezone.utc)
 
     session.add(participant)
+    if chat.type == "group":
+        session.exec(
+            update(Message)
+            .where(
+                col(Message.chat_id) == chat_id,
+                col(Message.id) <= payload.last_read_message_id,
+                col(Message.sender_id) != user_id,
+                col(Message.read_by_anyone).is_(False),
+            )
+            .values(read_by_anyone=True)
+        )
     session.commit()
     session.refresh(participant)
 

@@ -98,6 +98,12 @@ export function useMessageDisplay({
       return { kind: "read", label: "Read" };
     }
 
+    if (activeChat?.type === "group") {
+      return entry.read_by_anyone
+        ? { kind: "read", label: "Read" }
+        : { kind: "sent", label: "Sent" };
+    }
+
     if (
       otherLastReadMessageId !== null &&
       otherLastReadMessageId !== undefined &&
