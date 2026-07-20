@@ -1,10 +1,12 @@
 import os
 import sys
 import unittest
+from io import BytesIO
 from pathlib import Path
 from unittest.mock import patch
 from uuid import uuid4
 
+from botocore.exceptions import ClientError
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
@@ -14,6 +16,8 @@ os.environ.setdefault(
     os.getenv("TEST_DATABASE_URL")
     or "postgresql+psycopg://unused:unused@localhost/unused",
 )
+os.environ.setdefault("S3_BUCKET", "messenger-test-uploads")
+os.environ.setdefault("S3_REGION", "us-east-1")
 
 from fastapi.testclient import TestClient  # noqa: E402
 from sqlalchemy import text  # noqa: E402
@@ -31,10 +35,28 @@ from app.rate_limit import (  # noqa: E402
     upload_rate_limiter,
 )
 from app.socket import sio  # noqa: E402
+from app.services import storage  # noqa: E402
 
 
 async def noop_emit(*args, **kwargs) -> None:
     return None
+
+
+class InMemoryS3Client:
+    def __init__(self):
+        self.objects: dict[tuple[str, str], bytes] = {}
+
+    def put_object(self, **kwargs):
+        self.objects[(kwargs["Bucket"], kwargs["Key"])] = kwargs["Body"]
+
+    def get_object(self, **kwargs):
+        content = self.objects.get((kwargs["Bucket"], kwargs["Key"]))
+        if content is None:
+            raise ClientError({"Error": {"Code": "NoSuchKey"}}, "GetObject")
+        return {"Body": BytesIO(content)}
+
+    def generate_presigned_url(self, _client_method, **kwargs):
+        return f"https://example.test/{kwargs['Params']['Key']}"
 
 
 class MessengerIntegrationTest(unittest.TestCase):
@@ -84,7 +106,14 @@ class MessengerIntegrationTest(unittest.TestCase):
 
         fastapi_app.dependency_overrides[get_session] = override_get_session
         self.emit_patch = patch.object(sio, "emit", noop_emit)
+        self.storage_client = InMemoryS3Client()
+        self.storage_patch = patch.object(
+            storage,
+            "_get_s3_client",
+            return_value=self.storage_client,
+        )
         self.emit_patch.start()
+        self.storage_patch.start()
         self.clients: list[TestClient] = []
 
     def tearDown(self):
@@ -93,6 +122,7 @@ class MessengerIntegrationTest(unittest.TestCase):
             client.close()
         fastapi_app.dependency_overrides.clear()
         self.emit_patch.stop()
+        self.storage_patch.stop()
         self.engine.dispose()
         with self.admin_engine.begin() as connection:
             connection.execute(text(f'DROP SCHEMA IF EXISTS "{self.schema}" CASCADE'))
@@ -641,6 +671,41 @@ class MessengerIntegrationTest(unittest.TestCase):
         ]
         self.assertEqual(len(uploaded_messages), 1)
         self.assertEqual(uploaded_messages[0]["id"], message["id"])
+
+    def test_user_and_group_avatar_uploads_use_s3(self):
+        client = self.client()
+        username = f"avatar_{uuid4().hex[:8]}"
+        signup = client.post(
+            "/signup",
+            data={
+                "username": username,
+                "password": "password123",
+                "first_name": "Avatar",
+                "last_name": "",
+                "bio": "",
+            },
+            files={"avatar": ("profile.png", b"profile", "image/png")},
+        )
+        self.assertEqual(signup.status_code, 200, signup.text)
+        self.assertTrue(signup.json()["avatar_url"].startswith("https://example.test/"))
+
+        group = client.post(
+            "/chats/group",
+            data={"title": "Avatar group", "description": ""},
+            files={"avatar": ("group.png", b"group", "image/png")},
+        )
+        self.assertEqual(group.status_code, 200, group.text)
+        self.assertTrue(group.json()["avatar_url"].startswith("https://example.test/"))
+        self.assertEqual(
+            len(
+                [
+                    key
+                    for _bucket, key in self.storage_client.objects
+                    if key.startswith("messenger/avatars/")
+                ],
+            ),
+            2,
+        )
 
     def test_group_permissions_for_adding_members_and_locked_defaults(self):
         owner_client, _owner = self.signup("owner")

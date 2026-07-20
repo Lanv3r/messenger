@@ -1114,8 +1114,8 @@ export function ChatScreen({
     const formData = new FormData();
     formData.append("content", attachmentCaption);
     attachmentDrafts.forEach((draft) => {
-      if (draft.existingFileUrl) {
-        formData.append("existing_file_urls", draft.existingFileUrl);
+      if (draft.existingAttachmentId) {
+        formData.append("existing_attachment_ids", draft.existingAttachmentId);
       }
 
       if (draft.file) {

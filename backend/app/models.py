@@ -11,7 +11,6 @@ class UserBase(SQLModel):
     first_name: str = Field(max_length=64)
     last_name: str | None = Field(default=None, max_length=64)
     bio: str | None = Field(default=None, max_length=70)
-    avatar_url: str
     status: str = "online"
 
 
@@ -21,6 +20,7 @@ class User(UserBase, table=True):
 
     id: int | None = Field(default=None, primary_key=True)
     password_hash: str
+    avatar_storage_key: str | None = Field(default=None)
     created_at: datetime | None = Field(
         default=None,
         sa_type=DateTime,
@@ -37,9 +37,16 @@ class User(UserBase, table=True):
     )
     deleted_at: datetime | None = Field(default=None, sa_type=DateTime)
 
+    @property
+    def avatar_url(self) -> str:
+        from app.services.uploads import get_avatar_upload_url
+
+        return get_avatar_upload_url(self.avatar_storage_key)
+
 
 class UserPublic(UserBase):
     id: int
+    avatar_url: str
 
 
 class UserCreate(SQLModel):
@@ -61,7 +68,7 @@ class UserUpdate(UserBase):
     first_name: str | None = None
     last_name: str | None = None
     bio: str | None = None
-    avatar_url: str | None = None
+    avatar_storage_key: str | None = None
     status: str | None = None
     password_hash: str | None = None
     deleted_at: datetime | None = None
@@ -116,7 +123,6 @@ class ChatBase(SQLModel):
     type: str = Field(max_length=32)
     title: str | None = Field(default=None, max_length=128)
     description: str | None = Field(default=None, max_length=255)
-    avatar_url: str | None = None
     last_message_id: int | None = None
     deleted_at: datetime | None = Field(default=None, sa_type=DateTime)
 
@@ -125,6 +131,7 @@ class Chat(ChatBase, table=True):
     __tablename__: ClassVar[str] = "chats"
 
     id: int | None = Field(default=None, primary_key=True)
+    avatar_storage_key: str | None = Field(default=None)
     created_at: datetime | None = Field(
         default=None,
         sa_type=DateTime,
@@ -140,9 +147,16 @@ class Chat(ChatBase, table=True):
         },
     )
 
+    @property
+    def avatar_url(self) -> str:
+        from app.services.uploads import get_avatar_upload_url
+
+        return get_avatar_upload_url(self.avatar_storage_key)
+
 
 class ChatPublic(ChatBase):
     id: int
+    avatar_url: str | None = None
     created_at: datetime
     updated_at: datetime
 
@@ -166,7 +180,7 @@ class ChatUpdate(ChatBase):
     type: str | None = None
     title: str | None = None
     description: str | None = None
-    avatar_url: str | None = None
+    avatar_storage_key: str | None = None
     last_message_id: int | None = None
     deleted_at: datetime | None = None
 

@@ -120,7 +120,9 @@ export function useAttachmentDrafts({
     setDrafts(
       attachments.map((attachment) => ({
         id: crypto.randomUUID(),
-        existingFileUrl: attachment.file_url,
+        existingAttachmentId: attachment.storage_key
+          ? `key:${attachment.storage_key}`
+          : `url:${attachment.file_url}`,
         previewUrl: getAttachmentFileUrl(attachment),
         messageType: attachment.message_type,
         originalName: attachment.original_name,

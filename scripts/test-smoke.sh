@@ -90,11 +90,15 @@ docker compose -f "${ROOT_DIR}/compose.test.yaml" up -d --wait postgres-test
   DATABASE_URL="${TEST_DATABASE_URL}" \
     SECRET_KEY="${TEST_SECRET_KEY}" \
     CORS_ORIGINS="${SMOKE_FRONTEND_URL}" \
+    S3_BUCKET=messenger-test-uploads \
+    S3_REGION=us-east-1 \
     "${PYTHON_BIN}" -m alembic upgrade head
   exec env \
     DATABASE_URL="${TEST_DATABASE_URL}" \
     SECRET_KEY="${TEST_SECRET_KEY}" \
     CORS_ORIGINS="${SMOKE_FRONTEND_URL}" \
+    S3_BUCKET=messenger-test-uploads \
+    S3_REGION=us-east-1 \
     "${PYTHON_BIN}" -m uvicorn app.main:app --host 127.0.0.1 --port "${SMOKE_BACKEND_PORT}"
 ) >"${BACKEND_LOG}" 2>&1 &
 BACKEND_PID="$!"

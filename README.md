@@ -7,7 +7,7 @@ Work-in-progress chat app with a FastAPI/SQLModel backend, Socket.IO realtime up
 - Backend: FastAPI, SQLModel, SQLAlchemy, Alembic, PostgreSQL, Socket.IO
 - Frontend: React, TypeScript, Vite, Socket.IO client, Playwright smoke tests
 - Auth: HttpOnly cookie containing a JWT access token
-- Uploads: local filesystem storage mounted at `/uploads`
+- Uploads: private Amazon S3 storage
 
 ## Frontend Color System
 
@@ -94,9 +94,24 @@ make test
 
 The smoke runner migrates the isolated database, starts the backend on `localhost:8001` and Vite on `localhost:5174`, waits for `/health`, and then runs Playwright. Set `SMOKE_BACKEND_PORT` or `SMOKE_FRONTEND_PORT` to use other free ports. GitHub Actions runs the integration and smoke jobs on every pull request and push to `main`.
 
+## S3 Upload Storage
+
+Message attachments, voice notes, and profile/group avatars are stored in a private S3 bucket. FastAPI still validates and receives each upload, then writes it to S3. The database stores a stable object key, while API responses contain a short-lived signed download URL. Do not make the bucket public.
+
+Set these values in `backend/.env` to enable it locally:
+
+```env
+S3_BUCKET=my-messenger-dev-uploads
+S3_REGION=us-east-1
+S3_PREFIX=messenger
+S3_PRESIGNED_URL_EXPIRES_SECONDS=3600
+```
+
+The AWS SDK uses the credentials from `aws login` for local development. A deployed backend should use an IAM role that only grants `s3:GetObject` and `s3:PutObject` on `arn:aws:s3:::my-messenger-dev-uploads/messenger/*`. Tests use an in-memory S3 client and never contact AWS.
+
 ## Notes
 
 - Alembic migrations are the source of truth for database schema changes after models are updated.
-- Local uploads are useful for development, but production should use object storage or another durable upload service.
+- The S3 migration intentionally removes access to local uploads and does not preserve old local file or avatar references.
 - The app has in-process rate limiting for normal misuse. Production deployments should still use proxy/API-gateway rate limiting for traffic spikes and DDoS-style protection.
 - Permissions are enforced on the backend. Frontend UI checks should be treated only as convenience, not security.

@@ -4,7 +4,6 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from sqlmodel import col, select
 
-from app.constants import SAVED_MESSAGES_AVATAR_URL
 from app.db import SessionDep
 from app.dependencies import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
@@ -138,14 +137,14 @@ async def signup(
     if len(payload.password) < 8:
         raise HTTPException(status_code=400, detail="Password is too short")
 
-    avatar_url = await save_avatar_upload(avatar)
+    avatar_storage_key = await save_avatar_upload(avatar)
 
     user = User(
         username=normalized_username,
         first_name=normalized_first_name,
         last_name=normalized_last_name or None,
         bio=normalized_bio or None,
-        avatar_url=avatar_url or "/favicon.svg",
+        avatar_storage_key=avatar_storage_key,
         status="online",
         password_hash=get_password_hash(payload.password),
     )
@@ -160,7 +159,6 @@ async def signup(
         type="self",
         title="Saved Messages",
         description=None,
-        avatar_url=SAVED_MESSAGES_AVATAR_URL,
     )
 
     session.add(self_chat)

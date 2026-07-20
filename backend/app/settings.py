@@ -29,10 +29,10 @@ class Settings(BaseSettings):
 
     cors_origins: list[str] = ["http://localhost:5173"]
 
-    uploads_dir: Path = BACKEND_DIR / "uploads"
-    avatar_upload_url_prefix: str = "/uploads/avatars"
-    voice_upload_url_prefix: str = "/uploads/voice"
-    file_upload_url_prefix: str = "/uploads/files"
+    s3_bucket: str = ""
+    s3_region: str = "us-east-1"
+    s3_prefix: str = "messenger"
+    s3_presigned_url_expires_seconds: int = 3600
     avatar_image_max_bytes: int = 5 * 1024 * 1024
     voice_message_max_bytes: int = 10 * 1024 * 1024
     file_message_max_bytes: int = 25 * 1024 * 1024
@@ -61,11 +61,6 @@ class Settings(BaseSettings):
                 if origin.strip()
             ]
         return value
-
-    @field_validator("uploads_dir", mode="after")
-    @classmethod
-    def resolve_uploads_dir(cls, value: Path) -> Path:
-        return value if value.is_absolute() else BACKEND_DIR / value
 
     @field_validator("cookie_samesite", mode="before")
     @classmethod
@@ -96,6 +91,14 @@ class Settings(BaseSettings):
     def validate_cookie_security(self):
         if self.cookie_samesite == "none" and not self.cookie_secure:
             raise ValueError("COOKIE_SECURE must be true when COOKIE_SAMESITE is none")
+        if not self.s3_bucket.strip():
+            raise ValueError("S3_BUCKET is required")
+        if not self.s3_region.strip():
+            raise ValueError("S3_REGION is required")
+        if not 1 <= self.s3_presigned_url_expires_seconds <= 604800:
+            raise ValueError(
+                "S3_PRESIGNED_URL_EXPIRES_SECONDS must be between 1 and 604800"
+            )
         return self
 
 

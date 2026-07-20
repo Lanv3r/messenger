@@ -180,10 +180,6 @@ export function getAssetUrl(
     return url;
   }
 
-  if (url.startsWith("/uploads/")) {
-    return `${API_URL}${url}`;
-  }
-
   return url;
 }
 
@@ -332,6 +328,7 @@ function readAttachment(value: unknown): MessageAttachment | null {
 
   return {
     file_url: fileUrl,
+    storage_key: getMetadataString(metadata, "storage_key") ?? undefined,
     original_name: originalName,
     mime_type: mimeType,
     size_bytes: sizeBytes,
@@ -359,6 +356,8 @@ export function getMessageAttachments(
   return [
     {
       file_url: fileUrl,
+      storage_key:
+        getMetadataString(entry.metadata, "storage_key") ?? undefined,
       original_name:
         getMetadataString(entry.metadata, "original_name") ?? "Download file",
       mime_type: getMetadataString(entry.metadata, "mime_type") ?? "",

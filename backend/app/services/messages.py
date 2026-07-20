@@ -8,6 +8,7 @@ from app.models import (
     MessageUserState,
     User,
 )
+from app.services.storage import get_upload_url
 from fastapi import HTTPException
 from sqlalchemy import and_
 from sqlalchemy.sql.elements import ColumnElement
@@ -23,6 +24,41 @@ FILE_MESSAGE_PREVIEW_LABELS = {
     "image": "Photo",
     "video": "Video",
 }
+
+
+def get_public_message_metadata(metadata: dict, message_type: str) -> dict:
+    public_metadata = metadata.copy()
+    public_metadata.pop("audio_url", None)
+    public_metadata.pop("file_url", None)
+
+    if message_type == "voice":
+        audio_storage_key = public_metadata.get("audio_storage_key")
+        if isinstance(audio_storage_key, str):
+            public_metadata["audio_url"] = get_upload_url(audio_storage_key)
+        return public_metadata
+
+    attachments = public_metadata.get("attachments")
+    if isinstance(attachments, list):
+        public_attachments = []
+        for attachment in attachments:
+            if not isinstance(attachment, dict):
+                continue
+
+            public_attachment = attachment.copy()
+            storage_key = public_attachment.get("storage_key")
+            if not isinstance(storage_key, str):
+                continue
+
+            public_attachment.pop("file_url", None)
+            public_attachment["file_url"] = get_upload_url(storage_key)
+            public_attachments.append(public_attachment)
+        public_metadata["attachments"] = public_attachments
+        return public_metadata
+
+    storage_key = public_metadata.get("storage_key")
+    if isinstance(storage_key, str):
+        public_metadata["file_url"] = get_upload_url(storage_key)
+    return public_metadata
 
 
 def message_is_visible_to_user(
@@ -105,7 +141,7 @@ def to_message_public(
         content=message.content,
         message_type=message.message_type,
         reply_to_message_id=message.reply_to_message_id,
-        metadata=message.metadata_,
+        metadata=get_public_message_metadata(message.metadata_, message.message_type),
         created_at=message.created_at,
         updated_at=message.updated_at,
         edited_at=message.edited_at,

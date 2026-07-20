@@ -33,17 +33,14 @@ from app.services.messages import (
     message_is_visible_to_user,
     to_message_public,
 )
+from app.services.storage import read_upload, store_upload
 from app.services.users import assert_direct_message_allowed
 from app.socket import sio
 from app.upload_constants import (
     FILE_MESSAGE_ALLOWED_TYPES,
     FILE_MESSAGE_MAX_BYTES,
-    FILE_UPLOAD_URL_PREFIX,
-    FILE_UPLOADS_DIR,
     VOICE_MESSAGE_ALLOWED_TYPES,
     VOICE_MESSAGE_MAX_BYTES,
-    VOICE_UPLOAD_URL_PREFIX,
-    VOICE_UPLOADS_DIR,
 )
 from fastapi import (
     APIRouter,
@@ -55,7 +52,7 @@ from fastapi import (
     Request,
     UploadFile,
 )
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from sqlalchemy import func
 from sqlmodel import col, select
 
@@ -123,16 +120,19 @@ async def prepare_file_attachment(file: UploadFile) -> PreparedFileAttachment:
     }
 
 
-def save_prepared_file_attachment(
+async def save_prepared_file_attachment(
     prepared_attachment: PreparedFileAttachment,
 ) -> dict[str, object]:
-    FILE_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     filename = f"{uuid4().hex}{prepared_attachment['extension']}"
-    upload_path = FILE_UPLOADS_DIR / filename
-    upload_path.write_bytes(prepared_attachment["file_bytes"])
+    storage_key = await store_upload(
+        "files",
+        filename,
+        prepared_attachment["file_bytes"],
+        prepared_attachment["mime_type"],
+    )
 
     return {
-        "file_url": f"{FILE_UPLOAD_URL_PREFIX}/{filename}",
+        "storage_key": storage_key,
         "original_name": prepared_attachment["original_name"],
         "mime_type": prepared_attachment["mime_type"],
         "size_bytes": prepared_attachment["size_bytes"],
@@ -147,10 +147,10 @@ def get_message_file_attachments(message: Message) -> list[dict[str, object]]:
             dict(attachment)
             for attachment in attachments
             if isinstance(attachment, dict)
-            and isinstance(attachment.get("file_url"), str)
+            and isinstance(attachment.get("storage_key"), str)
         ]
 
-    if isinstance(message.metadata_.get("file_url"), str):
+    if isinstance(message.metadata_.get("storage_key"), str):
         attachment = dict(message.metadata_)
         attachment.setdefault("message_type", message.message_type)
         return [attachment]
@@ -233,7 +233,7 @@ def get_chat_messages(
 
 
 @router.get("/messages/{message_id}/copy-image")
-def get_message_image_for_copy(
+async def get_message_image_for_copy(
     message_id: int,
     session: SessionDep,
     current_user: Annotated[User, Depends(get_current_user)],
@@ -267,16 +267,6 @@ def get_message_image_for_copy(
     elif message.message_type != "image":
         raise HTTPException(status_code=400, detail="Message is not an image")
 
-    file_url = metadata.get("file_url")
-    if not isinstance(file_url, str) or not file_url.startswith(
-        f"{FILE_UPLOAD_URL_PREFIX}/"
-    ):
-        raise HTTPException(status_code=404, detail="Image not found")
-
-    image_path = FILE_UPLOADS_DIR / Path(file_url).name
-    if not image_path.is_file():
-        raise HTTPException(status_code=404, detail="Image not found")
-
     mime_type = metadata.get("mime_type")
     media_type = (
         mime_type.split(";", 1)[0].strip()
@@ -284,7 +274,11 @@ def get_message_image_for_copy(
         else "image/png"
     )
 
-    return FileResponse(image_path, media_type=media_type)
+    storage_key = metadata.get("storage_key")
+    if isinstance(storage_key, str):
+        return Response(content=await read_upload(storage_key), media_type=media_type)
+
+    raise HTTPException(status_code=404, detail="Image not found")
 
 
 @router.post(
@@ -573,11 +567,13 @@ async def create_voice_message(
         reply_to_message_id,
     )
 
-    VOICE_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     filename = f"{uuid4().hex}{extension}"
-    upload_path = VOICE_UPLOADS_DIR / filename
-    upload_path.write_bytes(audio_bytes)
-    audio_url = f"{VOICE_UPLOAD_URL_PREFIX}/{filename}"
+    audio_storage_key = await store_upload(
+        "voice",
+        filename,
+        audio_bytes,
+        content_type or base_content_type,
+    )
 
     message = Message(
         chat_id=chat_id,
@@ -586,7 +582,7 @@ async def create_voice_message(
         message_type="voice",
         reply_to_message_id=reply_target.id if reply_target else None,
         metadata={
-            "audio_url": audio_url,
+            "audio_storage_key": audio_storage_key,
             "duration_ms": duration_ms,
             "mime_type": content_type or base_content_type,
             "size_bytes": len(audio_bytes),
@@ -688,7 +684,7 @@ async def create_file_message(
     )
 
     stored_attachments = [
-        save_prepared_file_attachment(prepared_attachment)
+        await save_prepared_file_attachment(prepared_attachment)
         for prepared_attachment in prepared_attachments
     ]
     message_type = (
@@ -760,7 +756,7 @@ async def apply_file_message_edit(
     session: SessionDep,
     current_user: User,
     content: str | None = None,
-    existing_file_urls: list[str] | None = None,
+    existing_attachment_ids: list[str] | None = None,
     files: list[UploadFile] | None = None,
 ):
     user_id = current_user.id
@@ -784,24 +780,24 @@ async def apply_file_message_edit(
 
     caption = parse_file_caption(content)
     original_attachments = get_message_file_attachments(message)
-    original_attachments_by_url = {
-        str(attachment["file_url"]): attachment
-        for attachment in original_attachments
-        if "file_url" in attachment
-    }
-    kept_attachments = []
-    seen_file_urls = set()
+    original_attachments_by_id = {}
+    for attachment in original_attachments:
+        storage_key = attachment.get("storage_key")
+        if isinstance(storage_key, str):
+            original_attachments_by_id[f"key:{storage_key}"] = attachment
 
-    for file_url in existing_file_urls or []:
-        if file_url in seen_file_urls:
+    kept_attachments = []
+    seen_attachment_ids = set()
+    for attachment_id in existing_attachment_ids or []:
+        if attachment_id in seen_attachment_ids:
             continue
 
-        attachment = original_attachments_by_url.get(file_url)
+        attachment = original_attachments_by_id.get(attachment_id)
         if attachment is None:
             raise HTTPException(status_code=400, detail="Unknown existing attachment")
 
         kept_attachments.append(attachment)
-        seen_file_urls.add(file_url)
+        seen_attachment_ids.add(attachment_id)
 
     prepared_attachments = [
         await prepare_file_attachment(file)
@@ -815,7 +811,7 @@ async def apply_file_message_edit(
     stored_attachments = [
         *kept_attachments,
         *[
-            save_prepared_file_attachment(prepared_attachment)
+            await save_prepared_file_attachment(prepared_attachment)
             for prepared_attachment in prepared_attachments
         ],
     ]
@@ -1166,23 +1162,27 @@ async def edit_message(
     if content_type == "multipart/form-data":
         form = await request.form()
         raw_content = form.get("content")
-        existing_file_urls = [
-            value
-            for value in form.getlist("existing_file_urls")
-            if isinstance(value, str)
-        ]
+        existing_attachment_ids = (
+            [
+                value
+                for value in form.getlist("existing_attachment_ids")
+                if isinstance(value, str)
+            ]
+            if "existing_attachment_ids" in form
+            else None
+        )
         uploaded_files: list[UploadFile] = []
         for value in form.getlist("files"):
             if hasattr(value, "read") and hasattr(value, "filename"):
                 uploaded_files.append(cast(UploadFile, value))
 
         return await apply_file_message_edit(
-            message_id,
-            session,
-            current_user,
-            raw_content if isinstance(raw_content, str) else None,
-            existing_file_urls,
-            uploaded_files,
+            message_id=message_id,
+            session=session,
+            current_user=current_user,
+            content=raw_content if isinstance(raw_content, str) else None,
+            existing_attachment_ids=existing_attachment_ids,
+            files=uploaded_files,
         )
 
     data = await request.json()

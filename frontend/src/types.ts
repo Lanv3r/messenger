@@ -34,6 +34,7 @@ export type ChatMessage = {
 
 export type MessageAttachment = {
   file_url: string;
+  storage_key?: string;
   original_name: string;
   mime_type: string;
   size_bytes: number;
@@ -59,7 +60,7 @@ export type ComposerDraft = {
 export type AttachmentDraft = {
   id: string;
   file?: File;
-  existingFileUrl?: string;
+  existingAttachmentId?: string;
   previewUrl: string;
   messageType: string;
   originalName: string;

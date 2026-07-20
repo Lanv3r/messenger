@@ -593,7 +593,7 @@ async def update_group_chat(
     chat.title = normalized_title
     chat.description = normalized_description or None
     if avatar is not None:
-        chat.avatar_url = await save_avatar_upload(avatar)
+        chat.avatar_storage_key = await save_avatar_upload(avatar)
     chat.updated_at = datetime.now(timezone.utc)
     session.add(chat)
     session.commit()
@@ -1059,13 +1059,13 @@ async def create_group_chat(
             detail="Description must be at most 255 characters.",
         )
 
-    avatar_url = await save_avatar_upload(avatar)
+    avatar_storage_key = await save_avatar_upload(avatar)
 
     chat = Chat(
         type="group",
         title=normalized_title,
         description=normalized_description or None,
-        avatar_url=avatar_url,
+        avatar_storage_key=avatar_storage_key,
     )
     session.add(chat)
     session.flush()

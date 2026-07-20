@@ -5,6 +5,8 @@ anyio==4.12.1
 argon2-cffi==25.1.0
 argon2-cffi-bindings==25.1.0
 bidict==0.23.1
+boto3==1.43.46
+botocore[crt]==1.43.50
 certifi==2026.2.25
 cffi==2.0.0
 click==8.3.1

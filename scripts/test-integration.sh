@@ -30,5 +30,7 @@ PYTHON_BIN="$(command -v "${PYTHON_BIN}")"
 
 docker compose -f "${ROOT_DIR}/compose.test.yaml" up -d --wait postgres-test
 
-TEST_DATABASE_URL="${TEST_DATABASE_URL}" \
+S3_BUCKET=messenger-test-uploads \
+  S3_REGION=us-east-1 \
+  TEST_DATABASE_URL="${TEST_DATABASE_URL}" \
   "${PYTHON_BIN}" -m unittest discover -s "${ROOT_DIR}/backend/tests" -p "test_*.py"

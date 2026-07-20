@@ -50,7 +50,6 @@ async def connect(sid, environ, auth):
                 "user_id": user.id,
                 "username": user.username,
                 "display_name": display_name,
-                "avatar_url": user.avatar_url,
                 "token_expires_at": token_expires_at,
             },
         )
@@ -186,8 +185,6 @@ async def recording_voice(sid, data):
 async def message(sid, data):
     session = await sio.get_session(sid)
     sender_id = session["user_id"]
-    sender_username = session["username"]
-    sender_avatar_url = session["avatar_url"]
 
     if datetime.now(timezone.utc).timestamp() >= session["token_expires_at"]:
         await sio.disconnect(sid)
@@ -218,6 +215,10 @@ async def message(sid, data):
         return {"ok": False, "error": "Invalid reply target"}
 
     with Session(engine) as db:
+        sender = db.get(User, sender_id)
+        if sender is None:
+            return {"ok": False, "error": "User was not found"}
+
         try:
             participant = require_chat_permission(
                 db, chat_id, sender_id, "send_messages"
@@ -272,8 +273,7 @@ async def message(sid, data):
         for participant_id in participant_ids:
             public_messages_by_participant[participant_id] = to_message_public(
                 message,
-                sender_username=sender_username,
-                sender_avatar_url=sender_avatar_url,
+                sender=sender,
                 reply_to=build_message_reply_preview(db, message, participant_id),
             ).model_dump(mode="json", by_alias=True)
 

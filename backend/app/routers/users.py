@@ -281,9 +281,9 @@ async def update_me(
     if bio is not None:
         update_data["bio"] = bio.strip() or None
 
-    avatar_url = await save_avatar_upload(avatar)
-    if avatar_url is not None:
-        update_data["avatar_url"] = avatar_url
+    avatar_storage_key = await save_avatar_upload(avatar)
+    if avatar_storage_key is not None:
+        update_data["avatar_storage_key"] = avatar_storage_key
 
     for key, value in update_data.items():
         setattr(current_user, key, value)

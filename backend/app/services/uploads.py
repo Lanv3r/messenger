@@ -5,9 +5,8 @@ from fastapi import HTTPException, UploadFile
 from app.upload_constants import (
     AVATAR_IMAGE_ALLOWED_TYPES,
     AVATAR_IMAGE_MAX_BYTES,
-    AVATAR_UPLOAD_URL_PREFIX,
-    AVATAR_UPLOADS_DIR,
 )
+from app.services.storage import get_upload_url, store_upload
 
 
 async def save_avatar_upload(file: UploadFile | None) -> str | None:
@@ -29,9 +28,9 @@ async def save_avatar_upload(file: UploadFile | None) -> str | None:
     if len(image_bytes) > AVATAR_IMAGE_MAX_BYTES:
         raise HTTPException(status_code=413, detail="Avatar file is too large.")
 
-    AVATAR_UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
     filename = f"{uuid4().hex}{extension}"
-    upload_path = AVATAR_UPLOADS_DIR / filename
-    upload_path.write_bytes(image_bytes)
+    return await store_upload("avatars", filename, image_bytes, base_content_type)
 
-    return f"{AVATAR_UPLOAD_URL_PREFIX}/{filename}"
+
+def get_avatar_upload_url(storage_key: str | None) -> str:
+    return get_upload_url(storage_key) if storage_key else "/favicon.svg"
