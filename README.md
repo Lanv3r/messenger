@@ -109,6 +109,78 @@ S3_PRESIGNED_URL_EXPIRES_SECONDS=3600
 
 The AWS SDK uses the credentials from `aws login` for local development. A deployed backend should use an IAM role that only grants `s3:GetObject` and `s3:PutObject` on `arn:aws:s3:::my-messenger-dev-uploads/messenger/*`. Tests use an in-memory S3 client and never contact AWS.
 
+## AWS Backend Deployment
+
+`infra/aws/backend-ec2.yaml` deploys a learning environment in `us-east-1`: one
+ARM `t4g.small` EC2 instance, a private ECR repository, an isolated public VPC,
+and a minimal IAM role. The instance runs PostgreSQL and the backend as separate
+Docker containers. It can only read and write `messenger/*` in the configured S3
+bucket and is managed through Systems Manager, so the template opens HTTP only,
+not SSH.
+
+The deployment is intentionally a low-cost development setup, not a production
+architecture. It has a single application process for Socket.IO, uses HTTP while
+testing, and deletes the instance database when the stack is deleted. Docker
+images are automatically removed with the ECR repository on stack deletion.
+
+Before the first deployment, start Docker Desktop and confirm `aws login` is
+active. Then run:
+
+```bash
+./scripts/deploy-aws-backend.sh
+```
+
+The script validates the CloudFormation template, creates the stack, builds an
+ARM image, pushes it to ECR, starts the containers through Systems Manager, and
+prints the `/health` URL. Set `STACK_NAME`, `AWS_REGION`, `UPLOAD_BUCKET_NAME`,
+or `S3_PREFIX` to override the defaults.
+
+The deployed endpoint is HTTP-only, so it is suitable for checking the backend
+and API during this first pass. Do not point the browser app at it yet: login
+cookies need the frontend and backend served from the same HTTPS origin. A later
+deployment should add a domain, HTTPS, and frontend hosting before enabling real
+user logins.
+
+## AWS Frontend And HTTPS
+
+The HTTPS deployment uses two CloudFront distributions and a private S3 bucket:
+one distribution serves the Vite build, and the other proxies the existing EC2
+backend and Socket.IO endpoint. Keeping the frontend and API on separate hosts
+avoids routing static assets and the API's root-level paths through the same
+CloudFront behavior.
+
+For the default `anver.net` setup, the public hosts are:
+
+```text
+messenger.anver.net
+api.messenger.anver.net
+```
+
+First request a DNS-validated ACM certificate. The certificate stack remains in
+`CREATE_IN_PROGRESS` until the CNAME validation records are added at the external
+DNS provider.
+
+```bash
+./scripts/request-aws-messenger-certificate.sh
+```
+
+Add every printed CNAME record in Squarespace DNS. After the certificate stack is
+`CREATE_COMPLETE`, build and deploy the frontend:
+
+```bash
+./scripts/deploy-aws-messenger-frontend.sh
+```
+
+The deployment script builds the frontend with
+`VITE_API_URL=https://api.messenger.anver.net`, uploads it to the private S3
+bucket, configures the backend for HTTPS cookies and the production CORS origin,
+and prints the two CloudFront DNS CNAME targets. Add those final CNAME records in
+Squarespace, then open `https://messenger.anver.net`.
+
+CloudFront and the S3 bucket add usage-based charges. The S3 bucket is retained if
+the edge stack is deleted, protecting the deploy artifacts but requiring manual
+cleanup if it is no longer wanted.
+
 ## Notes
 
 - Alembic migrations are the source of truth for database schema changes after models are updated.

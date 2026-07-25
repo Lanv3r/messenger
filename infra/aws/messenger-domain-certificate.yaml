@@ -1,0 +1,30 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: DNS-validated certificate for the Messenger frontend and API domains.
+
+Parameters:
+  FrontendDomainName:
+    Type: String
+    Description: Public hostname for the Messenger frontend.
+    AllowedPattern: "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$"
+  ApiDomainName:
+    Type: String
+    Description: Public hostname for the Messenger API.
+    AllowedPattern: "^[a-z0-9]([a-z0-9.-]*[a-z0-9])?$"
+
+Resources:
+  MessengerDomainCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref FrontendDomainName
+      SubjectAlternativeNames:
+        - !Ref ApiDomainName
+      ValidationMethod: DNS
+      KeyAlgorithm: RSA_2048
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-certificate"
+
+Outputs:
+  CertificateArn:
+    Description: ACM certificate ARN for the Messenger CloudFront distributions.
+    Value: !Ref MessengerDomainCertificate

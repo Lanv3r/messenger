@@ -1,0 +1,272 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: Single-instance development deployment for the Messenger backend.
+
+Parameters:
+  UploadBucketName:
+    Type: String
+    Description: Existing private S3 bucket used for Messenger uploads.
+    Default: my-messenger-dev-uploads
+    AllowedPattern: "^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$"
+  S3Prefix:
+    Type: String
+    Description: Prefix in the upload bucket the backend may read and write.
+    Default: messenger
+    AllowedPattern: "^[a-zA-Z0-9!_.*'()/-]{1,128}$"
+  InstanceType:
+    Type: String
+    Description: Fixed small ARM instance type to bound this learning deployment's cost.
+    Default: t4g.small
+    AllowedValues:
+      - t4g.small
+
+Resources:
+  BackendVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.42.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-vpc"
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-igw"
+
+  VpcGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref BackendVpc
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Select [0, !GetAZs ""]
+      CidrBlock: 10.42.0.0/24
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref BackendVpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-public"
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref BackendVpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-public"
+
+  DefaultRoute:
+    Type: AWS::EC2::Route
+    DependsOn: VpcGatewayAttachment
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet
+
+  BackendSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Permit public HTTP traffic to the Messenger backend only.
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+      SecurityGroupIngress:
+        - Description: Public HTTP for the API and health check.
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+      VpcId: !Ref BackendVpc
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-backend"
+
+  BackendRepository:
+    Type: AWS::ECR::Repository
+    Properties:
+      EmptyOnDelete: true
+      ImageScanningConfiguration:
+        ScanOnPush: true
+      LifecyclePolicy:
+        LifecyclePolicyText: >-
+          {"rules":[{"rulePriority":1,"description":"Keep the five newest images.","selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":5},"action":{"type":"expire"}}]}
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-backend"
+
+  BackendInstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      Policies:
+        - PolicyName: PullBackendImage
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: ecr:GetAuthorizationToken
+                Resource: "*"
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                Resource: !GetAtt BackendRepository.Arn
+        - PolicyName: ReadAndWriteMessengerUploads
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: s3:GetBucketLocation
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${UploadBucketName}"
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "arn:${AWS::Partition}:s3:::${UploadBucketName}/${S3Prefix}/*"
+
+  BackendInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - !Ref BackendInstanceRole
+
+  BackendInstance:
+    Type: AWS::EC2::Instance
+    DependsOn:
+      - VpcGatewayAttachment
+    Properties:
+      ImageId: "{{resolve:ssm:/aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-arm64}}"
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref BackendInstanceProfile
+      MetadataOptions:
+        HttpEndpoint: enabled
+        HttpTokens: required
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            DeleteOnTermination: true
+            Encrypted: true
+            VolumeSize: 20
+            VolumeType: gp3
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: true
+          DeviceIndex: "0"
+          GroupSet:
+            - !Ref BackendSecurityGroup
+          SubnetId: !Ref PublicSubnet
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-backend"
+      UserData:
+        Fn::Base64:
+          Fn::Sub:
+            - |
+              #!/usr/bin/env bash
+              set -Eeuo pipefail
+
+              dnf install -y docker
+              systemctl enable --now docker
+
+              install -d -m 0700 /opt/messenger
+
+              if [[ ! -f /opt/messenger/backend.env ]]; then
+                db_password="$(openssl rand -hex 32)"
+                secret_key="$(openssl rand -hex 48)"
+                umask 077
+                cat > /opt/messenger/backend.env <<EOF
+              DATABASE_URL=postgresql+psycopg://messenger:$db_password@messenger-postgres:5432/messenger
+              POSTGRES_PASSWORD=$db_password
+              SECRET_KEY=$secret_key
+              ACCESS_TOKEN_EXPIRE_MINUTES=60
+              COOKIE_SECURE=false
+              COOKIE_SAMESITE=lax
+              CORS_ORIGINS=http://localhost:5173
+              S3_BUCKET=${UploadBucketName}
+              S3_REGION=${AWS::Region}
+              S3_PREFIX=${S3Prefix}
+              S3_PRESIGNED_URL_EXPIRES_SECONDS=3600
+              EOF
+                chmod 0600 /opt/messenger/backend.env
+              fi
+
+              cat > /usr/local/bin/deploy-messenger <<'SCRIPT'
+              #!/usr/bin/env bash
+              set -Eeuo pipefail
+
+              readonly AWS_REGION="${AWS::Region}"
+              readonly BACKEND_IMAGE="${BackendImage}"
+
+              source /opt/messenger/backend.env
+
+              docker network inspect messenger-network >/dev/null 2>&1 || docker network create messenger-network
+              docker pull postgres:16-alpine
+
+              if ! docker container inspect messenger-postgres >/dev/null 2>&1; then
+                docker run --detach \
+                  --name messenger-postgres \
+                  --restart unless-stopped \
+                  --network messenger-network \
+                  --env POSTGRES_DB=messenger \
+                  --env POSTGRES_USER=messenger \
+                  --env POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+                  --volume messenger-postgres:/var/lib/postgresql/data \
+                  postgres:16-alpine
+              else
+                docker start messenger-postgres >/dev/null
+              fi
+
+              until docker exec messenger-postgres pg_isready -U messenger -d messenger >/dev/null 2>&1; do
+                sleep 2
+              done
+
+              aws ecr get-login-password --region "$AWS_REGION" \
+                | docker login --username AWS --password-stdin "${BackendRegistry}"
+              docker pull "$BACKEND_IMAGE"
+              docker rm --force messenger-backend >/dev/null 2>&1 || true
+              docker run --detach \
+                --name messenger-backend \
+                --restart unless-stopped \
+                --network messenger-network \
+                --publish 80:8000 \
+                --env-file /opt/messenger/backend.env \
+                "$BACKEND_IMAGE"
+              SCRIPT
+              chmod 0700 /usr/local/bin/deploy-messenger
+            - BackendImage: !Sub "${BackendRepository.RepositoryUri}:latest"
+              BackendRegistry: !Select [0, !Split ["/", !GetAtt BackendRepository.RepositoryUri]]
+
+Outputs:
+  BackendHealthUrl:
+    Description: HTTP health-check URL for the deployed backend.
+    Value: !Sub "http://${BackendInstance.PublicDnsName}/health"
+  BackendBaseUrl:
+    Description: HTTP base URL for the deployed backend.
+    Value: !Sub "http://${BackendInstance.PublicDnsName}"
+  BackendInstanceId:
+    Description: Systems Manager managed EC2 instance ID.
+    Value: !Ref BackendInstance
+  RepositoryUri:
+    Description: ECR repository URI for the backend container image.
+    Value: !GetAtt BackendRepository.RepositoryUri
