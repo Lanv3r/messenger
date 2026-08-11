@@ -49,6 +49,7 @@ from sqlmodel import Session, col, select
 
 router = APIRouter(tags=["chats"])
 
+
 def to_chat_member_public(
     participant: ChatParticipant,
     user: User,
@@ -137,8 +138,10 @@ def get_member_action_permissions(
             pass
 
     target_is_member = target_participant.role == "member"
-    can_edit_member_rights = can_remove_members and target_is_manageable and (
-        target_is_member or can_manage_admin_target
+    can_edit_member_rights = (
+        can_remove_members
+        and target_is_manageable
+        and (target_is_member or can_manage_admin_target)
     )
 
     return {
@@ -294,10 +297,7 @@ def get_chats(
         ).first()
 
         if last_message is None and (
-            (
-                chat.type == "direct"
-                and not current_participant.show_when_empty
-            )
+            (chat.type == "direct" and not current_participant.show_when_empty)
             or (
                 chat.type == "group"
                 and current_participant.cleared_at is not None
@@ -372,6 +372,42 @@ def get_chats(
         )
     )
     return result
+
+
+# FOR BENCHMARK ONLY!
+@router.get("/unread-counts", response_model=dict[int, int])
+def get_unread_counts(
+    session: SessionDep,
+    current_user: Annotated[User, Depends(get_current_user)],
+):
+    current_user_id = current_user.id
+    if current_user_id is None:
+        raise HTTPException(status_code=401, detail="Invalid user")
+
+    participants = session.exec(
+        select(ChatParticipant).where(
+            col(ChatParticipant.user_id) == current_user_id,
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).all()
+    unread_counts = {}
+    for participant in participants:
+        statement = select(func.count(col(Message.id))).where(
+            col(Message.chat_id) == participant.chat_id,
+            col(Message.sender_id) != current_user_id,
+            col(Message.deleted_at).is_(None),
+            message_is_visible_to_user(
+                current_user_id,
+                participant.cleared_at,
+            ),
+        )
+        if participant.last_read_message_id is not None:
+            statement = statement.where(
+                col(Message.id) > participant.last_read_message_id
+            )
+        unread_counts[participant.chat_id] = session.exec(statement).one()
+
+    return unread_counts
 
 
 @router.get("/chats/direct/by-user/{user_id}", response_model=ChatListItem | None)
@@ -576,7 +612,9 @@ async def update_group_chat(
         )
 
     normalized_title = payload.title.strip()
-    normalized_description = payload.description.strip() if payload.description else None
+    normalized_description = (
+        payload.description.strip() if payload.description else None
+    )
     if not normalized_title:
         raise HTTPException(status_code=400, detail="Group name is required")
     if len(normalized_title) > 128:
@@ -649,7 +687,9 @@ async def delete_group_for_everyone(
             detail="Only group chats can be deleted here",
         )
     if participant.role != "owner":
-        raise HTTPException(status_code=403, detail="Only the group owner can delete it")
+        raise HTTPException(
+            status_code=403, detail="Only the group owner can delete it"
+        )
 
     member_ids = session.exec(
         select(col(ChatParticipant.user_id)).where(
@@ -724,9 +764,7 @@ async def delete_chat(
             )
 
     participant.cleared_at = deleted_at
-    participant.show_when_empty = (
-        chat.type == "direct" and payload.clear_history
-    )
+    participant.show_when_empty = chat.type == "direct" and payload.clear_history
     if not clears_history:
         participant.is_pinned = False
         participant.pinned_order = None
@@ -965,7 +1003,9 @@ def reorder_pinned_chats(
         raise HTTPException(status_code=401, detail="Invalid user")
 
     if len(payload.chat_ids) != len(set(payload.chat_ids)):
-        raise HTTPException(status_code=400, detail="Duplicate chat IDs are not allowed")
+        raise HTTPException(
+            status_code=400, detail="Duplicate chat IDs are not allowed"
+        )
 
     pinned_participants = session.exec(
         select(ChatParticipant).where(
@@ -1045,7 +1085,9 @@ async def create_group_chat(
         raise HTTPException(status_code=401, detail="Invalid user")
 
     normalized_title = payload.title.strip()
-    normalized_description = payload.description.strip() if payload.description else None
+    normalized_description = (
+        payload.description.strip() if payload.description else None
+    )
     if not normalized_title:
         raise HTTPException(status_code=400, detail="Group name is required")
     if len(normalized_title) > 128:

@@ -51,6 +51,7 @@ Users:
 Chats:
 
 - `GET /chats`: list current user's chats.
+- `GET /unread-counts`: return unread message counts keyed by chat ID.
 - `GET /chats/direct/by-user/{user_id}`: find an existing direct/self chat for a user.
 - `POST /chats/group`: create a group chat.
 - `GET /chats/{chat_id}/members`: list group members.
@@ -93,6 +94,37 @@ make test
 ```
 
 The smoke runner migrates the isolated database, starts the backend on `localhost:8001` and Vite on `localhost:5174`, waits for `/health`, and then runs Playwright. Set `SMOKE_BACKEND_PORT` or `SMOKE_FRONTEND_PORT` to use other free ports. GitHub Actions runs the integration and smoke jobs on every pull request and push to `main`.
+
+## Performance Benchmarks
+
+The backend benchmark suite measures API latency through FastAPI's in-process HTTP
+client while using the same PostgreSQL engine as the application. Each small,
+medium, and large workload is created in a fresh schema, setup is excluded from
+timings, and the schema is removed afterward. It measures chat listing, unread
+counts, message listing, message search, message sending, and multipart attachment
+uploads while varying chat, message, group member, attachment count, and attachment
+size dimensions. Attachment storage uses an in-memory S3 stand-in so the benchmark
+captures application work without external network variance.
+
+Run the suite and save its raw samples plus min, mean, p50, p95, and max latency:
+
+```bash
+make benchmark
+```
+
+Results are written to `benchmark-results/<UTC timestamp>.json`. Keep a known-good
+result as a baseline and compare a future revision with it:
+
+```bash
+./scripts/run-benchmarks.sh \
+  --baseline benchmark-results/baseline.json \
+  --max-regression-percent 10
+```
+
+The threshold makes the command fail when any matching operation/workload p95 is
+more than the given percentage slower. For meaningful comparisons, use the same
+machine, Python/PostgreSQL versions, iteration count, and otherwise-idle
+environment. Increase samples when needed with `--iterations 100 --warmups 10`.
 
 ## S3 Upload Storage
 

@@ -552,6 +552,32 @@ class MessengerIntegrationTest(unittest.TestCase):
         )
         self.assertEqual(response.status_code, 400, response.text)
 
+    def test_unread_counts_track_messages_and_read_markers(self):
+        owner_client, _owner = self.signup("owner")
+        member_client, member = self.signup("member")
+        group = self.create_group(owner_client, [member["id"]])
+
+        message_response = owner_client.post(
+            f"/chats/{group['id']}/messages",
+            json={"content": "unread message"},
+        )
+        self.assertEqual(message_response.status_code, 200, message_response.text)
+        message_id = message_response.json()["id"]
+
+        unread_response = member_client.get("/unread-counts")
+        self.assertEqual(unread_response.status_code, 200, unread_response.text)
+        self.assertEqual(unread_response.json()[str(group["id"])], 1)
+
+        read_response = member_client.post(
+            f"/chats/{group['id']}/read",
+            json={"last_read_message_id": message_id},
+        )
+        self.assertEqual(read_response.status_code, 200, read_response.text)
+
+        updated_response = member_client.get("/unread-counts")
+        self.assertEqual(updated_response.status_code, 200, updated_response.text)
+        self.assertEqual(updated_response.json()[str(group["id"])], 0)
+
     def test_group_message_read_indicator_marks_any_reader(self):
         owner_client, _owner = self.signup("owner")
         member_client, member = self.signup("member")
