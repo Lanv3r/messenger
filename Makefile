@@ -8,5 +8,10 @@ test-smoke:
 
 test: test-integration test-smoke
 
+ifeq ($(OS),Windows_NT)
+benchmark:
+	powershell.exe -NoProfile -ExecutionPolicy Bypass -File ./scripts/run-benchmarks.ps1
+else
 benchmark:
 	./scripts/run-benchmarks.sh
+endif

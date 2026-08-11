@@ -106,6 +106,12 @@ uploads while varying chat, message, group member, attachment count, and attachm
 size dimensions. Attachment storage uses an in-memory S3 stand-in so the benchmark
 captures application work without external network variance.
 
+| Workload | Chats | Target-chat messages | Members | Attachments per upload | Bytes per attachment |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Small | 10 | 50 | 3 | 2 | 16 KiB |
+| Medium | 50 | 250 | 10 | 4 | 128 KiB |
+| Large | 150 | 1,000 | 30 | 8 | 512 KiB |
+
 Run the suite and save its raw samples plus min, mean, p50, p95, and max latency:
 
 ```bash

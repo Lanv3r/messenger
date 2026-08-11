@@ -5,7 +5,7 @@ from pathlib import Path
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
-from benchmarks.run import compare_results, percentile, summarize  # noqa: E402
+from benchmarks.run import WORKLOADS, compare_results, percentile, summarize  # noqa: E402
 
 
 class BenchmarkMathTest(unittest.TestCase):
@@ -35,6 +35,23 @@ class BenchmarkMathTest(unittest.TestCase):
         }]
 
         self.assertEqual(compare_results(current, baseline)[0]["delta_percent"], 20.0)
+
+    def test_workloads_scale_every_dimension(self):
+        dimensions = (
+            "chat_count",
+            "messages_in_target_chat",
+            "member_count",
+            "attachment_count",
+            "attachment_bytes",
+        )
+
+        for smaller, larger in zip(WORKLOADS[:-1], WORKLOADS[1:], strict=True):
+            for dimension in dimensions:
+                self.assertGreater(
+                    getattr(larger, dimension),
+                    getattr(smaller, dimension),
+                    f"{dimension} should increase with workload size",
+                )
 
 
 if __name__ == "__main__":

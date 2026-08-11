@@ -2,11 +2,13 @@
 __pycache__/
 *.pyc
 venv/
+.venv/
 
 # Env
 .env
 backend/.env
 backend/uploads/
+benchmark-results/
 
 # Node
 node_modules/
