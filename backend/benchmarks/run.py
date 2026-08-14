@@ -12,6 +12,7 @@ import statistics
 import subprocess
 import sys
 import time
+from collections import Counter
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -26,7 +27,9 @@ DEFAULT_RESULTS_DIR = BACKEND_DIR.parent / "benchmark-results"
 @dataclass(frozen=True)
 class Workload:
     name: str
-    chat_count: int
+    group_chat_count: int
+    self_chat_count: int
+    direct_chat_count: int
     messages_in_target_chat: int
     member_count: int
     attachment_count: int
@@ -36,7 +39,9 @@ class Workload:
 WORKLOADS = (
     Workload(
         "small",
-        chat_count=10,
+        group_chat_count=10,
+        self_chat_count=1,
+        direct_chat_count=20,
         messages_in_target_chat=50,
         member_count=3,
         attachment_count=2,
@@ -44,7 +49,9 @@ WORKLOADS = (
     ),
     Workload(
         "medium",
-        chat_count=50,
+        group_chat_count=50,
+        self_chat_count=3,
+        direct_chat_count=75,
         messages_in_target_chat=250,
         member_count=10,
         attachment_count=4,
@@ -52,7 +59,9 @@ WORKLOADS = (
     ),
     Workload(
         "large",
-        chat_count=150,
+        group_chat_count=150,
+        self_chat_count=5,
+        direct_chat_count=200,
         messages_in_target_chat=1000,
         member_count=30,
         attachment_count=8,
@@ -190,7 +199,7 @@ def run_workload(
 
     try:
         with Session(schema_engine) as session:
-            users = [
+            group_users = [
                 User(
                     username=f"bench_{workload.name}_{index}",
                     first_name=f"Benchmark {index}",
@@ -198,15 +207,23 @@ def run_workload(
                 )
                 for index in range(workload.member_count)
             ]
-            session.add_all(users)
+            direct_users = [
+                User(
+                    username=f"bench_{workload.name}_direct_{index}",
+                    first_name=f"Direct peer {index}",
+                    password_hash="benchmark-not-used",
+                )
+                for index in range(workload.direct_chat_count)
+            ]
+            session.add_all([*group_users, *direct_users])
             session.flush()
-            owner = users[0]
+            owner = group_users[0]
             if owner.id is None:
                 raise RuntimeError("benchmark owner was not created")
             owner_id = owner.id
 
             target_chat_id = None
-            for chat_index in range(workload.chat_count):
+            for chat_index in range(workload.group_chat_count):
                 chat = Chat(type="group", title=f"Benchmark chat {chat_index}")
                 session.add(chat)
                 session.flush()
@@ -220,7 +237,7 @@ def run_workload(
                         permissions=SYSTEM_ROLE_DEFAULTS["member"].copy(),
                     )
                 )
-                for user_index, user in enumerate(users):
+                for user_index, user in enumerate(group_users):
                     if user.id is None:
                         raise RuntimeError("benchmark member was not created")
                     session.add(
@@ -236,7 +253,7 @@ def run_workload(
                 )
                 last_message = None
                 for message_index in range(message_count):
-                    sender_id = users[message_index % len(users)].id
+                    sender_id = group_users[message_index % len(group_users)].id
                     if sender_id is None:
                         raise RuntimeError("benchmark sender was not created")
                     last_message = Message(
@@ -252,6 +269,61 @@ def run_workload(
                 session.flush()
                 if last_message is not None:
                     chat.last_message_id = last_message.id
+
+            for chat_index in range(workload.self_chat_count):
+                chat = Chat(type="self", title="Saved Messages")
+                session.add(chat)
+                session.flush()
+                if chat.id is None:
+                    raise RuntimeError("benchmark self chat was not created")
+                session.add(
+                    ChatParticipant(
+                        chat_id=chat.id,
+                        user_id=owner_id,
+                        role="owner",
+                    )
+                )
+                message = Message(
+                    chat_id=chat.id,
+                    sender_id=owner_id,
+                    content=f"benchmark saved message {chat_index}",
+                )
+                session.add(message)
+                session.flush()
+                chat.last_message_id = message.id
+
+            for chat_index, direct_user in enumerate(direct_users):
+                if direct_user.id is None:
+                    raise RuntimeError("benchmark direct user was not created")
+                chat = Chat(type="direct")
+                session.add(chat)
+                session.flush()
+                if chat.id is None:
+                    raise RuntimeError("benchmark direct chat was not created")
+                session.add_all(
+                    [
+                        ChatParticipant(
+                            chat_id=chat.id,
+                            user_id=owner_id,
+                            role="member",
+                        ),
+                        ChatParticipant(
+                            chat_id=chat.id,
+                            user_id=direct_user.id,
+                            role="member",
+                        ),
+                    ]
+                )
+                message = Message(
+                    chat_id=chat.id,
+                    sender_id=(
+                        direct_user.id if chat_index % 2 == 0 else owner_id
+                    ),
+                    content=f"benchmark direct message {chat_index}",
+                )
+                session.add(message)
+                session.flush()
+                chat.last_message_id = message.id
             session.commit()
 
         if target_chat_id is None:
@@ -288,6 +360,22 @@ def run_workload(
         ):
             client.cookies.set("access_token", token)
 
+            seeded_chats_response = client.get("/chats")
+            require_success(seeded_chats_response, "validate_seeded_chats")
+            actual_chat_counts = Counter(
+                chat["type"] for chat in seeded_chats_response.json()
+            )
+            expected_chat_counts = {
+                "group": workload.group_chat_count,
+                "self": workload.self_chat_count,
+                "direct": workload.direct_chat_count,
+            }
+            if actual_chat_counts != expected_chat_counts:
+                raise RuntimeError(
+                    "seeded chat mix was not returned by /chats: "
+                    f"expected {expected_chat_counts}, got {dict(actual_chat_counts)}"
+                )
+
             def get_chats(_index: int) -> None:
                 require_success(client.get("/chats"), "list_chats")
 
@@ -296,9 +384,6 @@ def run_workload(
                     client.get(f"/chats/{target_chat_id}/messages"),
                     "list_messages",
                 )
-
-            def get_unread_counts(_index: int) -> None:
-                require_success(client.get("/unread-counts"), "get_unread_counts")
 
             def search_messages(_index: int) -> None:
                 require_success(
@@ -343,7 +428,6 @@ def run_workload(
 
             operations = (
                 ("list_chats", get_chats),
-                ("get_unread_counts", get_unread_counts),
                 ("list_messages", get_messages),
                 ("search_messages", search_messages),
                 ("send_message", send_message),

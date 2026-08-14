@@ -38,7 +38,9 @@ class BenchmarkMathTest(unittest.TestCase):
 
     def test_workloads_scale_every_dimension(self):
         dimensions = (
-            "chat_count",
+            "group_chat_count",
+            "self_chat_count",
+            "direct_chat_count",
             "messages_in_target_chat",
             "member_count",
             "attachment_count",
@@ -52,6 +54,14 @@ class BenchmarkMathTest(unittest.TestCase):
                     getattr(smaller, dimension),
                     f"{dimension} should increase with workload size",
                 )
+
+    def test_chat_mix_keeps_self_chats_small_and_direct_chats_dominant(self):
+        for workload in WORKLOADS:
+            self.assertLessEqual(workload.self_chat_count, 5)
+            self.assertGreater(
+                workload.direct_chat_count,
+                workload.self_chat_count,
+            )
 
 
 if __name__ == "__main__":

@@ -51,7 +51,6 @@ Users:
 Chats:
 
 - `GET /chats`: list current user's chats.
-- `GET /unread-counts`: return unread message counts keyed by chat ID.
 - `GET /chats/direct/by-user/{user_id}`: find an existing direct/self chat for a user.
 - `POST /chats/group`: create a group chat.
 - `GET /chats/{chat_id}/members`: list group members.
@@ -100,17 +99,17 @@ The smoke runner migrates the isolated database, starts the backend on `localhos
 The backend benchmark suite measures API latency through FastAPI's in-process HTTP
 client while using the same PostgreSQL engine as the application. Each small,
 medium, and large workload is created in a fresh schema, setup is excluded from
-timings, and the schema is removed afterward. It measures chat listing, unread
-counts, message listing, message search, message sending, and multipart attachment
+timings, and the schema is removed afterward. It measures chat listing, message
+listing, message search, message sending, and multipart attachment
 uploads while varying chat, message, group member, attachment count, and attachment
 size dimensions. Attachment storage uses an in-memory S3 stand-in so the benchmark
 captures application work without external network variance.
 
-| Workload | Chats | Target-chat messages | Members | Attachments per upload | Bytes per attachment |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| Small | 10 | 50 | 3 | 2 | 16 KiB |
-| Medium | 50 | 250 | 10 | 4 | 128 KiB |
-| Large | 150 | 1,000 | 30 | 8 | 512 KiB |
+| Workload | Group chats | Self chats | Direct chats | Target-chat messages | Members | Attachments per upload | Bytes per attachment |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Small | 10 | 1 | 20 | 50 | 3 | 2 | 16 KiB |
+| Medium | 50 | 3 | 75 | 250 | 10 | 4 | 128 KiB |
+| Large | 150 | 5 | 200 | 1,000 | 30 | 8 | 512 KiB |
 
 Run the suite and save its raw samples plus min, mean, p50, p95, and max latency:
 

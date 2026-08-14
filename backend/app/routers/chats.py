@@ -234,6 +234,44 @@ def get_chats(
     for member in member_rows:
         members_by_chat[member.chat_id].append(member)
 
+    # Bulk-load other_participant in direct chats
+    direct_chat_ids = {
+        chat.id for _, chat in rows if chat.id is not None and chat.type == "direct"
+    }
+
+    other_participant_by_chat: dict[int, ChatParticipant] = {}
+
+    for chat_id in direct_chat_ids:
+        for participant in members_by_chat.get(chat_id, []):
+            if participant.user_id != current_user_id:
+                other_participant_by_chat[chat_id] = participant
+                break
+
+    # Set of other users in direct chats for fast checks
+    other_user_ids = {
+        participant.user_id for participant in other_participant_by_chat.values()
+    }
+
+    # Query all other users in direct chats
+    other_users = session.exec(
+        select(User).where(
+            col(User.id).in_(other_user_ids),
+        )
+    ).all()
+
+    other_users_by_id = {user.id: user for user in other_users if user.id is not None}
+
+    # Bulk-load user who have blocked this user
+    blocker_ids = set(
+        session.exec(
+            select(col(UserBlock.blocker_user_id)).where(
+                col(UserBlock.blocker_user_id).in_(other_user_ids),
+                col(UserBlock.blocked_user_id) == current_user_id,
+            )
+        ).all()
+    )
+
+    # Bulk-load unread counts
     unread_rows = session.exec(
         select(
             col(Message.chat_id),
@@ -269,6 +307,7 @@ def get_chats(
 
     unread_count_by_chat = {chat_id: count for chat_id, count in unread_rows}
 
+    # Bulk-load last messages
     last_messages = session.exec(
         select(Message)
         .join(
@@ -298,6 +337,7 @@ def get_chats(
 
     last_message_by_chat = {message.chat_id: message for message in last_messages}
 
+    # List of chats of the current user
     result = []
 
     for current_participant, chat in rows:
@@ -324,13 +364,10 @@ def get_chats(
             unread_count = 0
 
         elif chat.type == "direct":
-            other_participant = None
-            for member in members_by_chat.get(chat.id, []):
-                if member.user_id != current_user_id:
-                    other_participant = member
+            other_participant = other_participant_by_chat.get(chat.id)
 
             if other_participant is not None:
-                other_user = session.get(User, other_participant.user_id)
+                other_user = other_users_by_id.get(other_participant.user_id)
 
                 if other_user is not None:
                     other_user_id = other_user.id
@@ -343,10 +380,7 @@ def get_chats(
                     other_user_status = other_user.status
                     other_last_read_message_id = other_participant.last_read_message_id
                     other_last_read_at = other_participant.last_read_at
-                    is_blocked_by_other = (
-                        session.get(UserBlock, (other_user_id, current_user_id))
-                        is not None
-                    )
+                    is_blocked_by_other = other_user.id in blocker_ids
         else:
             members = members_by_chat.get(chat.id, [])
             member_ids = [member.user_id for member in members]
