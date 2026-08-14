@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -44,7 +45,7 @@ from app.services.messages import get_message_preview_text, message_is_visible_t
 from app.services.uploads import save_avatar_upload
 from app.socket import sio
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from sqlalchemy import func, update
+from sqlalchemy import and_, func, or_, update
 from sqlmodel import Session, col, select
 
 router = APIRouter(tags=["chats"])
@@ -219,6 +220,84 @@ def get_chats(
             col(ChatParticipant.left_at).is_(None),
         )
     ).all()
+
+    chat_ids = [chat.id for _, chat in rows if chat.id is not None]
+
+    member_rows = session.exec(
+        select(ChatParticipant).where(
+            col(ChatParticipant.chat_id).in_(chat_ids),
+            col(ChatParticipant.left_at).is_(None),
+        )
+    ).all()
+
+    members_by_chat: dict[int, list[ChatParticipant]] = defaultdict(list)
+    for member in member_rows:
+        members_by_chat[member.chat_id].append(member)
+
+    unread_rows = session.exec(
+        select(
+            col(Message.chat_id),
+            func.count(col(Message.id)),
+        )
+        .join(
+            ChatParticipant,
+            and_(
+                col(ChatParticipant.chat_id) == col(Message.chat_id),
+                col(ChatParticipant.user_id) == current_user_id,
+                col(ChatParticipant.left_at).is_(None),
+            ),
+        )
+        .where(
+            col(Message.chat_id).in_(chat_ids),
+            col(Message.deleted_at).is_(None),
+            col(Message.sender_id) != current_user_id,
+            # The message must be newer than this user's read marker.
+            or_(
+                col(ChatParticipant.last_read_message_id).is_(None),
+                col(Message.id) > col(ChatParticipant.last_read_message_id),
+            ),
+            # Messages cleared by this user are not unread.
+            or_(
+                col(ChatParticipant.cleared_at).is_(None),
+                col(Message.created_at) > col(ChatParticipant.cleared_at),
+            ),
+            # Exclude messages deleted only for this user.
+            message_is_visible_to_user(current_user_id),
+        )
+        .group_by(col(Message.chat_id))
+    ).all()
+
+    unread_count_by_chat = {chat_id: count for chat_id, count in unread_rows}
+
+    last_messages = session.exec(
+        select(Message)
+        .join(
+            ChatParticipant,
+            and_(
+                col(ChatParticipant.chat_id) == col(Message.chat_id),
+                col(ChatParticipant.user_id) == current_user_id,
+                col(ChatParticipant.left_at).is_(None),
+            ),
+        )
+        .where(
+            col(Message.chat_id).in_(chat_ids),
+            col(Message.deleted_at).is_(None),
+            or_(
+                col(ChatParticipant.cleared_at).is_(None),
+                col(Message.created_at) > col(ChatParticipant.cleared_at),
+            ),
+            message_is_visible_to_user(current_user_id),
+        )
+        .distinct(col(Message.chat_id))
+        .order_by(
+            col(Message.chat_id),
+            col(Message.created_at).desc(),
+            col(Message.id).desc(),
+        )
+    ).all()
+
+    last_message_by_chat = {message.chat_id: message for message in last_messages}
+
     result = []
 
     for current_participant, chat in rows:
@@ -245,13 +324,10 @@ def get_chats(
             unread_count = 0
 
         elif chat.type == "direct":
-            other_participant = session.exec(
-                select(ChatParticipant).where(
-                    col(ChatParticipant.chat_id) == chat.id,
-                    col(ChatParticipant.user_id) != current_user_id,
-                    col(ChatParticipant.left_at).is_(None),
-                )
-            ).first()
+            other_participant = None
+            for member in members_by_chat.get(chat.id, []):
+                if member.user_id != current_user_id:
+                    other_participant = member
 
             if other_participant is not None:
                 other_user = session.get(User, other_participant.user_id)
@@ -272,29 +348,12 @@ def get_chats(
                         is not None
                     )
         else:
-            member_ids = list(
-                session.exec(
-                    select(col(ChatParticipant.user_id)).where(
-                        col(ChatParticipant.chat_id) == chat.id,
-                        col(ChatParticipant.left_at).is_(None),
-                    )
-                ).all()
-            )
+            members = members_by_chat.get(chat.id, [])
+            member_ids = [member.user_id for member in members]
             member_count = len(member_ids)
             current_user_role = current_participant.role
 
-        last_message = session.exec(
-            select(Message)
-            .where(
-                col(Message.chat_id) == chat.id,
-                col(Message.deleted_at).is_(None),
-                message_is_visible_to_user(
-                    current_user_id,
-                    current_participant.cleared_at,
-                ),
-            )
-            .order_by(col(Message.created_at).desc())
-        ).first()
+        last_message = last_message_by_chat.get(chat.id)
 
         if last_message is None and (
             (chat.type == "direct" and not current_participant.show_when_empty)
@@ -312,22 +371,7 @@ def get_chats(
         if chat.type == "self" and last_message is not None:
             last_read_message_id = last_message.id
 
-        unread_statement = select(func.count(col(Message.id))).where(
-            col(Message.chat_id) == chat.id,
-            col(Message.sender_id) != current_user_id,
-            col(Message.deleted_at).is_(None),
-            message_is_visible_to_user(
-                current_user_id,
-                current_participant.cleared_at,
-            ),
-        )
-
-        if last_read_message_id is not None:
-            unread_statement = unread_statement.where(
-                col(Message.id) > last_read_message_id
-            )
-
-        unread_count = session.exec(unread_statement).one()
+        unread_count = unread_count_by_chat.get(chat.id, 0)
 
         result.append(
             ChatListItem(

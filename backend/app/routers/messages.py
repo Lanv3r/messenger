@@ -214,11 +214,25 @@ def get_chat_messages(
 
     public_messages = []
 
-    for message in messages:
-        sender = users_by_id.get(message.sender_id)
-        message_user_state = session.get(
-            MessageUserState, (message.id, current_user_id)
+    message_ids = [m.id for m in messages]
+    message_user_states = session.exec(
+        select(MessageUserState).where(
+            col(MessageUserState.message_id).in_(message_ids),
+            col(MessageUserState.user_id) == current_user_id,
         )
+    ).all()
+
+    state_by_message = {state.message_id: state for state in message_user_states}
+
+    for message in messages:
+        if message.id is None:
+            raise HTTPException(
+                status_code=500,
+                detail="Persisted message has no ID",
+            )
+
+        sender = users_by_id.get(message.sender_id)
+        message_user_state = state_by_message.get(message.id)
         reply_to = build_message_reply_preview(session, message, current_user_id)
         public_messages.append(
             to_message_public(
@@ -659,10 +673,7 @@ async def create_file_message(
     participant = require_active_participant(session, chat_id, user_id)
     assert_direct_chat_message_allowed(session, chat, user_id)
 
-    prepared_attachments = [
-        await prepare_file_attachment(file)
-        for file in files
-    ]
+    prepared_attachments = [await prepare_file_attachment(file) for file in files]
     participant = require_chat_permission(
         session,
         chat_id,
@@ -800,8 +811,7 @@ async def apply_file_message_edit(
         seen_attachment_ids.add(attachment_id)
 
     prepared_attachments = [
-        await prepare_file_attachment(file)
-        for file in (files or [])
+        await prepare_file_attachment(file) for file in (files or [])
     ]
     for permission_name in {
         attachment["permission_name"] for attachment in prepared_attachments
