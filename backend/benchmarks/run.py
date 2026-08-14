@@ -464,7 +464,7 @@ def print_results(results: list[dict[str, Any]]) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--iterations", type=int, default=25)
-    parser.add_argument("--warmups", type=int, default=3)
+    parser.add_argument("--warmups", type=int, default=10)
     parser.add_argument(
         "--output",
         type=Path,

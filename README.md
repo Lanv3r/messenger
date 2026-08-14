@@ -129,7 +129,8 @@ result as a baseline and compare a future revision with it:
 The threshold makes the command fail when any matching operation/workload p95 is
 more than the given percentage slower. For meaningful comparisons, use the same
 machine, Python/PostgreSQL versions, iteration count, and otherwise-idle
-environment. Increase samples when needed with `--iterations 100 --warmups 10`.
+environment. The default is 25 timed iterations after 10 warmups. Increase samples
+when needed with `--iterations 100 --warmups 20`.
 
 ## S3 Upload Storage
 
