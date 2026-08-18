@@ -169,15 +169,20 @@ The AWS SDK uses the credentials from `aws login` for local development. A deplo
 
 `infra/aws/backend-ec2.yaml` deploys a learning environment in `us-east-1`: one
 ARM `t4g.small` EC2 instance, a private ECR repository, an isolated public VPC,
-and a minimal IAM role. The instance runs PostgreSQL and the backend as separate
-Docker containers. It can only read and write `messenger/*` in the configured S3
-bucket and is managed through Systems Manager, so the template opens HTTP only,
-not SSH.
+and a minimal IAM role. The instance runs Redis, PostgreSQL, and the backend as
+separate Docker containers on a private Docker network. Redis is not published
+on an EC2 port; only the backend container can reach it by its container name.
+The instance can only read and write `messenger/*` in the configured S3 bucket
+and is managed through Systems Manager, so the template opens HTTP only, not
+SSH.
 
 The deployment is intentionally a low-cost development setup, not a production
 architecture. It has a single application process for Socket.IO, uses HTTP while
-testing, and deletes the instance database when the stack is deleted. Docker
-images are automatically removed with the ECR repository on stack deletion.
+testing, and deletes the instance data when the stack is deleted. Redis writes
+its session state to a local Docker volume so sessions survive ordinary container
+and instance restarts; replacing or deleting the instance loses both PostgreSQL
+and Redis data. Idle sessions expire after 30 days. Docker images are
+automatically removed with the ECR repository on stack deletion.
 
 Before the first deployment, start Docker Desktop and confirm `aws login` is
 active. Then run:
@@ -188,8 +193,10 @@ active. Then run:
 
 The script validates the CloudFormation template, creates the stack, builds an
 ARM image, pushes it to ECR, starts the containers through Systems Manager, and
-prints the `/health` URL. Set `STACK_NAME`, `AWS_REGION`, `UPLOAD_BUCKET_NAME`,
-or `S3_PREFIX` to override the defaults.
+prints the `/health` URL. On an existing deployment it adds Redis and updates the
+backend environment without replacing the EC2 instance or its PostgreSQL volume.
+Set `STACK_NAME`, `AWS_REGION`, `UPLOAD_BUCKET_NAME`, or `S3_PREFIX` to override
+the defaults.
 
 The deployed endpoint is HTTP-only, so it is suitable for checking the backend
 and API during this first pass. Do not point the browser app at it yet: login

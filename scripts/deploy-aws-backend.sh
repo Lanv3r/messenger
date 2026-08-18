@@ -69,6 +69,7 @@ fi
 REPOSITORY_URI="$(stack_output RepositoryUri)"
 INSTANCE_ID="$(stack_output BackendInstanceId)"
 HEALTH_URL="$(stack_output BackendHealthUrl)"
+DEPLOY_DOCUMENT_NAME="$(stack_output BackendDeployDocumentName)"
 REGISTRY_HOST="${REPOSITORY_URI%%/*}"
 
 "${AWS_BIN}" ecr get-login-password --region "${REGION}" \
@@ -134,12 +135,11 @@ fi
 COMMAND_ID="$("${AWS_BIN}" ssm send-command \
   --region "${REGION}" \
   --instance-ids "${INSTANCE_ID}" \
-  --document-name AWS-RunShellScript \
-  --parameters 'commands=["/usr/local/bin/deploy-messenger"]' \
+  --document-name "${DEPLOY_DOCUMENT_NAME}" \
   --query 'Command.CommandId' \
   --output text)"
 
-echo "Starting the backend container..."
+echo "Starting Redis, PostgreSQL, and the backend containers..."
 for _ in {1..30}; do
   command_status="$("${AWS_BIN}" ssm get-command-invocation \
     --region "${REGION}" \

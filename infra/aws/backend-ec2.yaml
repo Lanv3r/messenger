@@ -257,6 +257,90 @@ Resources:
             - BackendImage: !Sub "${BackendRepository.RepositoryUri}:latest"
               BackendRegistry: !Select [0, !Split ["/", !GetAtt BackendRepository.RepositoryUri]]
 
+  BackendDeployDocument:
+    Type: AWS::SSM::Document
+    Properties:
+      DocumentFormat: YAML
+      DocumentType: Command
+      TargetType: /AWS::EC2::Instance
+      UpdateMethod: NewVersion
+      Content:
+        schemaVersion: "2.2"
+        description: Configure Redis and deploy the Messenger backend containers.
+        mainSteps:
+          - action: aws:runShellScript
+            name: deployMessenger
+            inputs:
+              timeoutSeconds: "900"
+              runCommand:
+                - |
+                  set -Eeuo pipefail
+
+                  readonly ENV_FILE=/opt/messenger/backend.env
+                  readonly REDIS_IMAGE=redis:8-alpine
+
+                  set_env_value() {
+                    local key="$1"
+                    local value="$2"
+
+                    if grep -q "^${key}=" "$ENV_FILE"; then
+                      sed -i "s|^${key}=.*|${key}=${value}|" "$ENV_FILE"
+                    else
+                      printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE"
+                    fi
+                  }
+
+                  docker network inspect messenger-network >/dev/null 2>&1 \
+                    || docker network create messenger-network
+                  docker pull "$REDIS_IMAGE"
+
+                  if ! docker container inspect messenger-redis >/dev/null 2>&1; then
+                    docker run --detach \
+                      --name messenger-redis \
+                      --restart unless-stopped \
+                      --network messenger-network \
+                      --volume messenger-redis:/data \
+                      --memory 128m \
+                      --memory-reservation 64m \
+                      --health-cmd "redis-cli ping || exit 1" \
+                      --health-interval 5s \
+                      --health-timeout 3s \
+                      --health-retries 20 \
+                      "$REDIS_IMAGE" \
+                      redis-server \
+                      --save "" \
+                      --appendonly yes \
+                      --appendfsync everysec \
+                      --maxmemory 64mb \
+                      --maxmemory-policy noeviction
+                  else
+                    docker start messenger-redis >/dev/null
+                  fi
+
+                  for _ in {1..30}; do
+                    if docker exec messenger-redis redis-cli ping \
+                      | grep -qx PONG; then
+                      break
+                    fi
+                    sleep 2
+                  done
+
+                  if ! docker exec messenger-redis redis-cli ping \
+                    | grep -qx PONG; then
+                    docker logs messenger-redis >&2
+                    exit 1
+                  fi
+
+                  set_env_value REDIS_URL redis://messenger-redis:6379/0
+                  set_env_value SESSION_TIMEOUT_SECONDS 2592000
+                  sed -i '/^ACCESS_TOKEN_EXPIRE_MINUTES=/d' "$ENV_FILE"
+                  chmod 0600 "$ENV_FILE"
+
+                  /usr/local/bin/deploy-messenger
+      Tags:
+        - Key: Name
+          Value: !Sub "${AWS::StackName}-deploy"
+
 Outputs:
   BackendHealthUrl:
     Description: HTTP health-check URL for the deployed backend.
@@ -270,3 +354,6 @@ Outputs:
   RepositoryUri:
     Description: ECR repository URI for the backend container image.
     Value: !GetAtt BackendRepository.RepositoryUri
+  BackendDeployDocumentName:
+    Description: Systems Manager document used to deploy the backend containers.
+    Value: !Ref BackendDeployDocument
