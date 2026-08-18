@@ -452,42 +452,6 @@ def get_chats(
     return result
 
 
-# FOR BENCHMARK ONLY!
-@router.get("/unread-counts", response_model=dict[int, int])
-def get_unread_counts(
-    session: SessionDep,
-    current_user: Annotated[User, Depends(get_current_user)],
-):
-    current_user_id = current_user.id
-    if current_user_id is None:
-        raise HTTPException(status_code=401, detail="Invalid user")
-
-    participants = session.exec(
-        select(ChatParticipant).where(
-            col(ChatParticipant.user_id) == current_user_id,
-            col(ChatParticipant.left_at).is_(None),
-        )
-    ).all()
-    unread_counts = {}
-    for participant in participants:
-        statement = select(func.count(col(Message.id))).where(
-            col(Message.chat_id) == participant.chat_id,
-            col(Message.sender_id) != current_user_id,
-            col(Message.deleted_at).is_(None),
-            message_is_visible_to_user(
-                current_user_id,
-                participant.cleared_at,
-            ),
-        )
-        if participant.last_read_message_id is not None:
-            statement = statement.where(
-                col(Message.id) > participant.last_read_message_id
-            )
-        unread_counts[participant.chat_id] = session.exec(statement).one()
-
-    return unread_counts
-
-
 @router.get("/chats/direct/by-user/{user_id}", response_model=ChatListItem | None)
 def get_direct_chat_by_user(
     user_id: int,

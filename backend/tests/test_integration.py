@@ -25,6 +25,7 @@ from sqlalchemy.exc import OperationalError  # noqa: E402
 from sqlmodel import SQLModel, Session, create_engine  # noqa: E402
 
 from app.db import get_session  # noqa: E402
+from app import dependencies  # noqa: E402
 from app.main import fastapi_app  # noqa: E402
 from app.permissions import ADMIN_PERMISSIONS, SYSTEM_ROLE_DEFAULTS  # noqa: E402
 from app.rate_limit import (  # noqa: E402
@@ -57,6 +58,21 @@ class InMemoryS3Client:
 
     def generate_presigned_url(self, _client_method, **kwargs):
         return f"https://example.test/{kwargs['Params']['Key']}"
+
+
+class InMemoryRedisClient:
+    def __init__(self):
+        self.values: dict[str, str] = {}
+
+    async def set(self, name: str, value: str, **_kwargs):
+        self.values[name] = value
+        return True
+
+    async def getex(self, name: str, **_kwargs):
+        return self.values.get(name)
+
+    async def delete(self, name: str):
+        return 1 if self.values.pop(name, None) is not None else 0
 
 
 class MessengerIntegrationTest(unittest.TestCase):
@@ -112,8 +128,15 @@ class MessengerIntegrationTest(unittest.TestCase):
             "_get_s3_client",
             return_value=self.storage_client,
         )
+        self.redis_client = InMemoryRedisClient()
+        self.redis_patch = patch.object(
+            dependencies,
+            "redis_client",
+            self.redis_client,
+        )
         self.emit_patch.start()
         self.storage_patch.start()
+        self.redis_patch.start()
         self.clients: list[TestClient] = []
 
     def tearDown(self):
@@ -123,6 +146,7 @@ class MessengerIntegrationTest(unittest.TestCase):
         fastapi_app.dependency_overrides.clear()
         self.emit_patch.stop()
         self.storage_patch.stop()
+        self.redis_patch.stop()
         self.engine.dispose()
         with self.admin_engine.begin() as connection:
             connection.execute(text(f'DROP SCHEMA IF EXISTS "{self.schema}" CASCADE'))
@@ -200,7 +224,7 @@ class MessengerIntegrationTest(unittest.TestCase):
     def test_auth_signup_login_and_protected_chats(self):
         signup_client, user = self.signup("auth")
 
-        self.assertIn("access_token", signup_client.cookies)
+        self.assertIn("token", signup_client.cookies)
         chats_response = signup_client.get("/chats")
         self.assertEqual(chats_response.status_code, 200, chats_response.text)
         self.assertEqual(chats_response.json()[0]["type"], "self")
@@ -221,7 +245,18 @@ class MessengerIntegrationTest(unittest.TestCase):
             json={"username": user["username"], "password": "password123"},
         )
         self.assertEqual(good_login.status_code, 200, good_login.text)
-        self.assertIn("access_token", login_client.cookies)
+        self.assertIn("token", login_client.cookies)
+
+        issued_token = login_client.cookies.get("token")
+        self.assertIsNotNone(issued_token)
+        logout_response = login_client.post("/logout")
+        self.assertEqual(logout_response.status_code, 200, logout_response.text)
+        self.assertNotIn("token", login_client.cookies)
+
+        replay_client = self.client()
+        replay_client.cookies.set("token", issued_token)
+        replay_response = replay_client.get("/chats")
+        self.assertEqual(replay_response.status_code, 401, replay_response.text)
 
     def test_chat_access_requires_membership(self):
         owner_client, _owner = self.signup("owner")

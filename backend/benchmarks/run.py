@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import json
 import math
 import os
@@ -171,8 +172,9 @@ def run_workload(
     from sqlalchemy import text
     from sqlmodel import SQLModel, Session, create_engine
 
+    from app import dependencies
     from app.db import get_session
-    from app.dependencies import create_access_token
+    from app.dependencies import create_user_session
     from app.main import fastapi_app
     from app.models import (
         Chat,
@@ -345,11 +347,26 @@ def run_workload(
             ) -> str:
                 return f"https://example.test/{kwargs['Params']['Key']}"
 
+        class InMemoryRedisClient:
+            def __init__(self) -> None:
+                self.values: dict[str, str] = {}
+
+            async def set(self, name: str, value: str, **_kwargs: Any) -> bool:
+                self.values[name] = value
+                return True
+
+            async def getex(self, name: str, **_kwargs: Any) -> str | None:
+                return self.values.get(name)
+
+            async def delete(self, name: str) -> int:
+                return 1 if self.values.pop(name, None) is not None else 0
+
         fastapi_app.dependency_overrides[get_session] = override_get_session
         reset_all_rate_limiters()
-        token = create_access_token({"sub": str(owner_id)})
+        benchmark_redis = InMemoryRedisClient()
 
         with (
+            patch.object(dependencies, "redis_client", benchmark_redis),
             patch.object(sio, "emit", noop_emit),
             patch.object(
                 storage,
@@ -358,7 +375,8 @@ def run_workload(
             ),
             TestClient(fastapi_app) as client,
         ):
-            client.cookies.set("access_token", token)
+            token = asyncio.run(create_user_session(owner_id))
+            client.cookies.set("token", token)
 
             seeded_chats_response = client.get("/chats")
             require_success(seeded_chats_response, "validate_seeded_chats")

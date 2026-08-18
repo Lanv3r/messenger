@@ -6,7 +6,6 @@ from dotenv import load_dotenv
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
 BACKEND_DIR = Path(__file__).resolve().parent.parent
 
 load_dotenv(BACKEND_DIR / ".env")
@@ -21,8 +20,10 @@ class Settings(BaseSettings):
     )
 
     database_url: str = ""
+    redis_url: str = "redis://localhost:6379/0"
     secret_key: str = ""
-    access_token_expire_minutes: int = 60
+    # Redis session timeout.
+    session_timeout_seconds: int = 30 * 24 * 60 * 60
 
     cookie_secure: bool = False
     cookie_samesite: Literal["lax", "strict", "none"] = "lax"
@@ -56,9 +57,7 @@ class Settings(BaseSettings):
                         if str(origin).strip()
                     ]
             return [
-                origin.strip()
-                for origin in stripped_value.split(",")
-                if origin.strip()
+                origin.strip() for origin in stripped_value.split(",") if origin.strip()
             ]
         return value
 
@@ -85,6 +84,13 @@ class Settings(BaseSettings):
     def validate_secret_key(cls, value: str) -> str:
         if len(value) < 32:
             raise ValueError("SECRET_KEY must be at least 32 characters")
+        return value
+
+    @field_validator("session_timeout_seconds", mode="after")
+    @classmethod
+    def validate_session_timeout_seconds(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("SESSION_TIMEOUT_SECONDS must be positive")
         return value
 
     @model_validator(mode="after")

@@ -13,6 +13,7 @@ BACKEND_DIR="${ROOT_DIR}/backend"
 FRONTEND_DIR="${ROOT_DIR}/frontend"
 PYTHON_BIN="${PYTHON_BIN:-${BACKEND_DIR}/.venv/bin/python}"
 TEST_DATABASE_URL="${TEST_DATABASE_URL:-postgresql+psycopg://messenger_test:messenger_test@127.0.0.1:54329/messenger_test}"
+TEST_REDIS_URL="${TEST_REDIS_URL:-redis://127.0.0.1:56379/0}"
 TEST_SECRET_KEY="test-secret-key-with-at-least-32-bytes"
 SMOKE_BACKEND_PORT="${SMOKE_BACKEND_PORT:-8001}"
 SMOKE_BACKEND_URL="http://localhost:${SMOKE_BACKEND_PORT}"
@@ -83,13 +84,14 @@ if port_is_in_use "${SMOKE_FRONTEND_PORT}"; then
   exit 1
 fi
 
-docker compose -f "${ROOT_DIR}/compose.test.yaml" up -d --wait postgres-test
+docker compose -f "${ROOT_DIR}/compose.test.yaml" up -d --wait postgres-test redis-test
 
 (
   cd "${BACKEND_DIR}"
   DATABASE_URL="${TEST_DATABASE_URL}" \
     SECRET_KEY="${TEST_SECRET_KEY}" \
     CORS_ORIGINS="${SMOKE_FRONTEND_URL}" \
+    REDIS_URL="${TEST_REDIS_URL}" \
     S3_BUCKET=messenger-test-uploads \
     S3_REGION=us-east-1 \
     "${PYTHON_BIN}" -m alembic upgrade head
@@ -97,6 +99,7 @@ docker compose -f "${ROOT_DIR}/compose.test.yaml" up -d --wait postgres-test
     DATABASE_URL="${TEST_DATABASE_URL}" \
     SECRET_KEY="${TEST_SECRET_KEY}" \
     CORS_ORIGINS="${SMOKE_FRONTEND_URL}" \
+    REDIS_URL="${TEST_REDIS_URL}" \
     S3_BUCKET=messenger-test-uploads \
     S3_REGION=us-east-1 \
     "${PYTHON_BIN}" -m uvicorn app.main:app --host 127.0.0.1 --port "${SMOKE_BACKEND_PORT}"

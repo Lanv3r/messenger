@@ -1,10 +1,14 @@
-from datetime import datetime, timezone
+from typing import Any
 
 from fastapi import HTTPException
 from sqlmodel import Session, col, select
 
 from app.db import engine
-from app.dependencies import decode_access_token, get_cookie_from_environ
+from app.dependencies import (
+    decode_token,
+    get_cookie_from_environ,
+    validate_user_session,
+)
 from app.models import Chat, ChatParticipant, Message, User
 from app.rate_limit import message_rate_limiter
 from app.services.chats import (
@@ -22,17 +26,20 @@ from app.socket import sio
 
 @sio.event
 async def connect(sid, environ, auth):
-    access_token = get_cookie_from_environ(environ, "access_token")
+    token = get_cookie_from_environ(environ, "token")
 
-    if access_token is None:
+    if token is None:
         raise ConnectionRefusedError("Not authenticated")
 
     try:
-        payload = decode_access_token(access_token)
+        payload = decode_token(token)
         user_id = int(payload["sub"])
-        token_expires_at = payload["exp"]
+        jti = str(payload["jti"])
     except Exception:
         raise ConnectionRefusedError("Invalid token")
+
+    if not await validate_user_session(jti, user_id):
+        raise ConnectionRefusedError("Session expired or revoked")
 
     with Session(engine) as session:
         user = session.get(User, user_id)
@@ -48,13 +55,29 @@ async def connect(sid, environ, auth):
             sid,
             {
                 "user_id": user.id,
+                "jti": jti,
                 "username": user.username,
                 "display_name": display_name,
-                "token_expires_at": token_expires_at,
             },
         )
 
         await sio.enter_room(sid, f"user:{user.id}")
+
+
+async def get_authenticated_socket_session(sid: str) -> dict[str, Any] | None:
+    try:
+        socket_session = await sio.get_session(sid)
+        user_id = int(socket_session["user_id"])
+        jti = str(socket_session["jti"])
+    except (KeyError, TypeError, ValueError):
+        await sio.disconnect(sid)
+        return None
+
+    if not await validate_user_session(jti, user_id):
+        await sio.disconnect(sid)
+        return None
+
+    return socket_session
 
 
 @sio.event
@@ -69,12 +92,12 @@ async def disconnect(sid, reason):
 
 @sio.event
 async def join_room(sid, room):
-    session = await sio.get_session(sid)
+    session = await get_authenticated_socket_session(sid)
+    if session is None:
+        return {"ok": False, "error": "Session expired"}
+
     user_id = session["user_id"]
 
-    if datetime.now(timezone.utc).timestamp() >= session["token_expires_at"]:
-        await sio.disconnect(sid)
-        return {"ok": False, "error": "Session expired"}
     try:
         chat_id = int(room)
     except (TypeError, ValueError):
@@ -98,11 +121,9 @@ async def join_room(sid, room):
 
 @sio.event
 async def leave_room(sid, room):
-    session = await sio.get_session(sid)
-
-    if datetime.now(timezone.utc).timestamp() >= session["token_expires_at"]:
-        await sio.disconnect(sid)
-        return
+    session = await get_authenticated_socket_session(sid)
+    if session is None:
+        return {"ok": False, "error": "Session expired"}
     try:
         chat_id = int(room)
     except (TypeError, ValueError):
@@ -113,12 +134,11 @@ async def leave_room(sid, room):
 
 
 async def emit_chat_activity(sid, data, event_name, activity):
-    session = await sio.get_session(sid)
-    user_id = session["user_id"]
-
-    if datetime.now(timezone.utc).timestamp() >= session["token_expires_at"]:
-        await sio.disconnect(sid)
+    session = await get_authenticated_socket_session(sid)
+    if session is None:
         return {"ok": False, "error": "Session expired"}
+
+    user_id = session["user_id"]
 
     try:
         chat_id = int(data.get("chat_id"))
@@ -183,12 +203,11 @@ async def recording_voice(sid, data):
 
 @sio.event
 async def message(sid, data):
-    session = await sio.get_session(sid)
-    sender_id = session["user_id"]
+    session = await get_authenticated_socket_session(sid)
+    if session is None:
+        return {"ok": False, "error": "Session expired"}
 
-    if datetime.now(timezone.utc).timestamp() >= session["token_expires_at"]:
-        await sio.disconnect(sid)
-        return
+    sender_id = session["user_id"]
 
     try:
         message_rate_limiter.hit_key(f"socket-message:{sender_id}")

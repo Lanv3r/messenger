@@ -4,9 +4,9 @@ Work-in-progress chat app with a FastAPI/SQLModel backend, Socket.IO realtime up
 
 ## Stack
 
-- Backend: FastAPI, SQLModel, SQLAlchemy, Alembic, PostgreSQL, Socket.IO
+- Backend: FastAPI, SQLModel, SQLAlchemy, Alembic, PostgreSQL, Redis, Socket.IO
 - Frontend: React, TypeScript, Vite, Socket.IO client, Playwright smoke tests
-- Auth: HttpOnly cookie containing a JWT access token
+- Auth: HttpOnly JWT cookie backed by a revocable Redis session
 - Uploads: private Amazon S3 storage
 
 ## Frontend Color System
@@ -82,7 +82,8 @@ Realtime:
 
 ## Testing
 
-Integration and smoke tests use the isolated PostgreSQL service in `compose.test.yaml`; they do not require a manually configured `TEST_DATABASE_URL`.
+Integration and smoke tests use isolated PostgreSQL and Redis services in
+`compose.test.yaml`; they do not require manually configured test URLs.
 
 Prerequisites: Docker Compose, a backend virtual environment, and `npm ci` in `frontend`. Smoke tests also require the Playwright Chromium browser (`npx playwright install chromium`).
 
@@ -93,6 +94,23 @@ make test
 ```
 
 The smoke runner migrates the isolated database, starts the backend on `localhost:8001` and Vite on `localhost:5174`, waits for `/health`, and then runs Playwright. Set `SMOKE_BACKEND_PORT` or `SMOKE_FRONTEND_PORT` to use other free ports. GitHub Actions runs the integration and smoke jobs on every pull request and push to `main`.
+
+## Local Redis
+
+Start the local Redis session store with Docker Compose:
+
+```bash
+docker compose up -d --wait redis
+```
+
+It listens only on `127.0.0.1:6379` and uses the backend's default
+`REDIS_URL=redis://localhost:6379/0`. Persistence is disabled because Redis stores
+revocable login sessions; restarting or removing the container logs local users
+out. Check it with `docker compose exec redis redis-cli ping`, and stop it with:
+
+```bash
+docker compose stop redis
+```
 
 ## Performance Benchmarks
 

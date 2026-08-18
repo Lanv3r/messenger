@@ -1,14 +1,10 @@
-from datetime import timedelta
 from typing import Annotated
-
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
-from sqlmodel import col, select
 
 from app.db import SessionDep
 from app.dependencies import (
-    ACCESS_TOKEN_EXPIRE_MINUTES,
-    create_access_token,
+    create_user_session,
     get_password_hash,
+    revoke_user_session,
     verify_password,
 )
 from app.models import (
@@ -20,17 +16,34 @@ from app.models import (
     UserPublic,
 )
 from app.rate_limit import login_rate_limiter, signup_rate_limiter
-from app.settings import settings
 from app.services.uploads import save_avatar_upload
 from app.services.users import is_valid_username
+from app.settings import settings
+from fastapi import (
+    APIRouter,
+    Cookie,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Response,
+    UploadFile,
+)
+from sqlmodel import col, select
 
 router = APIRouter(tags=["auth"])
 
 
 @router.post("/logout")
-def logout(response: Response):
+async def logout(response: Response, token: str | None = Cookie(default=None)):
+    if token is not None:
+        try:
+            await revoke_user_session(token)
+        except Exception:
+            pass
+
     response.delete_cookie(
-        "access_token",
+        "token",
         secure=settings.cookie_secure,
         samesite=settings.cookie_samesite,
     )
@@ -42,25 +55,28 @@ def logout(response: Response):
     response_model=UserPublic,
     dependencies=[Depends(login_rate_limiter)],
 )
-def login(payload: LoginRequest, response: Response, session: SessionDep):
-    stmt = select(User).where(col(User.username) == payload.username.lower())
-    user = session.exec(stmt).first()
+async def login(payload: LoginRequest, response: Response, session: SessionDep):
+    user = session.exec(
+        select(User).where(
+            col(User.username) == payload.username.lower(),
+        )
+    ).first()
 
     if user is None or not verify_password(payload.password, user.password_hash):
         raise HTTPException(status_code=401, detail="Incorrect username or password")
 
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": str(user.id)}, expires_delta=access_token_expires
-    )
+    if user.id is None:
+        raise HTTPException(status_code=500, detail="Invalid user")
+
+    token = await create_user_session(user.id)
 
     response.set_cookie(
-        key="access_token",
-        value=access_token,
+        key="token",
+        value=token,
         httponly=True,
         secure=settings.cookie_secure,
         samesite=settings.cookie_samesite,
-        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        max_age=settings.session_timeout_seconds,
     )
     return user
 
@@ -178,18 +194,15 @@ async def signup(
 
     session.commit()
 
-    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": str(user.id)}, expires_delta=access_token_expires
-    )
+    token = await create_user_session(user.id)
 
     response.set_cookie(
-        key="access_token",
-        value=access_token,
+        key="token",
+        value=token,
         httponly=True,
         secure=settings.cookie_secure,
         samesite=settings.cookie_samesite,
-        max_age=ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        max_age=settings.session_timeout_seconds,
     )
 
     return user
