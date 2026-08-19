@@ -344,9 +344,7 @@ def run_workload(
                 )
                 message = Message(
                     chat_id=chat.id,
-                    sender_id=(
-                        direct_user.id if chat_index % 2 == 0 else owner_id
-                    ),
+                    sender_id=(direct_user.id if chat_index % 2 == 0 else owner_id),
                     content=f"benchmark direct message {chat_index}",
                 )
                 session.add(message)
@@ -416,9 +414,7 @@ def run_workload(
             def put_object(self, **_kwargs: Any) -> None:
                 return None
 
-            def generate_presigned_url(
-                self, _client_method: str, **kwargs: Any
-            ) -> str:
+            def generate_presigned_url(self, _client_method: str, **kwargs: Any) -> str:
                 return f"https://example.test/{kwargs['Params']['Key']}"
 
         class InMemoryRedisClient:
@@ -452,11 +448,21 @@ def run_workload(
             token = asyncio.run(create_user_session(owner_id))
             client.cookies.set("token", token)
 
-            seeded_chats_response = client.get("/chats")
-            require_success(seeded_chats_response, "validate_seeded_chats")
-            actual_chat_counts = Counter(
-                chat["type"] for chat in seeded_chats_response.json()
-            )
+            seeded_chats = []
+            chat_cursor = None
+            while True:
+                chat_params = {"limit": 100}
+                if chat_cursor is not None:
+                    chat_params["before_id"] = chat_cursor
+                seeded_chats_response = client.get("/chats", params=chat_params)
+                require_success(seeded_chats_response, "validate_seeded_chats")
+                chat_page = seeded_chats_response.json()
+                seeded_chats.extend(chat_page)
+                if len(chat_page) < 100:
+                    break
+                chat_cursor = chat_page[-1]["id"]
+
+            actual_chat_counts = Counter(chat["type"] for chat in seeded_chats)
             expected_chat_counts = {
                 "group": workload.group_chat_count,
                 "self": workload.self_chat_count,
@@ -468,9 +474,7 @@ def run_workload(
                     f"expected {expected_chat_counts}, got {dict(actual_chat_counts)}"
                 )
 
-            seeded_chats_by_id = {
-                chat["id"]: chat for chat in seeded_chats_response.json()
-            }
+            seeded_chats_by_id = {chat["id"]: chat for chat in seeded_chats}
             for (
                 chat_id,
                 expected_message_id,
@@ -504,8 +508,35 @@ def run_workload(
             if not older_message_page_response.json():
                 raise RuntimeError("benchmark target chat has no older message page")
 
+            first_chat_page_response = client.get("/chats", params={"limit": 25})
+            require_success(first_chat_page_response, "validate_chat_page")
+            first_chat_page = first_chat_page_response.json()
+            if len(first_chat_page) != 25:
+                raise RuntimeError("benchmark workload did not fill a chat page")
+            older_chat_cursor = first_chat_page[-1]["id"]
+
+            older_chat_page_response = client.get(
+                "/chats",
+                params={"limit": 25, "before_id": older_chat_cursor},
+            )
+            require_success(older_chat_page_response, "validate_older_chat_page")
+            if not older_chat_page_response.json():
+                raise RuntimeError("benchmark workload has no older chat page")
+
             def get_chats(_index: int) -> None:
-                require_success(client.get("/chats"), "list_chats")
+                require_success(
+                    client.get("/chats", params={"limit": 25}),
+                    "list_chats",
+                )
+
+            def get_older_chats(_index: int) -> None:
+                require_success(
+                    client.get(
+                        "/chats",
+                        params={"limit": 25, "before_id": older_chat_cursor},
+                    ),
+                    "list_chats_older",
+                )
 
             def get_messages(_index: int) -> None:
                 require_success(
@@ -571,6 +602,7 @@ def run_workload(
 
             operations = (
                 ("list_chats", get_chats),
+                ("list_chats_older", get_older_chats),
                 ("list_messages", get_messages),
                 ("list_messages_older", get_older_messages),
                 ("search_messages", search_messages),
@@ -595,7 +627,9 @@ def run_workload(
 
 
 def print_results(results: list[dict[str, Any]]) -> None:
-    print(f"{'operation':<20} {'workload':<9} {'p50 ms':>10} {'p95 ms':>10} {'mean ms':>10}")
+    print(
+        f"{'operation':<20} {'workload':<9} {'p50 ms':>10} {'p95 ms':>10} {'mean ms':>10}"
+    )
     for result in results:
         latency = result["latency"]
         print(

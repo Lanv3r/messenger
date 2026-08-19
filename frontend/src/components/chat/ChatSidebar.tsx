@@ -13,12 +13,15 @@ type ChatSidebarProps = {
   profileError: string | null;
   profileLoading: boolean;
   chats: Chat[];
+  hasOlderChats: boolean;
+  olderChatsLoading: boolean;
   activeChatId: number | null;
   draftRecipient: UserProfile | null;
   onProfileQueryChange: (value: string) => void;
   onClearProfileSearch: () => void;
   onViewProfile: (profile: UserProfile) => void;
   onJoinChat: (chat: Chat) => void;
+  onLoadOlderChats: () => void;
   onToggleChatPin: (chat: Chat) => void;
   onDeleteChat: (chat: Chat) => void;
   onClearHistory: (chat: Chat) => void;
@@ -144,12 +147,15 @@ export function ChatSidebar({
   profileError,
   profileLoading,
   chats,
+  hasOlderChats,
+  olderChatsLoading,
   activeChatId,
   draftRecipient,
   onProfileQueryChange,
   onClearProfileSearch,
   onViewProfile,
   onJoinChat,
+  onLoadOlderChats,
   onToggleChatPin,
   onDeleteChat,
   onClearHistory,
@@ -499,7 +505,17 @@ export function ChatSidebar({
               .filter(Boolean)
               .join(" ")}
             ref={chatListRef}
-            onScroll={keepSubtleScrollbarVisible}
+            onScroll={(event) => {
+              keepSubtleScrollbarVisible(event);
+              const list = event.currentTarget;
+              if (
+                hasOlderChats &&
+                !olderChatsLoading &&
+                list.scrollHeight - list.scrollTop - list.clientHeight < 96
+              ) {
+                onLoadOlderChats();
+              }
+            }}
           >
             {chats.map((chat) => {
               const sentAt = formatChatTime(chat.last_message_created_at);
@@ -666,6 +682,9 @@ export function ChatSidebar({
             </div>
           );
         })}
+        {olderChatsLoading ? (
+          <p className="profile-search-status">Loading more chats...</p>
+        ) : null}
         {draftRecipient ? (
           <div className="chat-list-item active">
             <button className="chat-open-button" type="button">

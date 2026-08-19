@@ -519,12 +519,16 @@ export function ChatScreen({
   });
   const {
     refreshChats,
+    hasOlderChats,
+    olderChatsLoading,
+    loadOlderChats,
     hasOlderMessages,
     olderMessagesLoading,
     loadOlderMessages,
     loadMessagesThrough,
   } = useChatData({
     userId: user.userId,
+    chats,
     activeChatId,
     activeChatIdRef,
     activeChat,
@@ -1646,12 +1650,17 @@ export function ChatScreen({
             profileError={profileError}
             profileLoading={profileLoading}
             chats={chats}
+            hasOlderChats={hasOlderChats}
+            olderChatsLoading={olderChatsLoading}
             activeChatId={activeChatId}
             draftRecipient={draftRecipient}
             onProfileQueryChange={setProfileQuery}
             onClearProfileSearch={clearProfileSearch}
             onViewProfile={setSelectedContactProfile}
             onJoinChat={joinChat}
+            onLoadOlderChats={() => {
+              void loadOlderChats();
+            }}
             onToggleChatPin={(chat) => {
               void toggleChatPin(chat);
             }}

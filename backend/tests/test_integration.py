@@ -7,6 +7,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from botocore.exceptions import ClientError
+
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
@@ -307,6 +308,41 @@ class MessengerIntegrationTest(unittest.TestCase):
         )
         self.assertEqual(invalid_limit.status_code, 422)
 
+    def test_chats_are_paginated_in_sidebar_order(self):
+        client, _user = self.signup("chat_pagination")
+        first_group = self.create_group(client, [])
+        second_group = self.create_group(client, [])
+
+        newest_page = client.get("/chats", params={"limit": 2})
+        self.assertEqual(newest_page.status_code, 200, newest_page.text)
+        newest_chats = newest_page.json()
+        self.assertEqual(len(newest_chats), 2)
+
+        older_page = client.get(
+            "/chats",
+            params={"limit": 2, "before_id": newest_chats[-1]["id"]},
+        )
+        self.assertEqual(older_page.status_code, 200, older_page.text)
+        older_chats = older_page.json()
+        self.assertEqual(len(older_chats), 1)
+
+        returned_ids = [chat["id"] for chat in [*newest_chats, *older_chats]]
+        self.assertEqual(len(returned_ids), len(set(returned_ids)))
+        self.assertTrue({first_group["id"], second_group["id"]}.issubset(returned_ids))
+        self.assertEqual(
+            sum(chat["type"] == "self" for chat in [*newest_chats, *older_chats]),
+            1,
+        )
+
+        invalid_cursor = client.get(
+            "/chats",
+            params={"before_id": max(returned_ids) + 10_000},
+        )
+        self.assertEqual(invalid_cursor.status_code, 400, invalid_cursor.text)
+
+        invalid_limit = client.get("/chats", params={"limit": 101})
+        self.assertEqual(invalid_limit.status_code, 422)
+
     def test_non_member_cannot_access_chat_or_message_endpoints(self):
         owner_client, _owner = self.signup("owner")
         member_client, member = self.signup("member")
@@ -500,9 +536,7 @@ class MessengerIntegrationTest(unittest.TestCase):
         self.assertEqual(cleared_messages.status_code, 200, cleared_messages.text)
         self.assertEqual(cleared_messages.json(), [])
 
-        hidden_chat_ids = {
-            chat["id"] for chat in sender_client.get("/chats").json()
-        }
+        hidden_chat_ids = {chat["id"] for chat in sender_client.get("/chats").json()}
         self.assertNotIn(chat_id, hidden_chat_ids)
 
         hidden_message_action = sender_client.patch(
@@ -512,7 +546,9 @@ class MessengerIntegrationTest(unittest.TestCase):
         self.assertEqual(hidden_message_action.status_code, 404)
 
         visible_to_recipient = recipient_client.get(f"/chats/{chat_id}/messages")
-        self.assertEqual(visible_to_recipient.status_code, 200, visible_to_recipient.text)
+        self.assertEqual(
+            visible_to_recipient.status_code, 200, visible_to_recipient.text
+        )
         self.assertEqual(
             {message["content"] for message in visible_to_recipient.json()},
             {"first", "reply"},
@@ -610,7 +646,9 @@ class MessengerIntegrationTest(unittest.TestCase):
         group = self.create_group(owner_client, [member["id"]])
         chats = owner_client.get("/chats")
         self.assertEqual(chats.status_code, 200, chats.text)
-        self_chat_id = next(chat["id"] for chat in chats.json() if chat["type"] == "self")
+        self_chat_id = next(
+            chat["id"] for chat in chats.json() if chat["type"] == "self"
+        )
 
         self_message = owner_client.post(
             f"/chats/{self_chat_id}/messages",
@@ -677,7 +715,9 @@ class MessengerIntegrationTest(unittest.TestCase):
             f"/chats/{group['id']}/read",
             json={"last_read_message_id": message_id},
         )
-        self.assertEqual(member_read_response.status_code, 200, member_read_response.text)
+        self.assertEqual(
+            member_read_response.status_code, 200, member_read_response.text
+        )
         owner_message = self.get_message(
             owner_client.get(f"/chats/{group['id']}/messages"),
             message_id,
@@ -745,7 +785,9 @@ class MessengerIntegrationTest(unittest.TestCase):
         client, _user = self.signup("album")
         chats = client.get("/chats")
         self.assertEqual(chats.status_code, 200, chats.text)
-        self_chat_id = next(chat["id"] for chat in chats.json() if chat["type"] == "self")
+        self_chat_id = next(
+            chat["id"] for chat in chats.json() if chat["type"] == "self"
+        )
 
         response = client.post(
             f"/chats/{self_chat_id}/messages/files",
@@ -863,9 +905,7 @@ class MessengerIntegrationTest(unittest.TestCase):
         self.assertTrue(promoted_member["can_edit_member_rights"])
         self.assertTrue(promoted_member["can_remove_from_group"])
 
-        candidate_permissions = {
-            permission: True for permission in ADMIN_PERMISSIONS
-        }
+        candidate_permissions = {permission: True for permission in ADMIN_PERMISSIONS}
         blocked_response = admin_client.post(
             f"/chats/{group['id']}/admins/{candidate['id']}/promote",
             json=candidate_permissions,
@@ -902,9 +942,7 @@ class MessengerIntegrationTest(unittest.TestCase):
         member_list = member_client.get(f"/chats/{group['id']}/members")
         self.assertEqual(member_list.status_code, 200, member_list.text)
         current_member = next(
-            entry
-            for entry in member_list.json()
-            if entry["user_id"] == member["id"]
+            entry for entry in member_list.json() if entry["user_id"] == member["id"]
         )
         self.assertFalse(current_member["can_edit_member_tags"])
         self.assertFalse(current_member["can_promote_to_admin"])

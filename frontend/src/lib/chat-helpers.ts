@@ -55,7 +55,9 @@ export function sortChats(chats: Chat[]) {
       }
     }
 
-    return getChatSortTime(second) - getChatSortTime(first);
+    return (
+      getChatSortTime(second) - getChatSortTime(first) || second.id - first.id
+    );
   });
 }
 

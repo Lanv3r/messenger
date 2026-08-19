@@ -14,6 +14,7 @@ import type { Chat, ChatMessage } from "@/types";
 
 type UseChatDataOptions = {
   userId: number;
+  chats: Chat[];
   activeChatId: number | null;
   activeChatIdRef: MutableRefObject<number | null>;
   activeChat: Chat | undefined;
@@ -34,9 +35,11 @@ type UseChatDataOptions = {
 };
 
 const MESSAGE_PAGE_SIZE = 50;
+const CHAT_PAGE_SIZE = 50;
 
 export function useChatData({
   userId,
+  chats,
   activeChatId,
   activeChatIdRef,
   activeChat,
@@ -51,20 +54,53 @@ export function useChatData({
   onSessionExpired,
   onError,
 }: UseChatDataOptions) {
+  const [hasOlderChats, setHasOlderChats] = useState(false);
+  const [olderChatsLoading, setOlderChatsLoading] = useState(false);
   const [hasOlderMessages, setHasOlderMessages] = useState(false);
   const [olderMessagesLoading, setOlderMessagesLoading] = useState(false);
+  const olderChatsLoadingRef = useRef(false);
+  const olderChatsCursorRef = useRef<number | null>(null);
+  const chatPagesVersionRef = useRef(0);
   const olderMessagesLoadingRef = useRef(false);
+  const chatsRef = useRef(chats);
+  chatsRef.current = chats;
   const activeChatRef = useRef(activeChat);
   activeChatRef.current = activeChat;
 
-  function setLoadedChats(loadedChats: Chat[]) {
-    setChats(sortChats(loadedChats.map(applyLocalReadState)));
+  function setLoadedChats(loadedChats: Chat[], preserveOlderChats = false) {
+    const normalizedChats = loadedChats.map(applyLocalReadState);
+
+    setChats((current) => {
+      if (!preserveOlderChats) {
+        return sortChats(normalizedChats);
+      }
+
+      const loadedChatIds = new Set(normalizedChats.map((chat) => chat.id));
+      return sortChats([
+        ...normalizedChats,
+        ...current.filter((chat) => !loadedChatIds.has(chat.id)),
+      ]);
+    });
   }
 
   async function refreshChats(fallbackMessage = "Unable to load chats.") {
+    const version = ++chatPagesVersionRef.current;
     try {
-      const loadedChats = await apiFetch<Chat[]>("/chats");
-      setLoadedChats(loadedChats);
+      const loadedChats = await apiFetch<Chat[]>(
+        `/chats?limit=${CHAT_PAGE_SIZE}`,
+      );
+      if (version !== chatPagesVersionRef.current) {
+        return;
+      }
+
+      const preserveOlderChats =
+        chatsRef.current.length > CHAT_PAGE_SIZE &&
+        loadedChats.length === CHAT_PAGE_SIZE;
+      setLoadedChats(loadedChats, preserveOlderChats);
+      if (!preserveOlderChats) {
+        olderChatsCursorRef.current = loadedChats.at(-1)?.id ?? null;
+        setHasOlderChats(loadedChats.length === CHAT_PAGE_SIZE);
+      }
       onError(null);
     } catch (error) {
       const message =
@@ -85,12 +121,24 @@ export function useChatData({
     setActiveChatId(null);
     setMessages([]);
     setMessagesLoading(false);
+    olderChatsLoadingRef.current = false;
+    olderChatsCursorRef.current = null;
+    setHasOlderChats(false);
+    setOlderChatsLoading(false);
     setHasOlderMessages(false);
 
+    const version = ++chatPagesVersionRef.current;
     try {
-      const loadedChats = await apiFetch<Chat[]>("/chats");
+      const loadedChats = await apiFetch<Chat[]>(
+        `/chats?limit=${CHAT_PAGE_SIZE}`,
+      );
+      if (version !== chatPagesVersionRef.current) {
+        return;
+      }
 
       setLoadedChats(loadedChats);
+      olderChatsCursorRef.current = loadedChats.at(-1)?.id ?? null;
+      setHasOlderChats(loadedChats.length === CHAT_PAGE_SIZE);
       onError(null);
     } catch (error) {
       const message =
@@ -115,6 +163,47 @@ export function useChatData({
   useEffect(() => {
     void initializeChatsFromEffect();
   }, [userId]);
+
+  async function loadOlderChats() {
+    const cursor = olderChatsCursorRef.current;
+    if (!hasOlderChats || olderChatsLoadingRef.current || cursor === null) {
+      return false;
+    }
+
+    const version = chatPagesVersionRef.current;
+    olderChatsLoadingRef.current = true;
+    setOlderChatsLoading(true);
+
+    try {
+      const olderChats = await apiFetch<Chat[]>(
+        `/chats?limit=${CHAT_PAGE_SIZE}&before_id=${cursor}`,
+      );
+      if (version !== chatPagesVersionRef.current) {
+        return false;
+      }
+
+      setLoadedChats(olderChats, true);
+      olderChatsCursorRef.current = olderChats.at(-1)?.id ?? cursor;
+      setHasOlderChats(olderChats.length === CHAT_PAGE_SIZE);
+      return olderChats.length > 0;
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message === "Could not validate credentials"
+      ) {
+        onSessionExpired();
+        return false;
+      }
+
+      const message =
+        error instanceof Error ? error.message : "Unable to load older chats.";
+      onError(message);
+      return false;
+    } finally {
+      olderChatsLoadingRef.current = false;
+      setOlderChatsLoading(false);
+    }
+  }
 
   useEffect(() => {
     if (activeChatId === null) {
@@ -323,6 +412,9 @@ export function useChatData({
 
   return {
     refreshChats,
+    hasOlderChats,
+    olderChatsLoading,
+    loadOlderChats,
     hasOlderMessages,
     olderMessagesLoading,
     loadOlderMessages,
