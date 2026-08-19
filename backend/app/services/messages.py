@@ -192,14 +192,18 @@ def build_message_reply_preview(
         if viewer_id is not None
         else None
     )
-    if reply_target.deleted_at is not None or (
-        message_user_state is not None and message_user_state.deleted_at is not None
-    ) or (
-        viewer_participant is not None
-        and viewer_participant.cleared_at is not None
-        and (
-            reply_target.created_at is None
-            or reply_target.created_at <= viewer_participant.cleared_at
+    if (
+        reply_target.deleted_at is not None
+        or (
+            message_user_state is not None and message_user_state.deleted_at is not None
+        )
+        or (
+            viewer_participant is not None
+            and viewer_participant.cleared_at is not None
+            and (
+                reply_target.created_at is None
+                or reply_target.created_at <= viewer_participant.cleared_at
+            )
         )
     ):
         return MessageReplyPreview(

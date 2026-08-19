@@ -17,6 +17,7 @@ from app.models import (
     MessageEditRequest,
     MessagePinRequest,
     MessagePublic,
+    MessageReplyPreview,
     MessageUserState,
     User,
 )
@@ -209,28 +210,112 @@ def get_chat_messages(
         statement = statement.where(col(Message.id) < before_id)
 
     messages = list(reversed(session.exec(statement).all()))
-    sender_ids = {
-        message.sender_id for message in messages if message.sender_id is not None
+    if not messages:
+        return []
+
+    # Bulk load the reply targets
+    reply_target_ids = {
+        message.reply_to_message_id
+        for message in messages
+        if message.reply_to_message_id is not None
     }
+
+    reply_targets = (
+        session.exec(
+            select(Message).where(
+                col(Message.id).in_(reply_target_ids),
+                col(Message.chat_id) == chat_id,
+            )
+        ).all()
+        if reply_target_ids
+        else []
+    )
+
+    reply_target_by_id = {
+        message.id: message for message in reply_targets if message.id is not None
+    }
+
+    # Load senders for messages and reply targets
+    sender_ids = {
+        message.sender_id
+        for message in [*messages, *reply_targets]
+        if message.sender_id is not None
+    }
+
     users = (
         session.exec(select(User).where(col(User.id).in_(sender_ids))).all()
         if sender_ids
         else []
     )
+
     users_by_id = {user.id: user for user in users}
 
-    public_messages = []
+    # Load this user's state for messages and reply targets
+    relevant_message_ids = {
+        message.id for message in messages if message.id is not None
+    } | reply_target_ids
 
-    message_ids = [m.id for m in messages]
     message_user_states = session.exec(
         select(MessageUserState).where(
-            col(MessageUserState.message_id).in_(message_ids),
+            col(MessageUserState.message_id).in_(relevant_message_ids),
             col(MessageUserState.user_id) == current_user_id,
         )
     ).all()
 
-    state_by_message = {state.message_id: state for state in message_user_states}
+    state_by_message_id = {state.message_id: state for state in message_user_states}
 
+    def get_loaded_reply_preview(message: Message) -> MessageReplyPreview | None:
+        reply_target_id = message.reply_to_message_id
+        if reply_target_id is None:
+            return None
+
+        reply_target = reply_target_by_id.get(reply_target_id)
+        if reply_target is None or reply_target.id is None:
+            return MessageReplyPreview(
+                id=reply_target_id,
+                content="message deleted",
+                message_type="deleted",
+            )
+
+        reply_target_state = state_by_message_id.get(reply_target.id)
+
+        is_hidden = (
+            reply_target.deleted_at is not None
+            or (
+                reply_target_state is not None
+                and reply_target_state.deleted_at is not None
+            )
+            or (
+                participant.cleared_at is not None
+                and (
+                    reply_target.created_at is None
+                    or reply_target.created_at <= participant.cleared_at
+                )
+            )
+        )
+
+        if is_hidden:
+            return MessageReplyPreview(
+                id=reply_target.id,
+                content="message deleted",
+                message_type="deleted",
+            )
+
+        reply_sender = (
+            users_by_id.get(reply_target.sender_id)
+            if reply_target.sender_id is not None
+            else None
+        )
+
+        return MessageReplyPreview(
+            id=reply_target.id,
+            sender_id=reply_target.sender_id,
+            sender_username=reply_sender.username if reply_sender else None,
+            content=reply_target.content,
+            message_type=reply_target.message_type,
+        )
+
+    public_messages = []
     for message in messages:
         if message.id is None:
             raise HTTPException(
@@ -239,14 +324,12 @@ def get_chat_messages(
             )
 
         sender = users_by_id.get(message.sender_id)
-        message_user_state = state_by_message.get(message.id)
-        reply_to = build_message_reply_preview(session, message, current_user_id)
         public_messages.append(
             to_message_public(
                 message,
                 sender,
-                message_user_state=message_user_state,
-                reply_to=reply_to,
+                message_user_state=state_by_message_id.get(message.id),
+                reply_to=get_loaded_reply_preview(message),
             )
         )
 
