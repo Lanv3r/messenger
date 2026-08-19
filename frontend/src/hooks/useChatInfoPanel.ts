@@ -126,7 +126,7 @@ export function useChatInfoPanel({
         `/users/by-username/${encodeURIComponent(username)}`,
       );
 
-      if (activeChat.member_ids.includes(profile.id)) {
+      if (members.some((member) => member.user_id === profile.id)) {
         setAddMemberMessage(`${profile.username} is already in this chat.`);
         setAddMemberQuery("");
         return;

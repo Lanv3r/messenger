@@ -352,7 +352,6 @@ class ChatListItem(SQLModel):
     other_user_status: str | None = None
     is_blocked_by_other: bool = False
     # Group-chat-only
-    member_ids: list[int] = Field(default_factory=list)
     member_count: int = 0
     current_user_role: str | None = None
 

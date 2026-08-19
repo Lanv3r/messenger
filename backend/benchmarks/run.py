@@ -31,6 +31,7 @@ class Workload:
     group_chat_count: int
     self_chat_count: int
     direct_chat_count: int
+    deleted_last_message_percent: float
     messages_in_target_chat: int
     member_count: int
     attachment_count: int
@@ -43,6 +44,7 @@ WORKLOADS = (
         group_chat_count=10,
         self_chat_count=1,
         direct_chat_count=20,
+        deleted_last_message_percent=2,
         messages_in_target_chat=50,
         member_count=3,
         attachment_count=2,
@@ -53,6 +55,7 @@ WORKLOADS = (
         group_chat_count=50,
         self_chat_count=3,
         direct_chat_count=75,
+        deleted_last_message_percent=2,
         messages_in_target_chat=250,
         member_count=10,
         attachment_count=4,
@@ -63,6 +66,7 @@ WORKLOADS = (
         group_chat_count=150,
         self_chat_count=5,
         direct_chat_count=200,
+        deleted_last_message_percent=2,
         messages_in_target_chat=1000,
         member_count=30,
         attachment_count=8,
@@ -80,6 +84,19 @@ def percentile(samples: list[float], percentile_value: float) -> float:
     ordered = sorted(samples)
     rank = math.ceil((percentile_value / 100) * len(ordered))
     return ordered[rank - 1]
+
+
+def evenly_spaced_indexes(item_count: int, selected_count: int) -> list[int]:
+    if item_count < 1:
+        raise ValueError("item_count must be positive")
+    if not 1 <= selected_count <= item_count:
+        raise ValueError("selected_count must be between 1 and item_count")
+    if selected_count == 1:
+        return [item_count // 2]
+    return [
+        round(index * (item_count - 1) / (selected_count - 1))
+        for index in range(selected_count)
+    ]
 
 
 def summarize(samples_ms: list[float]) -> dict[str, Any]:
@@ -181,6 +198,7 @@ def run_workload(
         ChatMemberPermissions,
         ChatParticipant,
         Message,
+        MessageUserState,
         User,
     )
     from app.permissions import SYSTEM_ROLE_DEFAULTS
@@ -225,6 +243,8 @@ def run_workload(
             owner_id = owner.id
 
             target_chat_id = None
+            deletion_candidates: list[tuple[Chat, int]] = []
+            expected_fallback_message_id_by_chat: dict[int, int] = {}
             for chat_index in range(workload.group_chat_count):
                 chat = Chat(type="group", title=f"Benchmark chat {chat_index}")
                 session.add(chat)
@@ -271,6 +291,11 @@ def run_workload(
                 session.flush()
                 if last_message is not None:
                     chat.last_message_id = last_message.id
+                    if chat_index != 0:
+                        fallback_sender_id = group_users[1].id
+                        if fallback_sender_id is None:
+                            raise RuntimeError("benchmark sender was not created")
+                        deletion_candidates.append((chat, fallback_sender_id))
 
             for chat_index in range(workload.self_chat_count):
                 chat = Chat(type="self", title="Saved Messages")
@@ -293,6 +318,7 @@ def run_workload(
                 session.add(message)
                 session.flush()
                 chat.last_message_id = message.id
+                deletion_candidates.append((chat, owner_id))
 
             for chat_index, direct_user in enumerate(direct_users):
                 if direct_user.id is None:
@@ -326,6 +352,54 @@ def run_workload(
                 session.add(message)
                 session.flush()
                 chat.last_message_id = message.id
+
+                deletion_candidates.append((chat, direct_user.id))
+
+            total_chat_count = (
+                workload.group_chat_count
+                + workload.self_chat_count
+                + workload.direct_chat_count
+            )
+            deleted_last_message_count = max(
+                1,
+                round(total_chat_count * workload.deleted_last_message_percent / 100),
+            )
+            selected_candidate_indexes = evenly_spaced_indexes(
+                len(deletion_candidates),
+                deleted_last_message_count,
+            )
+            deleted_at = datetime.now(timezone.utc)
+
+            for deletion_index, candidate_index in enumerate(
+                selected_candidate_indexes
+            ):
+                chat, sender_id = deletion_candidates[candidate_index]
+                if chat.id is None or chat.last_message_id is None:
+                    raise RuntimeError("benchmark deletion candidate is invalid")
+
+                expected_fallback_message_id_by_chat[chat.id] = chat.last_message_id
+                deleted_last_message = Message(
+                    chat_id=chat.id,
+                    sender_id=sender_id,
+                    content=f"benchmark deleted last message {deletion_index}",
+                )
+                session.add(deleted_last_message)
+                session.flush()
+                if deleted_last_message.id is None:
+                    raise RuntimeError("benchmark deleted message was not created")
+
+                chat.last_message_id = deleted_last_message.id
+                if deletion_index % 2 == 0:
+                    deleted_last_message.deleted_at = deleted_at
+                    deleted_last_message.deleted_by = sender_id
+                else:
+                    session.add(
+                        MessageUserState(
+                            message_id=deleted_last_message.id,
+                            user_id=owner_id,
+                            deleted_at=deleted_at,
+                        )
+                    )
             session.commit()
 
         if target_chat_id is None:
@@ -393,6 +467,21 @@ def run_workload(
                     "seeded chat mix was not returned by /chats: "
                     f"expected {expected_chat_counts}, got {dict(actual_chat_counts)}"
                 )
+
+            seeded_chats_by_id = {
+                chat["id"]: chat for chat in seeded_chats_response.json()
+            }
+            for (
+                chat_id,
+                expected_message_id,
+            ) in expected_fallback_message_id_by_chat.items():
+                actual_message_id = seeded_chats_by_id[chat_id]["last_message_id"]
+                if actual_message_id != expected_message_id:
+                    raise RuntimeError(
+                        "deleted last-message fallback was not returned for "
+                        f"chat {chat_id}: expected {expected_message_id}, "
+                        f"got {actual_message_id}"
+                    )
 
             def get_chats(_index: int) -> None:
                 require_success(client.get("/chats"), "list_chats")

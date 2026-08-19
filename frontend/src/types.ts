@@ -132,7 +132,6 @@ export type Chat = {
   other_user_id: number | null;
   other_user_status?: string | null;
   is_blocked_by_other: boolean;
-  member_ids: number[];
   member_count: number;
   current_user_role: string | null;
   last_message_id: number | null;

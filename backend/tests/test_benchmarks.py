@@ -5,7 +5,13 @@ from pathlib import Path
 BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
-from benchmarks.run import WORKLOADS, compare_results, percentile, summarize  # noqa: E402
+from benchmarks.run import (  # noqa: E402
+    WORKLOADS,
+    compare_results,
+    evenly_spaced_indexes,
+    percentile,
+    summarize,
+)
 
 
 class BenchmarkMathTest(unittest.TestCase):
@@ -21,6 +27,10 @@ class BenchmarkMathTest(unittest.TestCase):
         self.assertEqual(result["sample_count"], 3)
         self.assertEqual(result["p95_ms"], 3.0)
         self.assertEqual(result["samples_ms"], [3.0, 1.0, 2.0])
+
+    def test_evenly_spaced_indexes_include_the_full_range(self):
+        self.assertEqual(evenly_spaced_indexes(10, 3), [0, 4, 9])
+        self.assertEqual(evenly_spaced_indexes(10, 1), [5])
 
     def test_compare_results_matches_operation_and_workload(self):
         current = [{
@@ -57,6 +67,7 @@ class BenchmarkMathTest(unittest.TestCase):
 
     def test_chat_mix_keeps_self_chats_small_and_direct_chats_dominant(self):
         for workload in WORKLOADS:
+            self.assertEqual(workload.deleted_last_message_percent, 2)
             self.assertLessEqual(workload.self_chat_count, 5)
             self.assertGreater(
                 workload.direct_chat_count,

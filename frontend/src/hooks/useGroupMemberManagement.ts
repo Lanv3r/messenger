@@ -776,14 +776,12 @@ export function useGroupMemberManagement({
             return chat;
           }
 
-          const memberIds = chat.member_ids.filter(
-            (memberId) => memberId !== removedMember.user_id,
-          );
-
           return {
             ...chat,
-            member_ids: memberIds,
-            member_count: memberIds.length,
+            member_count: Math.min(
+              chat.member_count,
+              Math.max(0, activeChat.member_count - 1),
+            ),
           };
         }),
       );

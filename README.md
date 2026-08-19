@@ -121,7 +121,10 @@ timings, and the schema is removed afterward. It measures chat listing, message
 listing, message search, message sending, and multipart attachment
 uploads while varying chat, message, group member, attachment count, and attachment
 size dimensions. Attachment storage uses an in-memory S3 stand-in so the benchmark
-captures application work without external network variance.
+captures application work without external network variance. In each workload,
+approximately 2% of chats have a stale `last_message_id` whose message was deleted
+either globally or only for the benchmark user, with an earlier visible message
+available for the chat-list fallback path.
 
 | Workload | Group chats | Self chats | Direct chats | Target-chat messages | Members | Attachments per upload | Bytes per attachment |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |

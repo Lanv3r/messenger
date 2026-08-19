@@ -1,4 +1,3 @@
-from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Annotated
 
@@ -212,6 +211,7 @@ def get_chats(
     if current_user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
 
+    # Get all chats with of this user
     rows = session.exec(
         select(ChatParticipant, Chat)
         .join(Chat, col(Chat.id) == col(ChatParticipant.chat_id))
@@ -221,57 +221,71 @@ def get_chats(
         )
     ).all()
 
-    chat_ids = [chat.id for _, chat in rows if chat.id is not None]
-
-    member_rows = session.exec(
-        select(ChatParticipant).where(
-            col(ChatParticipant.chat_id).in_(chat_ids),
-            col(ChatParticipant.left_at).is_(None),
-        )
-    ).all()
-
-    members_by_chat: dict[int, list[ChatParticipant]] = defaultdict(list)
-    for member in member_rows:
-        members_by_chat[member.chat_id].append(member)
-
-    # Bulk-load other_participant in direct chats
+    # Get other users and block relationships for direct chats
     direct_chat_ids = {
         chat.id for _, chat in rows if chat.id is not None and chat.type == "direct"
     }
 
-    other_participant_by_chat: dict[int, ChatParticipant] = {}
+    direct_rows = []
 
-    for chat_id in direct_chat_ids:
-        for participant in members_by_chat.get(chat_id, []):
-            if participant.user_id != current_user_id:
-                other_participant_by_chat[chat_id] = participant
-                break
-
-    # Set of other users in direct chats for fast checks
-    other_user_ids = {
-        participant.user_id for participant in other_participant_by_chat.values()
-    }
-
-    # Query all other users in direct chats
-    other_users = session.exec(
-        select(User).where(
-            col(User.id).in_(other_user_ids),
-        )
-    ).all()
-
-    other_users_by_id = {user.id: user for user in other_users if user.id is not None}
-
-    # Bulk-load user who have blocked this user
-    blocker_ids = set(
-        session.exec(
-            select(col(UserBlock.blocker_user_id)).where(
-                col(UserBlock.blocker_user_id).in_(other_user_ids),
-                col(UserBlock.blocked_user_id) == current_user_id,
+    if direct_chat_ids:
+        direct_rows = session.exec(
+            select(
+                ChatParticipant,
+                User,
+                col(UserBlock.blocker_user_id),
+            )
+            .join(User, col(User.id) == col(ChatParticipant.user_id))
+            .outerjoin(
+                UserBlock,
+                and_(
+                    col(UserBlock.blocker_user_id) == col(User.id),
+                    col(UserBlock.blocked_user_id) == current_user_id,
+                ),
+            )
+            .where(
+                col(ChatParticipant.chat_id).in_(direct_chat_ids),
+                col(ChatParticipant.user_id) != current_user_id,
+                col(ChatParticipant.left_at).is_(None),
             )
         ).all()
-    )
 
-    # Bulk-load unread counts
+    other_participant_by_chat: dict[int, ChatParticipant] = {}
+    other_user_by_chat: dict[int, User] = {}
+    is_blocked_by_other_by_chat: dict[int, bool] = {}
+
+    for participant, user, is_blocked in direct_rows:
+        other_participant_by_chat[participant.chat_id] = participant
+        other_user_by_chat[participant.chat_id] = user
+        is_blocked_by_other_by_chat[participant.chat_id] = bool(is_blocked)
+
+    # Fetch group member count
+    group_chat_ids = {
+        chat.id for _, chat in rows if chat.id is not None and chat.type == "group"
+    }
+
+    member_count_by_chat: dict[int, int] = {}
+
+    if group_chat_ids:
+        member_count_rows = session.exec(
+            select(
+                col(ChatParticipant.chat_id),
+                func.count(col(ChatParticipant.user_id)),
+            )
+            .where(
+                col(ChatParticipant.chat_id).in_(group_chat_ids),
+                col(ChatParticipant.left_at).is_(None),
+            )
+            .group_by(col(ChatParticipant.chat_id))
+        ).all()
+
+        member_count_by_chat = {
+            chat_id: int(member_count) for chat_id, member_count in member_count_rows
+        }
+
+    # Bulk-load unread counts in direct and group chats
+    unread_chat_ids = direct_chat_ids | group_chat_ids
+
     unread_rows = session.exec(
         select(
             col(Message.chat_id),
@@ -286,7 +300,7 @@ def get_chats(
             ),
         )
         .where(
-            col(Message.chat_id).in_(chat_ids),
+            col(Message.chat_id).in_(unread_chat_ids),
             col(Message.deleted_at).is_(None),
             col(Message.sender_id) != current_user_id,
             # The message must be newer than this user's read marker.
@@ -308,34 +322,96 @@ def get_chats(
     unread_count_by_chat = {chat_id: count for chat_id, count in unread_rows}
 
     # Bulk-load last messages
-    last_messages = session.exec(
-        select(Message)
-        .join(
-            ChatParticipant,
-            and_(
-                col(ChatParticipant.chat_id) == col(Message.chat_id),
-                col(ChatParticipant.user_id) == current_user_id,
-                col(ChatParticipant.left_at).is_(None),
-            ),
-        )
-        .where(
-            col(Message.chat_id).in_(chat_ids),
-            col(Message.deleted_at).is_(None),
-            or_(
-                col(ChatParticipant.cleared_at).is_(None),
-                col(Message.created_at) > col(ChatParticipant.cleared_at),
-            ),
-            message_is_visible_to_user(current_user_id),
-        )
-        .distinct(col(Message.chat_id))
-        .order_by(
-            col(Message.chat_id),
-            col(Message.created_at).desc(),
-            col(Message.id).desc(),
-        )
-    ).all()
+    candidate_last_message_ids = {
+        chat.last_message_id for _, chat in rows if chat.last_message_id is not None
+    }
 
-    last_message_by_chat = {message.chat_id: message for message in last_messages}
+    visible_candidate_by_id: dict[int, Message] = {}
+
+    if candidate_last_message_ids:
+        visible_candidates = session.exec(
+            select(Message)
+            .join(
+                ChatParticipant,
+                and_(
+                    col(ChatParticipant.chat_id) == col(Message.chat_id),
+                    col(ChatParticipant.user_id) == current_user_id,
+                    col(ChatParticipant.left_at).is_(None),
+                ),
+            )
+            .where(
+                col(Message.id).in_(candidate_last_message_ids),
+                # Globally deleted messages are not visible.
+                col(Message.deleted_at).is_(None),
+                # Messages at or before the user's clear marker are not visible.
+                or_(
+                    col(ChatParticipant.cleared_at).is_(None),
+                    col(Message.created_at) > col(ChatParticipant.cleared_at),
+                ),
+                # Exclude messages deleted only for this user.
+                message_is_visible_to_user(current_user_id),
+            )
+        ).all()
+
+        visible_candidate_by_id = {
+            message.id: message
+            for message in visible_candidates
+            if message.id is not None
+        }
+
+    last_message_by_chat: dict[int, Message] = {}
+    fallback_chat_ids: set[int] = set()
+
+    for _, chat in rows:
+        if chat.id is None:
+            continue
+
+        candidate_id = chat.last_message_id
+
+        if candidate_id is None:
+            # Under the normal invariant, this chat has never had a message.
+            continue
+
+        candidate = visible_candidate_by_id.get(candidate_id)
+
+        if candidate is not None and candidate.chat_id == chat.id:
+            last_message_by_chat[chat.id] = candidate
+        else:
+            # The global last message was cleared, globally deleted, deleted for
+            # this user, or the stored ID was stale.
+            fallback_chat_ids.add(chat.id)
+
+    if fallback_chat_ids:
+        fallback_last_messages = session.exec(
+            select(Message)
+            .join(
+                ChatParticipant,
+                and_(
+                    col(ChatParticipant.chat_id) == col(Message.chat_id),
+                    col(ChatParticipant.user_id) == current_user_id,
+                    col(ChatParticipant.left_at).is_(None),
+                ),
+            )
+            .where(
+                col(Message.chat_id).in_(fallback_chat_ids),
+                col(Message.deleted_at).is_(None),
+                or_(
+                    col(ChatParticipant.cleared_at).is_(None),
+                    col(Message.created_at) > col(ChatParticipant.cleared_at),
+                ),
+                message_is_visible_to_user(current_user_id),
+            )
+            .distinct(col(Message.chat_id))
+            .order_by(
+                col(Message.chat_id),
+                col(Message.created_at).desc(),
+                col(Message.id).desc(),
+            )
+        ).all()
+
+        last_message_by_chat.update(
+            {message.chat_id: message for message in fallback_last_messages}
+        )
 
     # List of chats of the current user
     result = []
@@ -348,9 +424,6 @@ def get_chats(
         other_last_read_at = None
         other_last_read_message_id = None
         is_blocked_by_other = False
-        member_ids: list[int] = []
-        member_count = 0
-        current_user_role = None
 
         if chat.id is None or chat.created_at is None:
             raise HTTPException(
@@ -365,38 +438,25 @@ def get_chats(
 
         elif chat.type == "direct":
             other_participant = other_participant_by_chat.get(chat.id)
+            other_user = other_user_by_chat.get(chat.id)
 
-            if other_participant is not None:
-                other_user = other_users_by_id.get(other_participant.user_id)
-
-                if other_user is not None:
-                    other_user_id = other_user.id
-                    display_title = (
-                        f"{other_user.first_name} {other_user.last_name}"
-                        if other_user.last_name
-                        else other_user.first_name
-                    )
-                    display_avatar_url = other_user.avatar_url
-                    other_user_status = other_user.status
-                    other_last_read_message_id = other_participant.last_read_message_id
-                    other_last_read_at = other_participant.last_read_at
-                    is_blocked_by_other = other_user.id in blocker_ids
-        else:
-            members = members_by_chat.get(chat.id, [])
-            member_ids = [member.user_id for member in members]
-            member_count = len(member_ids)
-            current_user_role = current_participant.role
+            if other_participant is not None and other_user is not None:
+                other_user_id = other_user.id
+                display_title = (
+                    f"{other_user.first_name} {other_user.last_name}"
+                    if other_user.last_name
+                    else other_user.first_name
+                )
+                display_avatar_url = other_user.avatar_url
+                other_user_status = other_user.status
+                other_last_read_message_id = other_participant.last_read_message_id
+                other_last_read_at = other_participant.last_read_at
+                is_blocked_by_other = is_blocked_by_other_by_chat.get(chat.id, False)
 
         last_message = last_message_by_chat.get(chat.id)
 
-        if last_message is None and (
-            (chat.type == "direct" and not current_participant.show_when_empty)
-            or (
-                chat.type == "group"
-                and current_participant.cleared_at is not None
-                and member_count < 2
-            )
-        ):
+        # Skip empthy direct chats
+        if last_message is None and chat.type == "direct":
             continue
 
         last_read_message_id = (
@@ -419,9 +479,8 @@ def get_chats(
                 other_user_id=other_user_id,
                 other_user_status=other_user_status,
                 is_blocked_by_other=is_blocked_by_other,
-                member_ids=member_ids,
-                member_count=member_count,
-                current_user_role=current_user_role,
+                member_count=member_count_by_chat.get(chat.id, 0),
+                current_user_role=current_participant.role,
                 last_message_id=last_message.id if last_message else None,
                 last_message_text=get_message_preview_text(last_message)
                 if last_message
@@ -1203,7 +1262,6 @@ async def create_group_chat(
         avatar_url=chat.avatar_url,
         display_title=normalized_title,
         display_avatar_url=chat.avatar_url or "/favicon.svg",
-        member_ids=member_ids,
         member_count=len(member_ids),
         current_user_role="owner",
         last_message_id=None,
@@ -1301,7 +1359,6 @@ async def add_group_members(
         avatar_url=chat.avatar_url,
         display_title=chat.title if chat.title is not None else "New group chat",
         display_avatar_url=chat.avatar_url or "/favicon.svg",
-        member_ids=all_member_ids,
         member_count=len(all_member_ids),
         current_user_role=roles_by_user_id[user_id],
         last_message_id=None,
@@ -1726,7 +1783,6 @@ async def leave_group_chat(
         avatar_url=chat.avatar_url,
         display_title=chat.title if chat.title is not None else "New group chat",
         display_avatar_url=chat.avatar_url or "/favicon.svg",
-        member_ids=remaining_member_ids,
         member_count=len(remaining_member_ids),
         current_user_role=participant.role,
         last_message_id=None,
@@ -1837,7 +1893,6 @@ async def remove_user(
         avatar_url=chat.avatar_url,
         display_title=chat.title if chat.title is not None else "New group chat",
         display_avatar_url=chat.avatar_url or "/favicon.svg",
-        member_ids=remaining_member_ids,
         member_count=len(remaining_member_ids),
         current_user_role=actor_participant.role,
         last_message_id=None,
