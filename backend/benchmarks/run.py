@@ -33,6 +33,9 @@ class Workload:
     direct_chat_count: int
     deleted_last_message_percent: float
     messages_in_target_chat: int
+    reply_message_percent: float
+    attachment_message_percent: float
+    attachments_per_message: int
     member_count: int
     attachment_count: int
     attachment_bytes: int
@@ -46,6 +49,9 @@ WORKLOADS = (
         direct_chat_count=20,
         deleted_last_message_percent=2,
         messages_in_target_chat=50,
+        reply_message_percent=10,
+        attachment_message_percent=10,
+        attachments_per_message=4,
         member_count=3,
         attachment_count=2,
         attachment_bytes=16 * 1024,
@@ -57,6 +63,9 @@ WORKLOADS = (
         direct_chat_count=75,
         deleted_last_message_percent=2,
         messages_in_target_chat=250,
+        reply_message_percent=10,
+        attachment_message_percent=10,
+        attachments_per_message=4,
         member_count=10,
         attachment_count=4,
         attachment_bytes=128 * 1024,
@@ -68,6 +77,9 @@ WORKLOADS = (
         direct_chat_count=200,
         deleted_last_message_percent=2,
         messages_in_target_chat=1000,
+        reply_message_percent=10,
+        attachment_message_percent=10,
+        attachments_per_message=4,
         member_count=30,
         attachment_count=8,
         attachment_bytes=512 * 1024,
@@ -95,6 +107,28 @@ def evenly_spaced_indexes(item_count: int, selected_count: int) -> list[int]:
         return [item_count // 2]
     return [
         round(index * (item_count - 1) / (selected_count - 1))
+        for index in range(selected_count)
+    ]
+
+
+def percentage_indexes(
+    item_count: int,
+    percentage: float,
+    phase: float = 0.5,
+) -> list[int]:
+    if item_count < 0:
+        raise ValueError("item_count cannot be negative")
+    if not 0 <= percentage <= 100:
+        raise ValueError("percentage must be between 0 and 100")
+    if not 0 <= phase < 1:
+        raise ValueError("phase must be at least 0 and less than 1")
+
+    selected_count = round(item_count * percentage / 100)
+    if selected_count == 0:
+        return []
+
+    return [
+        min(item_count - 1, int((index + phase) * item_count / selected_count))
         for index in range(selected_count)
     ]
 
@@ -273,12 +307,35 @@ def run_workload(
                 message_count = (
                     workload.messages_in_target_chat if chat_index == 0 else 1
                 )
-                last_message = None
+                reply_message_indexes = (
+                    set(
+                        percentage_indexes(
+                            message_count,
+                            workload.reply_message_percent,
+                            phase=0.8,
+                        )
+                    )
+                    if chat_index == 0
+                    else set()
+                )
+                attachment_message_indexes = (
+                    set(
+                        percentage_indexes(
+                            message_count,
+                            workload.attachment_message_percent,
+                            phase=0.4,
+                        )
+                    )
+                    if chat_index == 0
+                    else set()
+                )
+                target_chat_messages = []
                 for message_index in range(message_count):
                     sender_id = group_users[message_index % len(group_users)].id
                     if sender_id is None:
                         raise RuntimeError("benchmark sender was not created")
-                    last_message = Message(
+                    is_attachment_message = message_index in attachment_message_indexes
+                    message = Message(
                         chat_id=chat.id,
                         sender_id=sender_id,
                         content=(
@@ -286,9 +343,79 @@ def run_workload(
                             if message_index % 10 == 0
                             else f"benchmark message {message_index}"
                         ),
+                        message_type="album" if is_attachment_message else "text",
+                        metadata=(
+                            {
+                                "attachments": [
+                                    {
+                                        "storage_key": (
+                                            f"files/benchmark-{message_index}-"
+                                            f"{attachment_index}.png"
+                                        ),
+                                        "original_name": (
+                                            f"attachment-{attachment_index}.png"
+                                        ),
+                                        "mime_type": "image/png",
+                                        "size_bytes": workload.attachment_bytes,
+                                        "message_type": "image",
+                                    }
+                                    for attachment_index in range(
+                                        workload.attachments_per_message
+                                    )
+                                ]
+                            }
+                            if is_attachment_message
+                            else {}
+                        ),
                     )
-                    session.add(last_message)
+                    session.add(message)
+                    target_chat_messages.append(message)
                 session.flush()
+
+                if chat_index == 0 and reply_message_indexes:
+                    ordered_reply_indexes = sorted(reply_message_indexes)
+                    deleted_reply_target_count = max(
+                        1,
+                        round(len(ordered_reply_indexes) * 20 / 100),
+                    )
+                    deleted_reply_ordinals = {
+                        reply_ordinal: deletion_index
+                        for deletion_index, reply_ordinal in enumerate(
+                            evenly_spaced_indexes(
+                                len(ordered_reply_indexes),
+                                deleted_reply_target_count,
+                            )
+                        )
+                    }
+                    for reply_ordinal, message_index in enumerate(
+                        ordered_reply_indexes
+                    ):
+                        if message_index == 0:
+                            continue
+                        message = target_chat_messages[message_index]
+                        reply_target = target_chat_messages[message_index - 1]
+                        if reply_target.id is None:
+                            raise RuntimeError("benchmark reply target has no ID")
+                        message.reply_to_message_id = reply_target.id
+
+                        deletion_index = deleted_reply_ordinals.get(reply_ordinal)
+                        if deletion_index is None:
+                            continue
+                        if deletion_index % 2 == 0:
+                            reply_target.deleted_at = datetime.now(timezone.utc)
+                            reply_target.deleted_by = reply_target.sender_id
+                        else:
+                            session.add(
+                                MessageUserState(
+                                    message_id=reply_target.id,
+                                    user_id=owner_id,
+                                    deleted_at=datetime.now(timezone.utc),
+                                )
+                            )
+
+                last_message = (
+                    target_chat_messages[-1] if target_chat_messages else None
+                )
                 if last_message is not None:
                     chat.last_message_id = last_message.id
                     if chat_index != 0:
@@ -495,6 +622,27 @@ def run_workload(
             first_message_page = first_message_page_response.json()
             if len(first_message_page) != 25:
                 raise RuntimeError("benchmark target chat did not fill a message page")
+            if not any(
+                message["reply_to_message_id"] is not None
+                for message in first_message_page
+            ):
+                raise RuntimeError("benchmark message page contains no replies")
+            if not any(
+                message.get("reply_to", {}).get("message_type") == "deleted"
+                for message in first_message_page
+                if message.get("reply_to") is not None
+            ):
+                raise RuntimeError(
+                    "benchmark message page contains no deleted reply preview"
+                )
+            if not any(
+                len(message.get("metadata", {}).get("attachments", []))
+                == workload.attachments_per_message
+                for message in first_message_page
+            ):
+                raise RuntimeError(
+                    "benchmark message page contains no configured attachment album"
+                )
             older_message_cursor = first_message_page[0]["id"]
 
             older_message_page_response = client.get(

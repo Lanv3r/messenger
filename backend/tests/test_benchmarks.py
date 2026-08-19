@@ -9,6 +9,7 @@ from benchmarks.run import (  # noqa: E402
     WORKLOADS,
     compare_results,
     evenly_spaced_indexes,
+    percentage_indexes,
     percentile,
     summarize,
 )
@@ -32,17 +33,26 @@ class BenchmarkMathTest(unittest.TestCase):
         self.assertEqual(evenly_spaced_indexes(10, 3), [0, 4, 9])
         self.assertEqual(evenly_spaced_indexes(10, 1), [5])
 
+    def test_percentage_indexes_select_requested_share_with_phase(self):
+        self.assertEqual(percentage_indexes(50, 10, phase=0.4), [4, 14, 24, 34, 44])
+        self.assertEqual(percentage_indexes(50, 10, phase=0.8), [8, 18, 28, 38, 48])
+        self.assertEqual(percentage_indexes(50, 0), [])
+
     def test_compare_results_matches_operation_and_workload(self):
-        current = [{
-            "operation": "list_chats",
-            "workload": "small",
-            "latency": {"p95_ms": 12.0},
-        }]
-        baseline = [{
-            "operation": "list_chats",
-            "workload": "small",
-            "latency": {"p95_ms": 10.0},
-        }]
+        current = [
+            {
+                "operation": "list_chats",
+                "workload": "small",
+                "latency": {"p95_ms": 12.0},
+            }
+        ]
+        baseline = [
+            {
+                "operation": "list_chats",
+                "workload": "small",
+                "latency": {"p95_ms": 10.0},
+            }
+        ]
 
         self.assertEqual(compare_results(current, baseline)[0]["delta_percent"], 20.0)
 
@@ -68,6 +78,9 @@ class BenchmarkMathTest(unittest.TestCase):
     def test_chat_mix_keeps_self_chats_small_and_direct_chats_dominant(self):
         for workload in WORKLOADS:
             self.assertEqual(workload.deleted_last_message_percent, 2)
+            self.assertEqual(workload.reply_message_percent, 10)
+            self.assertEqual(workload.attachment_message_percent, 10)
+            self.assertEqual(workload.attachments_per_message, 4)
             self.assertLessEqual(workload.self_chat_count, 5)
             self.assertGreater(
                 workload.direct_chat_count,
