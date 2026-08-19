@@ -184,13 +184,15 @@ def get_chat_messages(
     chat_id: int,
     session: SessionDep,
     current_user: Annotated[User, Depends(get_current_user)],
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    before_id: Annotated[int | None, Query(gt=0)] = None,
 ):
     current_user_id = current_user.id
     if current_user_id is None:
         raise HTTPException(status_code=401, detail="Invalid user")
     participant = require_active_participant(session, chat_id, current_user_id)
 
-    messages = session.exec(
+    statement = (
         select(Message)
         .where(
             col(Message.chat_id) == chat_id,
@@ -200,8 +202,13 @@ def get_chat_messages(
                 participant.cleared_at,
             ),
         )
-        .order_by(col(Message.created_at))
-    ).all()
+        .order_by(col(Message.id).desc())
+        .limit(limit)
+    )
+    if before_id is not None:
+        statement = statement.where(col(Message.id) < before_id)
+
+    messages = list(reversed(session.exec(statement).all()))
     sender_ids = {
         message.sender_id for message in messages if message.sender_id is not None
     }

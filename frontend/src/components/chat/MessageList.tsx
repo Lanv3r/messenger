@@ -53,6 +53,8 @@ type MessageListProps = {
   messagesRef: RefObject<HTMLUListElement | null>;
   messages: ChatMessage[];
   isLoading: boolean;
+  hasOlderMessages: boolean;
+  isLoadingOlderMessages: boolean;
   currentUserId: number;
   unreadSeparatorLastReadMessageId: number | null;
   activeChat: Chat | undefined;
@@ -74,6 +76,7 @@ type MessageListProps = {
   onStartReply: (entry: ChatMessage) => void;
   onStartEdit: (entry: ChatMessage) => void;
   onOpenActionDialog: (kind: "pin" | "delete", entry: ChatMessage) => void;
+  onLoadOlderMessages: () => Promise<boolean>;
 };
 
 const GROUPED_MESSAGE_WINDOW_MS = 5 * 60 * 1000;
@@ -330,6 +333,8 @@ export function MessageList({
   messagesRef,
   messages,
   isLoading,
+  hasOlderMessages,
+  isLoadingOlderMessages,
   currentUserId,
   unreadSeparatorLastReadMessageId,
   activeChat,
@@ -347,6 +352,7 @@ export function MessageList({
   onStartReply,
   onStartEdit,
   onOpenActionDialog,
+  onLoadOlderMessages,
 }: MessageListProps) {
   const [tooltipPlacements, setTooltipPlacements] = useState<
     Record<number, MessageMetaTooltipPlacement>
@@ -354,6 +360,7 @@ export function MessageList({
   const [stickyGroupAvatar, setStickyGroupAvatar] =
     useState<StickyGroupAvatar | null>(null);
   const stickyAvatarFrameRef = useRef<number | null>(null);
+  const olderLoadPendingRef = useRef(false);
   const firstUnreadMessageId =
     unreadSeparatorLastReadMessageId === null
       ? null
@@ -395,6 +402,44 @@ export function MessageList({
       (event.deltaY > 0 && isAtBottom)
     ) {
       event.preventDefault();
+    }
+  }
+
+  async function loadOlderMessagesPreservingScroll(
+    container: HTMLUListElement | null,
+  ) {
+    if (
+      !container ||
+      !hasOlderMessages ||
+      isLoadingOlderMessages ||
+      olderLoadPendingRef.current
+    ) {
+      return;
+    }
+
+    olderLoadPendingRef.current = true;
+    const previousScrollHeight = container.scrollHeight;
+    const previousScrollTop = container.scrollTop;
+
+    try {
+      const loadedMessages = await onLoadOlderMessages();
+      if (!loadedMessages) {
+        return;
+      }
+
+      window.requestAnimationFrame(() => {
+        window.requestAnimationFrame(() => {
+          if (messagesRef.current !== container) {
+            return;
+          }
+
+          container.scrollTop =
+            container.scrollHeight - previousScrollHeight + previousScrollTop;
+          container.dispatchEvent(new Event("scroll"));
+        });
+      });
+    } finally {
+      olderLoadPendingRef.current = false;
     }
   }
 
@@ -446,11 +491,15 @@ export function MessageList({
       onScroll={(event) => {
         keepSubtleScrollbarVisible(event);
 
+        const container = event.currentTarget;
+        if (container.scrollTop <= 80) {
+          void loadOlderMessagesPreservingScroll(container);
+        }
+
         if (stickyAvatarFrameRef.current !== null) {
           return;
         }
 
-        const container = event.currentTarget;
         stickyAvatarFrameRef.current = window.requestAnimationFrame(() => {
           stickyAvatarFrameRef.current = null;
 
@@ -468,6 +517,22 @@ export function MessageList({
         });
       }}
     >
+      {isLoadingOlderMessages ? (
+        <li className="empty-state message-page-control" role="status">
+          Loading older messages…
+        </li>
+      ) : hasOlderMessages ? (
+        <li className="empty-state message-page-control">
+          <button
+            type="button"
+            onClick={() => {
+              void loadOlderMessagesPreservingScroll(messagesRef.current);
+            }}
+          >
+            Load older messages
+          </button>
+        </li>
+      ) : null}
       {messages.length === 0 && !isLoading ? (
         <li className="empty-state">No messages yet in this chat.</li>
       ) : messages.length > 0 ? (

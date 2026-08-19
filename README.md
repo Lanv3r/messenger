@@ -117,11 +117,12 @@ docker compose stop redis
 The backend benchmark suite measures API latency through FastAPI's in-process HTTP
 client while using the same PostgreSQL engine as the application. Each small,
 medium, and large workload is created in a fresh schema, setup is excluded from
-timings, and the schema is removed afterward. It measures chat listing, message
-listing, message search, message sending, and multipart attachment
-uploads while varying chat, message, group member, attachment count, and attachment
-size dimensions. Attachment storage uses an in-memory S3 stand-in so the benchmark
-captures application work without external network variance. In each workload,
+timings, and the schema is removed afterward. It measures chat listing, newest
+and older cursor-paginated message pages, message search, message sending, and
+multipart attachment uploads while varying chat, message, group member,
+attachment count, and attachment size dimensions. Attachment storage uses an
+in-memory S3 stand-in so the benchmark captures application work without external
+network variance. In each workload,
 approximately 2% of chats have a stale `last_message_id` whose message was deleted
 either globally or only for the benchmark user, with an earlier visible message
 available for the chat-list fallback path.

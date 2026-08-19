@@ -483,13 +483,49 @@ def run_workload(
                         f"got {actual_message_id}"
                     )
 
+            first_message_page_response = client.get(
+                f"/chats/{target_chat_id}/messages",
+                params={"limit": 25},
+            )
+            require_success(first_message_page_response, "validate_message_page")
+            first_message_page = first_message_page_response.json()
+            if len(first_message_page) != 25:
+                raise RuntimeError("benchmark target chat did not fill a message page")
+            older_message_cursor = first_message_page[0]["id"]
+
+            older_message_page_response = client.get(
+                f"/chats/{target_chat_id}/messages",
+                params={"limit": 25, "before_id": older_message_cursor},
+            )
+            require_success(
+                older_message_page_response,
+                "validate_older_message_page",
+            )
+            if not older_message_page_response.json():
+                raise RuntimeError("benchmark target chat has no older message page")
+
             def get_chats(_index: int) -> None:
                 require_success(client.get("/chats"), "list_chats")
 
             def get_messages(_index: int) -> None:
                 require_success(
-                    client.get(f"/chats/{target_chat_id}/messages"),
+                    client.get(
+                        f"/chats/{target_chat_id}/messages",
+                        params={"limit": 25},
+                    ),
                     "list_messages",
+                )
+
+            def get_older_messages(_index: int) -> None:
+                require_success(
+                    client.get(
+                        f"/chats/{target_chat_id}/messages",
+                        params={
+                            "limit": 25,
+                            "before_id": older_message_cursor,
+                        },
+                    ),
+                    "list_messages_older",
                 )
 
             def search_messages(_index: int) -> None:
@@ -536,6 +572,7 @@ def run_workload(
             operations = (
                 ("list_chats", get_chats),
                 ("list_messages", get_messages),
+                ("list_messages_older", get_older_messages),
                 ("search_messages", search_messages),
                 ("send_message", send_message),
                 ("send_attachments", send_attachments),
@@ -558,11 +595,11 @@ def run_workload(
 
 
 def print_results(results: list[dict[str, Any]]) -> None:
-    print(f"{'operation':<18} {'workload':<9} {'p50 ms':>10} {'p95 ms':>10} {'mean ms':>10}")
+    print(f"{'operation':<20} {'workload':<9} {'p50 ms':>10} {'p95 ms':>10} {'mean ms':>10}")
     for result in results:
         latency = result["latency"]
         print(
-            f"{result['operation']:<18} {result['workload']:<9} "
+            f"{result['operation']:<20} {result['workload']:<9} "
             f"{latency['p50_ms']:>10.3f} {latency['p95_ms']:>10.3f} "
             f"{latency['mean_ms']:>10.3f}"
         )

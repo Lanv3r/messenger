@@ -517,10 +517,18 @@ export function ChatScreen({
     setChatInfoMembers,
     getChatMemberDisplayName,
   });
-  const { refreshChats } = useChatData({
+  const {
+    refreshChats,
+    hasOlderMessages,
+    olderMessagesLoading,
+    loadOlderMessages,
+    loadMessagesThrough,
+  } = useChatData({
     userId: user.userId,
     activeChatId,
     activeChatIdRef,
+    activeChat,
+    messages,
     setChats,
     setMessages,
     setMessagesLoading,
@@ -1059,8 +1067,11 @@ export function ChatScreen({
     }
   };
 
-  const revealMessageSearchResult = (entry: ChatMessage) => {
-    revealMessageById(entry.id);
+  const revealMessageSearchResult = async (entry: ChatMessage) => {
+    await loadMessagesThrough(entry.id);
+    window.requestAnimationFrame(() => {
+      revealMessageById(entry.id);
+    });
   };
 
   const closeMessageSearch = () => {
@@ -2072,6 +2083,8 @@ export function ChatScreen({
               messagesRef={messagesRef}
               messages={visibleMessages}
               isLoading={messagesLoading}
+              hasOlderMessages={hasOlderMessages}
+              isLoadingOlderMessages={olderMessagesLoading}
               currentUserId={user.userId}
               unreadSeparatorLastReadMessageId={unreadSeparatorLastReadMessageId}
               activeChat={activeChat}
@@ -2106,6 +2119,7 @@ export function ChatScreen({
               onStartReply={startReplyingToMessage}
               onStartEdit={startEditingMessageFromMenu}
               onOpenActionDialog={openMessageActionDialog}
+              onLoadOlderMessages={loadOlderMessages}
             />
 
             <ChatComposer

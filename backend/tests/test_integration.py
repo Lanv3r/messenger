@@ -270,6 +270,43 @@ class MessengerIntegrationTest(unittest.TestCase):
         outsider_response = outsider_client.get(f"/chats/{group['id']}/messages")
         self.assertEqual(outsider_response.status_code, 403)
 
+    def test_messages_are_paginated_from_newest_to_oldest(self):
+        client, _user = self.signup("pagination")
+        chats_response = client.get("/chats")
+        self.assertEqual(chats_response.status_code, 200, chats_response.text)
+        self_chat = next(
+            chat for chat in chats_response.json() if chat["type"] == "self"
+        )
+
+        message_ids = []
+        for index in range(65):
+            response = client.post(
+                f"/chats/{self_chat['id']}/messages",
+                json={"content": f"paginated message {index}"},
+            )
+            self.assertEqual(response.status_code, 200, response.text)
+            message_ids.append(response.json()["id"])
+
+        newest_page = client.get(f"/chats/{self_chat['id']}/messages")
+        self.assertEqual(newest_page.status_code, 200, newest_page.text)
+        newest_page_ids = [message["id"] for message in newest_page.json()]
+        self.assertEqual(newest_page_ids, message_ids[-50:])
+
+        older_page = client.get(
+            f"/chats/{self_chat['id']}/messages",
+            params={"before_id": newest_page_ids[0]},
+        )
+        self.assertEqual(older_page.status_code, 200, older_page.text)
+        older_page_ids = [message["id"] for message in older_page.json()]
+        self.assertEqual(older_page_ids, message_ids[:15])
+        self.assertFalse(set(newest_page_ids) & set(older_page_ids))
+
+        invalid_limit = client.get(
+            f"/chats/{self_chat['id']}/messages",
+            params={"limit": 101},
+        )
+        self.assertEqual(invalid_limit.status_code, 422)
+
     def test_non_member_cannot_access_chat_or_message_endpoints(self):
         owner_client, _owner = self.signup("owner")
         member_client, member = self.signup("member")
