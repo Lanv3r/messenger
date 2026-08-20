@@ -6,6 +6,7 @@ BACKEND_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(BACKEND_DIR))
 
 from benchmarks.run import (  # noqa: E402
+    OPERATIONS,
     WORKLOADS,
     compare_results,
     evenly_spaced_indexes,
@@ -16,6 +17,11 @@ from benchmarks.run import (  # noqa: E402
 
 
 class BenchmarkMathTest(unittest.TestCase):
+    def test_operations_are_unique(self):
+        self.assertEqual(len(OPERATIONS), len(set(OPERATIONS)))
+        self.assertIn("list_chats", OPERATIONS)
+        self.assertIn("send_attachments", OPERATIONS)
+
     def test_percentile_uses_nearest_rank(self):
         samples = [float(value) for value in range(1, 21)]
 

@@ -86,6 +86,16 @@ WORKLOADS = (
     ),
 )
 
+OPERATIONS = (
+    "list_chats",
+    "list_chats_older",
+    "list_messages",
+    "list_messages_older",
+    "search_messages",
+    "send_message",
+    "send_attachments",
+)
+
 
 def percentile(samples: list[float], percentile_value: float) -> float:
     """Return the nearest-rank percentile commonly used for latency SLOs."""
@@ -217,6 +227,7 @@ def run_workload(
     database_url: str,
     warmups: int,
     iterations: int,
+    operation: str | None = None,
 ) -> list[dict[str, Any]]:
     # Imports happen after the launcher supplies required application settings.
     from fastapi.testclient import TestClient
@@ -748,23 +759,28 @@ def run_workload(
                     "send_attachments",
                 )
 
-            operations = (
-                ("list_chats", get_chats),
-                ("list_chats_older", get_older_chats),
-                ("list_messages", get_messages),
-                ("list_messages_older", get_older_messages),
-                ("search_messages", search_messages),
-                ("send_message", send_message),
-                ("send_attachments", send_attachments),
-            )
+            operations_by_name = {
+                "list_chats": get_chats,
+                "list_chats_older": get_older_chats,
+                "list_messages": get_messages,
+                "list_messages_older": get_older_messages,
+                "search_messages": search_messages,
+                "send_message": send_message,
+                "send_attachments": send_attachments,
+            }
+            operation_names = OPERATIONS if operation is None else (operation,)
             return [
                 {
                     "operation": operation_name,
                     "workload": workload.name,
                     "dimensions": asdict(workload),
-                    "latency": time_operation(operation, warmups, iterations),
+                    "latency": time_operation(
+                        operations_by_name[operation_name],
+                        warmups,
+                        iterations,
+                    ),
                 }
-                for operation_name, operation in operations
+                for operation_name in operation_names
             ]
     finally:
         fastapi_app.dependency_overrides.clear()
@@ -791,6 +807,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--iterations", type=int, default=25)
     parser.add_argument("--warmups", type=int, default=10)
+    parser.add_argument("--operation", choices=OPERATIONS)
+    parser.add_argument(
+        "--workload",
+        choices=tuple(workload.name for workload in WORKLOADS),
+        help="Run only one workload (the isolated suite uses large)",
+    )
     parser.add_argument(
         "--output",
         type=Path,
@@ -817,11 +839,23 @@ def main() -> int:
             "TEST_DATABASE_URL is required; use `make benchmark` to start PostgreSQL"
         )
 
+    selected_workloads = (
+        tuple(workload for workload in WORKLOADS if workload.name == args.workload)
+        if args.workload is not None
+        else WORKLOADS
+    )
+
     results = []
-    for workload in WORKLOADS:
+    for workload in selected_workloads:
         print(f"Running {workload.name} workload...", flush=True)
         results.extend(
-            run_workload(workload, database_url, args.warmups, args.iterations)
+            run_workload(
+                workload,
+                database_url,
+                args.warmups,
+                args.iterations,
+                operation=args.operation,
+            )
         )
 
     created_at = datetime.now(timezone.utc)

@@ -70,7 +70,7 @@ try {
     $env:MESSAGE_RATE_LIMIT_PER_MINUTE = "0"
     $env:UPLOAD_RATE_LIMIT_PER_MINUTE = "0"
 
-    & $pythonBin -m benchmarks.run @BenchmarkArgs
+    & $pythonBin -m benchmarks.suite @BenchmarkArgs
     exit $LASTEXITCODE
 } finally {
     Pop-Location

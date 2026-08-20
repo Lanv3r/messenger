@@ -115,17 +115,19 @@ docker compose stop redis
 ## Performance Benchmarks
 
 The backend benchmark suite measures API latency through FastAPI's in-process HTTP
-client while using the same PostgreSQL engine as the application. Each small,
-medium, and large workload is created in a fresh schema, setup is excluded from
-timings, and the schema is removed afterward. It measures chat listing, newest
-and older cursor-paginated message pages, message search, message sending, and
-multipart attachment uploads while varying chat, message, group member,
-attachment count, and attachment size dimensions. Attachment storage uses an
+client while using the same PostgreSQL engine as the application. The suite runs
+one large-workload operation per fresh Python process and PostgreSQL schema, so
+warmups and mutations from one endpoint cannot affect another endpoint's samples.
+Setup is excluded from timings and each schema is removed afterward. It measures
+chat listing, newest and older cursor-paginated message pages, message search,
+message sending, and multipart attachment uploads. Attachment storage uses an
 in-memory S3 stand-in so the benchmark captures application work without external
-network variance. In each workload,
-approximately 2% of chats have a stale `last_message_id` whose message was deleted
-either globally or only for the benchmark user, with an earlier visible message
-available for the chat-list fallback path.
+network variance. Approximately 2% of chats have a stale `last_message_id` whose
+message was deleted either globally or only for the benchmark user, with an
+earlier visible message available for the chat-list fallback path.
+
+The worker retains all three fixture sizes for focused development runs, while
+the isolated suite always selects the large fixture:
 
 | Workload | Group chats | Self chats | Direct chats | Target-chat messages | Members | Attachments per upload | Bytes per attachment |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
@@ -138,6 +140,15 @@ Run the suite and save its raw samples plus min, mean, p50, p95, and max latency
 ```bash
 make benchmark
 ```
+
+Run one endpoint benchmark in its own process with:
+
+```bash
+./scripts/run-benchmarks.sh --operation search_messages
+```
+
+Repeat `--operation` to select several endpoint benchmarks. Without it, all
+operations run independently.
 
 Results are written to `benchmark-results/<UTC timestamp>.json`. Keep a known-good
 result as a baseline and compare a future revision with it:
