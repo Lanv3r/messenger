@@ -73,6 +73,7 @@ import type {
   ChatMember,
   ChatMessage,
   MessageCopyTarget,
+  MessageSearchResult,
   ThemeMode,
   UserProfile,
 } from "@/types";
@@ -620,7 +621,6 @@ export function ChatScreen({
     activeChatIdRef,
     setMessages,
     setChats,
-    setMessageSearchResults,
     setActiveChatId,
     setDraftRecipient,
     setMessage,
@@ -1071,7 +1071,7 @@ export function ChatScreen({
     }
   };
 
-  const revealMessageSearchResult = async (entry: ChatMessage) => {
+  const revealMessageSearchResult = async (entry: MessageSearchResult) => {
     await loadMessagesThrough(entry.id);
     window.requestAnimationFrame(() => {
       revealMessageById(entry.id);

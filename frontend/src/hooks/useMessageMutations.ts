@@ -7,7 +7,7 @@ import {
   markReplyPreviewDeleted,
   toReplyPreview,
 } from "@/lib/message-helpers";
-import type { Chat, ChatMessage } from "@/types";
+import type { Chat, ChatMessage, MessageSearchResult } from "@/types";
 
 type UseMessageMutationsOptions = {
   userId: number;
@@ -15,7 +15,7 @@ type UseMessageMutationsOptions = {
   messages: ChatMessage[];
   editingMessageText: string;
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
-  setMessageSearchResults: Dispatch<SetStateAction<ChatMessage[]>>;
+  setMessageSearchResults: Dispatch<SetStateAction<MessageSearchResult[]>>;
   setActiveSearchResultId: Dispatch<SetStateAction<number | null>>;
   setReplyToMessage: Dispatch<SetStateAction<ChatMessage | null>>;
   setChats: Dispatch<SetStateAction<Chat[]>>;
@@ -83,7 +83,19 @@ export function useMessageMutations({
           : entry;
 
     setMessages((current) => current.map(updateMessage));
-    setMessageSearchResults((current) => current.map(updateMessage));
+    setMessageSearchResults((current) =>
+      current.map((entry) =>
+        entry.id === updatedMessage.id
+          ? {
+              ...entry,
+              sender_id: updatedMessage.sender_id,
+              sender_username: updatedMessage.sender_username,
+              content: updatedMessage.content,
+              created_at: updatedMessage.created_at ?? entry.created_at,
+            }
+          : entry,
+      ),
+    );
     setChats((current) =>
       current.map((chat) =>
         chat.id === updatedMessage.chat_id &&
@@ -105,11 +117,6 @@ export function useMessageMutations({
     updates: Partial<MessagePinState>,
   ) {
     setMessages((current) =>
-      current.map((entry) =>
-        entry.id === messageId ? { ...entry, ...updates } : entry,
-      ),
-    );
-    setMessageSearchResults((current) =>
       current.map((entry) =>
         entry.id === messageId ? { ...entry, ...updates } : entry,
       ),
@@ -212,17 +219,7 @@ export function useMessageMutations({
         ),
     );
     setMessageSearchResults((current) =>
-      current
-        .filter(
-          (entry) => entry.chat_id !== chatId || !messageIdSet.has(entry.id),
-        )
-        .map((entry) =>
-          messageIds.reduce(
-            (updatedEntry, messageId) =>
-              markReplyPreviewDeleted(updatedEntry, messageId),
-            entry,
-          ),
-        ),
+      current.filter((entry) => !messageIdSet.has(entry.id)),
     );
     setActiveSearchResultId((current) =>
       current !== null && messageIdSet.has(current) ? null : current,

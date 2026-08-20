@@ -59,7 +59,9 @@ export function useMessageDisplay({
     return reply.sender_username ?? `User ${reply.sender_id}`;
   }
 
-  function getSenderName(entry: ChatMessage) {
+  function getSenderName(
+    entry: Pick<ChatMessage, "sender_id" | "sender_username">,
+  ) {
     if (entry.sender_id === user.userId) {
       return "You";
     }

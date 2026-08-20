@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { apiFetch } from "@/lib/api";
-import type { ChatMessage } from "@/types";
+import type { MessageSearchResult } from "@/types";
 
 type UseMessageSearchOptions = {
   activeChatId: number | null;
@@ -13,7 +13,7 @@ export function useMessageSearch({
   onSessionExpired,
 }: UseMessageSearchOptions) {
   const [query, setQuery] = useState("");
-  const [results, setResults] = useState<ChatMessage[]>([]);
+  const [results, setResults] = useState<MessageSearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasSearched, setHasSearched] = useState(false);
@@ -46,7 +46,7 @@ export function useMessageSearch({
       setError(null);
       setHasSearched(true);
 
-      apiFetch<ChatMessage[]>(
+      apiFetch<MessageSearchResult[]>(
         `/chats/${activeChatId}/messages/search?query=${encodeURIComponent(trimmedQuery)}`,
         {
           signal: controller.signal,

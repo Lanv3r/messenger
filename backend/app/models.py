@@ -502,3 +502,11 @@ class MessagePublic(MessageBase):
 class DirectMessageResponse(SQLModel):
     chat: ChatListItem
     message: MessagePublic
+
+
+class MessageSearchResult(SQLModel):
+    id: int
+    sender_id: int | None = None
+    sender_username: str | None = None
+    content: str | None = None
+    created_at: datetime

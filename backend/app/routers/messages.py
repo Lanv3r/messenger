@@ -18,6 +18,7 @@ from app.models import (
     MessagePinRequest,
     MessagePublic,
     MessageReplyPreview,
+    MessageSearchResult,
     MessageUserState,
     User,
 )
@@ -55,6 +56,7 @@ from fastapi import (
 )
 from fastapi.responses import Response
 from sqlalchemy import func
+from sqlalchemy import select as sqlalchemy_select
 from sqlmodel import col, select
 
 router = APIRouter(tags=["messages"])
@@ -971,7 +973,7 @@ async def apply_file_message_edit(
 
 @router.get(
     "/chats/{chat_id}/messages/search",
-    response_model=list[MessagePublic],
+    response_model=list[MessageSearchResult],
 )
 def search_chat_messages(
     chat_id: int,
@@ -988,30 +990,37 @@ def search_chat_messages(
     if not normalized_query:
         return []
 
-    messages = session.exec(
-        select(Message)
-        .where(
-            col(Message.chat_id) == chat_id,
-            col(Message.deleted_at).is_(None),
-            col(Message.content).ilike(f"%{normalized_query}%"),
-            message_is_visible_to_user(
-                user_id,
-                participant.cleared_at,
-            ),
+    rows = (
+        session.execute(
+            sqlalchemy_select(
+                col(Message.id).label("id"),
+                col(Message.sender_id).label("sender_id"),
+                col(User.username).label("sender_username"),
+                col(Message.content).label("content"),
+                col(Message.created_at).label("created_at"),
+            )
+            .select_from(Message)
+            .outerjoin(User, col(User.id) == col(Message.sender_id))
+            .where(
+                col(Message.chat_id) == chat_id,
+                col(Message.deleted_at).is_(None),
+                col(Message.content).icontains(
+                    normalized_query,
+                    autoescape=True,
+                ),
+                message_is_visible_to_user(
+                    user_id,
+                    participant.cleared_at,
+                ),
+            )
+            .order_by(col(Message.id).desc())
+            .limit(50)
         )
-        .order_by(col(Message.created_at).desc())
-        .limit(50)
-    ).all()
+        .mappings()
+        .all()
+    )
 
-    public_messages = []
-
-    for message in messages:
-        sender = session.get(User, message.sender_id)
-        reply_to = build_message_reply_preview(session, message, user_id)
-
-        public_messages.append(to_message_public(message, sender, reply_to=reply_to))
-
-    return public_messages
+    return [MessageSearchResult.model_validate(dict(row)) for row in rows]
 
 
 @router.post("/messages/{message_id}/pin")

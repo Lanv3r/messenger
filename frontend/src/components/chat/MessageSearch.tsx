@@ -3,12 +3,12 @@ import { X } from "lucide-react";
 import { formatMessageTime } from "@/lib/date-format";
 import { getSearchExcerpt, highlightSearchText } from "@/lib/message-helpers";
 import { keepSubtleScrollbarVisible } from "@/lib/scrollbar";
-import type { ChatMessage } from "@/types";
+import type { MessageSearchResult } from "@/types";
 
 type MessageSearchProps = {
   activeChatId: number | null;
   query: string;
-  results: ChatMessage[];
+  results: MessageSearchResult[];
   loading: boolean;
   error: string | null;
   hasSearched: boolean;
@@ -17,8 +17,8 @@ type MessageSearchProps = {
   onQueryChange: (value: string) => void;
   onClearSearchState: () => void;
   onCloseSearch?: () => void;
-  onRevealResult: (entry: ChatMessage) => void;
-  getSenderName: (entry: ChatMessage) => string;
+  onRevealResult: (entry: MessageSearchResult) => void;
+  getSenderName: (entry: MessageSearchResult) => string;
 };
 
 export function MessageSearch({

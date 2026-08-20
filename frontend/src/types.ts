@@ -32,6 +32,14 @@ export type ChatMessage = {
   reply_to?: MessageReplyPreview | null;
 };
 
+export type MessageSearchResult = {
+  id: number;
+  sender_id: number | null;
+  sender_username: string | null;
+  content: string | null;
+  created_at: string;
+};
+
 export type MessageAttachment = {
   file_url: string;
   storage_key?: string;

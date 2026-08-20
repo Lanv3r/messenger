@@ -30,7 +30,6 @@ type UseChatSocketEventsOptions = {
   activeChatIdRef: MutableRefObject<number | null>;
   setMessages: Dispatch<SetStateAction<ChatMessage[]>>;
   setChats: Dispatch<SetStateAction<Chat[]>>;
-  setMessageSearchResults: Dispatch<SetStateAction<ChatMessage[]>>;
   setActiveChatId: Dispatch<SetStateAction<number | null>>;
   setDraftRecipient: Dispatch<SetStateAction<UserProfile | null>>;
   setMessage: Dispatch<SetStateAction<string>>;
@@ -66,7 +65,6 @@ export function useChatSocketEvents({
   activeChatIdRef,
   setMessages,
   setChats,
-  setMessageSearchResults,
   setActiveChatId,
   setDraftRecipient,
   setMessage,
@@ -241,7 +239,6 @@ export function useChatSocketEvents({
         : entry;
 
     setMessages((current) => current.map(updateMessage));
-    setMessageSearchResults((current) => current.map(updateMessage));
   }
 
   function onMessageUpdated(data: ChatMessage) {
@@ -271,7 +268,6 @@ export function useChatSocketEvents({
         : entry;
 
     setMessages((current) => current.map(markOwnMessagesRead));
-    setMessageSearchResults((current) => current.map(markOwnMessagesRead));
 
     setChats((current) =>
       current.map((chat) =>
