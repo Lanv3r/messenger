@@ -33,8 +33,10 @@ from app.services.chats import (
     assert_permissions_are_subset_or_equal,
     assert_valid_admin_permission_list,
     assert_valid_permission_list,
+    calculate_effective_permissions,
     get_effective_member_permissions,
     get_effective_permissions,
+    get_member_action_permissions,
     member_permissions_reduce_admin_rights,
     normalize_member_permission_overrides,
     require_active_participant,
@@ -53,24 +55,11 @@ router = APIRouter(tags=["chats"])
 def to_chat_member_public(
     participant: ChatParticipant,
     user: User,
-    session: Session,
     action_permissions: dict[str, bool] | None = None,
+    promoter: User | None = None,
 ) -> ChatMemberPublic:
-    promoter = (
-        session.get(User, participant.promoted_by)
-        if participant.promoted_by is not None
-        else None
-    )
     promoted_by_user = (
-        UserPublic(
-            id=promoter.id,
-            username=promoter.username,
-            first_name=promoter.first_name,
-            last_name=promoter.last_name,
-            bio=promoter.bio,
-            avatar_url=promoter.avatar_url,
-            status=promoter.status,
-        )
+        UserPublic.model_validate(promoter)
         if promoter is not None and promoter.id is not None
         else None
     )
@@ -93,66 +82,6 @@ def to_chat_member_public(
         member_tags=participant.member_tags,
         **(action_permissions or {}),
     )
-
-
-def get_member_action_permissions(
-    actor_participant: ChatParticipant,
-    target_participant: ChatParticipant,
-    session: Session,
-) -> dict[str, bool]:
-    no_actions = {
-        "can_edit_member_tags": False,
-        "can_promote_to_admin": False,
-        "can_edit_admin_rights": False,
-        "can_edit_member_rights": False,
-        "can_remove_from_group": False,
-    }
-    chat = session.get(Chat, target_participant.chat_id)
-    if chat is None or chat.type != "group":
-        return no_actions
-
-    actor_permissions = get_effective_permissions(actor_participant, session)
-    can_edit_member_tags = actor_permissions.get("edit_member_tags") is True
-    can_manage_admins = actor_permissions.get("manage_admins") is True
-    can_remove_members = actor_permissions.get("ban_users") is True
-    target_is_manageable = (
-        actor_participant.user_id != target_participant.user_id
-        and target_participant.role != "owner"
-    )
-    can_manage_admin_target = False
-
-    if (
-        target_is_manageable
-        and target_participant.role == "admin"
-        and (can_manage_admins or can_remove_members)
-    ):
-        try:
-            assert_actor_strictly_outranks_target(
-                actor_participant,
-                target_participant,
-                actor_permissions,
-                get_effective_permissions(target_participant, session),
-            )
-            can_manage_admin_target = True
-        except HTTPException:
-            pass
-
-    target_is_member = target_participant.role == "member"
-    can_edit_member_rights = (
-        can_remove_members
-        and target_is_manageable
-        and (target_is_member or can_manage_admin_target)
-    )
-
-    return {
-        "can_edit_member_tags": can_edit_member_tags,
-        "can_promote_to_admin": (
-            can_manage_admins and target_is_manageable and target_is_member
-        ),
-        "can_edit_admin_rights": can_manage_admins and can_manage_admin_target,
-        "can_edit_member_rights": can_edit_member_rights,
-        "can_remove_from_group": can_edit_member_rights,
-    }
 
 
 def group_create_from_form(
@@ -1039,19 +968,65 @@ def get_chat_members(
         )
     ).all()
 
-    members = []
+    # User ids of all participants and their promoters
+    user_ids = {
+        user_id
+        for participant in participants
+        for user_id in (participant.user_id, participant.promoted_by)
+        if user_id is not None
+    }
 
-    for member in participants:
-        member_user = session.get(User, member.user_id)
-        if member_user is None:
+    users = session.exec(select(User).where(col(User.id).in_(user_ids))).all()
+
+    users_by_id = {user.id: user for user in users if user.id is not None}
+
+    chat = session.get(Chat, chat_id)
+    if chat is None:
+        raise HTTPException(status_code=404, detail="Chat not found")
+
+    default_permissions: dict = {}
+    actor_permissions: dict = {}
+
+    if chat.type == "group":
+        permission_record = session.get(ChatMemberPermissions, chat_id)
+        if permission_record is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Chat permissions not found",
+            )
+
+        default_permissions = permission_record.permissions
+        actor_permissions = calculate_effective_permissions(
+            actor_participant,
+            default_permissions,
+        )
+
+    members = []
+    for participant in participants:
+        user = users_by_id.get(participant.user_id)
+        if user is None:
             raise HTTPException(status_code=404, detail="User not found")
+
+        promoter = (
+            users_by_id.get(participant.promoted_by)
+            if participant.promoted_by is not None
+            else None
+        )
+
+        action_permissions = get_member_action_permissions(
+            actor_participant,
+            participant,
+            chat.type,
+            actor_permissions,
+            default_permissions,
+        )
 
         members.append(
             to_chat_member_public(
-                member,
-                member_user,
-                session,
-                get_member_action_permissions(actor_participant, member, session),
+                participant=participant,
+                user=user,
+                action_permissions=action_permissions,
+                promoter=promoter,
             )
         )
 
@@ -1110,6 +1085,14 @@ async def add_member_tag(
             detail="Member tags only apply to group chats",
         )
 
+    permission_record = session.get(ChatMemberPermissions, chat_id)
+    if permission_record is None:
+        raise HTTPException(status_code=404, detail="Chat permissions not found")
+    actor_permissions = calculate_effective_permissions(
+        actor_participant,
+        permission_record.permissions,
+    )
+
     tag = payload.tag.strip()
     if not tag:
         raise HTTPException(status_code=400, detail="Tag cannot be empty")
@@ -1130,12 +1113,23 @@ async def add_member_tag(
     target_user = session.get(User, target_participant.user_id)
     if target_user is None:
         raise HTTPException(status_code=404, detail="User not found")
+    promoter = (
+        session.get(User, target_participant.promoted_by)
+        if target_participant.promoted_by is not None
+        else None
+    )
 
     return to_chat_member_public(
         target_participant,
         target_user,
-        session,
-        get_member_action_permissions(actor_participant, target_participant, session),
+        action_permissions=get_member_action_permissions(
+            actor_participant,
+            target_participant,
+            chat.type,
+            actor_permissions,
+            permission_record.permissions,
+        ),
+        promoter=promoter,
     )
 
 
@@ -1557,6 +1551,10 @@ async def patch_member_permissions(
     chat_member_permissions = session.get(ChatMemberPermissions, chat_id)
     if chat_member_permissions is None:
         raise HTTPException(status_code=404, detail="Chat permissions not found")
+    actor_permissions = calculate_effective_permissions(
+        actor_participant,
+        chat_member_permissions.permissions,
+    )
 
     target_participant.member_permissions = normalize_member_permission_overrides(
         chat_member_permissions.permissions,
@@ -1583,13 +1581,24 @@ async def patch_member_permissions(
     target_user = session.get(User, target_participant.user_id)
     if target_user is None:
         raise HTTPException(status_code=404, detail="User not found")
+    promoter = (
+        session.get(User, target_participant.promoted_by)
+        if target_participant.promoted_by is not None
+        else None
+    )
 
     await emit_chat_permissions_updated(chat_id, [target_participant.user_id])
     return to_chat_member_public(
         target_participant,
         target_user,
-        session,
-        get_member_action_permissions(actor_participant, target_participant, session),
+        action_permissions=get_member_action_permissions(
+            actor_participant,
+            target_participant,
+            chat.type,
+            actor_permissions,
+            chat_member_permissions.permissions,
+        ),
+        promoter=promoter,
     )
 
 
@@ -1668,12 +1677,23 @@ async def patch_admin_permissions(
     target_user = session.get(User, target_participant.user_id)
     if target_user is None:
         raise HTTPException(status_code=404, detail="User not found")
+    promoter = (
+        session.get(User, target_participant.promoted_by)
+        if target_participant.promoted_by is not None
+        else None
+    )
 
     return to_chat_member_public(
         target_participant,
         target_user,
-        session,
-        get_member_action_permissions(actor_participant, target_participant, session),
+        action_permissions=get_member_action_permissions(
+            actor_participant,
+            target_participant,
+            "group",
+            actor_permissions,
+            chat_member_permissions.permissions,
+        ),
+        promoter=promoter,
     )
 
 
@@ -1723,12 +1743,23 @@ async def promote_admin(
     target_user = session.get(User, target_participant.user_id)
     if target_user is None:
         raise HTTPException(status_code=404, detail="User not found")
+    promoter = (
+        session.get(User, target_participant.promoted_by)
+        if target_participant.promoted_by is not None
+        else None
+    )
 
     return to_chat_member_public(
         target_participant,
         target_user,
-        session,
-        get_member_action_permissions(actor_participant, target_participant, session),
+        action_permissions=get_member_action_permissions(
+            actor_participant,
+            target_participant,
+            "group",
+            actor_permissions,
+            chat_member_permissions.permissions,
+        ),
+        promoter=promoter,
     )
 
 
@@ -1752,6 +1783,9 @@ async def dismiss_admin(
     target_participant = require_active_participant(session, chat_id, user_id)
     actor_permissions = get_effective_permissions(actor_participant, session)
     target_permissions = get_effective_permissions(target_participant, session)
+    chat_member_permissions = session.get(ChatMemberPermissions, chat_id)
+    if chat_member_permissions is None:
+        raise HTTPException(status_code=404, detail="Chat permissions not found")
     if target_participant.role != "admin":
         raise HTTPException(status_code=400, detail="Target is not an admin")
     assert_actor_strictly_outranks_target(
@@ -1771,12 +1805,23 @@ async def dismiss_admin(
     target_user = session.get(User, target_participant.user_id)
     if target_user is None:
         raise HTTPException(status_code=404, detail="User not found")
+    promoter = (
+        session.get(User, target_participant.promoted_by)
+        if target_participant.promoted_by is not None
+        else None
+    )
 
     return to_chat_member_public(
         target_participant,
         target_user,
-        session,
-        get_member_action_permissions(actor_participant, target_participant, session),
+        action_permissions=get_member_action_permissions(
+            actor_participant,
+            target_participant,
+            "group",
+            actor_permissions,
+            chat_member_permissions.permissions,
+        ),
+        promoter=promoter,
     )
 
 

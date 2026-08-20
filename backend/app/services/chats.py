@@ -12,34 +12,53 @@ from fastapi import HTTPException
 from sqlmodel import Session, col, select
 
 
+def calculate_effective_permissions(
+    participant: ChatParticipant,
+    default_permissions: dict,
+) -> dict:
+    if participant.role == "owner":
+        return OWNER_PERMISSIONS.copy()
+
+    effective_member_permissions = get_effective_member_permissions(
+        default_permissions,
+        participant.member_permissions,
+    )
+
+    if participant.role == "member":
+        return effective_member_permissions
+
+    permissions = SYSTEM_ROLE_DEFAULTS["admin"].copy()
+    permissions.update(effective_member_permissions)
+    permissions.update(participant.admin_permissions or {})
+
+    for key in ADMIN_MEMBER_OVERLAP_PERMISSIONS:
+        if effective_member_permissions.get(key) is True:
+            permissions[key] = True
+
+    return permissions
+
+
 def get_effective_permissions(
     participant: ChatParticipant,
     session: Session,
 ) -> dict:
     if participant.role == "owner":
         return OWNER_PERMISSIONS.copy()
-    member_permissions = session.get(
+
+    permission_record = session.get(
         ChatMemberPermissions,
         participant.chat_id,
     )
-    if member_permissions is None:
-        raise HTTPException(status_code=404, detail="Chat permissions not found")
-    effective_member_permissions = get_effective_member_permissions(
-        member_permissions.permissions,
-        participant.member_permissions,
+    if permission_record is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Chat permissions not found",
+        )
+
+    return calculate_effective_permissions(
+        participant,
+        permission_record.permissions,
     )
-    if participant.role == "member":
-        return effective_member_permissions
-    else:
-        permissions = SYSTEM_ROLE_DEFAULTS["admin"].copy()
-        permissions.update(effective_member_permissions)
-        permissions.update(participant.admin_permissions or {})
-
-        for key in ADMIN_MEMBER_OVERLAP_PERMISSIONS:
-            if effective_member_permissions.get(key) is True:
-                permissions[key] = True
-
-        return permissions
 
 
 def get_effective_member_permissions(
@@ -274,3 +293,69 @@ def require_active_participant(
         raise HTTPException(status_code=403, detail="Not a participant")
 
     return participant
+
+
+def get_member_action_permissions(
+    actor_participant: ChatParticipant,
+    target_participant: ChatParticipant,
+    chat_type: str,
+    actor_permissions: dict,
+    default_permissions: dict,
+) -> dict[str, bool]:
+    no_actions = {
+        "can_edit_member_tags": False,
+        "can_promote_to_admin": False,
+        "can_edit_admin_rights": False,
+        "can_edit_member_rights": False,
+        "can_remove_from_group": False,
+    }
+
+    if chat_type != "group":
+        return no_actions
+
+    can_edit_member_tags = actor_permissions.get("edit_member_tags") is True
+    can_manage_admins = actor_permissions.get("manage_admins") is True
+    can_remove_members = actor_permissions.get("ban_users") is True
+
+    target_is_manageable = (
+        actor_participant.user_id != target_participant.user_id
+        and target_participant.role != "owner"
+    )
+
+    can_manage_admin_target = False
+    if (
+        target_is_manageable
+        and target_participant.role == "admin"
+        and (can_manage_admins or can_remove_members)
+    ):
+        target_permissions = calculate_effective_permissions(
+            target_participant,
+            default_permissions,
+        )
+        try:
+            assert_actor_strictly_outranks_target(
+                actor_participant,
+                target_participant,
+                actor_permissions,
+                target_permissions,
+            )
+            can_manage_admin_target = True
+        except HTTPException:
+            pass
+
+    target_is_member = target_participant.role == "member"
+    can_edit_member_rights = (
+        can_remove_members
+        and target_is_manageable
+        and (target_is_member or can_manage_admin_target)
+    )
+
+    return {
+        "can_edit_member_tags": can_edit_member_tags,
+        "can_promote_to_admin": (
+            can_manage_admins and target_is_manageable and target_is_member
+        ),
+        "can_edit_admin_rights": can_manage_admins and can_manage_admin_target,
+        "can_edit_member_rights": can_edit_member_rights,
+        "can_remove_from_group": can_edit_member_rights,
+    }
